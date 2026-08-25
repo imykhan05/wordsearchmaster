@@ -24,6 +24,9 @@ const _allowlist = {
   // Scaffolding + its route-name nav buttons; each screen's real UI replaces
   // it in P07/P11/P12/P17/P21.
   'lib/presentation/widgets/stub_screen.dart',
+  // Dev-flavor performance readout (P06). Its labels are units — "fps",
+  // "raster" — read by whoever is profiling, never by a player.
+  'lib/presentation/game/perf_overlay.dart',
 };
 
 void main(List<String> args) {

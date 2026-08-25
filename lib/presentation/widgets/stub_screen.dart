@@ -77,12 +77,15 @@ class _RouteNav extends ConsumerWidget {
         _navButton(context, 'Leaderboard', const LeaderboardRoute().location),
         _navButton(context, 'Profile', const ProfileRoute().location),
         _navButton(context, 'Settings', const SettingsRoute().location),
-        if (isDev)
+        if (isDev) ...[
+          // The 12x12 grid the P06 performance budget is stated against.
+          _navButton(context, 'Game 12x12', const GameRoute('200').location),
           _navButton(
             context,
             'Style Gallery',
             const StyleGalleryRoute().location,
           ),
+        ],
       ],
     );
   }

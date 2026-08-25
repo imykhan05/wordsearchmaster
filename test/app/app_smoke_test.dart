@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/domain/text/language.dart';
+import 'package:word_search_master/presentation/game/game_grid.dart';
 
 /// Covers the P01 acceptance criterion directly: each flavor must show its
 /// own name starting on the very first screen.
@@ -56,14 +57,16 @@ void main() {
   });
 
   testWidgets(
-    'every typed route is reachable and keeps showing the flavor badge',
+    'every stub route is reachable and keeps showing the flavor badge',
     (tester) async {
       await enterApp(tester, AppConfig.dev());
 
+      // Game is excluded: since P06 it is a real screen with the grid on it,
+      // not a StubScreen, so it carries no flavor badge or route nav. It gets
+      // its own test below.
       const labels = [
         'Home',
         'Journey',
-        'Game',
         'Daily',
         'Leaderboard',
         'Profile',
@@ -81,4 +84,14 @@ void main() {
       }
     },
   );
+
+  testWidgets('the game route renders the real grid', (tester) async {
+    await enterApp(tester, AppConfig.dev());
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Game'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GameGrid), findsOneWidget);
+    expect(find.text('Level 1'), findsOneWidget);
+  });
 }

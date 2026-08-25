@@ -147,6 +147,27 @@ All tokens live in `lib/app/theme/` — import the `theme.dart` barrel.
   can fix them without touching code. **The Urdu and Hindi lists are empty and
   flagged — they need a native speaker before release.**
 
+## Rendering (P06)
+
+- The grid is ONE painter per logical pass, never 144 widgets, and the passes
+  are separate `CustomPaint`s behind `RepaintBoundary`s so that **only the live
+  selection may repaint per frame**. Measured on a 12×12: a full letters
+  repaint costs 0.956ms, the selection capsule 0.013ms — a 76× ratio, and the
+  reason the split exists.
+- `GraphemePainterCache` lays out a `TextPainter` once per unique
+  grapheme+style. NEVER call `layout()` inside `paint()` for a grapheme
+  already seen — 144 layouts a frame is the single biggest perf trap here.
+  The cache is instrumented; `hitRate` is asserted in tests, not assumed.
+- The live selection is published through a `ValueNotifier` handed to
+  `CustomPaint.repaint`. A moving finger must repaint one capsule and rebuild
+  **no widgets** — `setState` per pointer move would give back everything the
+  pass split buys.
+- Gestures come from a raw `Listener` on `localPosition` through
+  `GridGeometry`, the same geometry the painters use. No `GlobalKey`, no
+  per-cell hit-testing widget, so touch and paint cannot disagree.
+- Found-word highlights are a rounded capsule through the cells, not a square
+  per cell, and carry their palette border weight as well as colour.
+
 ## Selection and scoring (P05)
 
 - `SelectionResolver` is pure Dart and takes a `GridPoint` in CELL UNITS, not
