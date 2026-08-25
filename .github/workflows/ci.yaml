@@ -17,6 +17,18 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Generate localizations
+        # `flutter analyze` does not trigger gen-l10n the way run/build do.
+        run: flutter gen-l10n
+
+      - name: Fail on untranslated messages
+        # A missing translation must be loud here, not a silent English
+        # fallback shipped to an Urdu player.
+        run: |
+          if [ -s l10n_untranslated.json ]; then
+            echo "Untranslated messages:"; cat l10n_untranslated.json; exit 1
+          fi
+
       - name: Generate code (riverpod_generator)
         run: dart run build_runner build --delete-conflicting-outputs
 
@@ -28,6 +40,9 @@ jobs:
 
       - name: no-raw-colors check
         run: dart run tool/check_no_raw_colors.dart
+
+      - name: localized-strings check
+        run: dart run tool/check_localized_strings.dart
 
       - name: flutter test
         run: flutter test

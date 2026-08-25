@@ -126,6 +126,18 @@ abstract final class AppTypography {
     );
   }
 
+  /// The family used for grid cells in [language]. Never Nastaliq.
+  static String gridFontFamily(Language language) =>
+      _gridMetrics(language).family;
+
+  /// The family used for UI text in [language] at [role].
+  ///
+  /// Defaults to [UiRole.body], which is the *body-class* family — Naskh for
+  /// Urdu, not Nastaliq. Display-class roles opt into Nastaliq by passing
+  /// their own role.
+  static String uiFontFamily(Language language, {UiRole role = UiRole.body}) =>
+      _uiFamily(language, role);
+
   /// The UI font family for [language] in [role]. Nastaliq only for Urdu, and
   /// only in [nastaliqRoles].
   static String _uiFamily(Language language, UiRole role) {

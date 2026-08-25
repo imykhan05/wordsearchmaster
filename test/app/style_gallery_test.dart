@@ -6,6 +6,7 @@ import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/app/router.dart';
+import 'package:word_search_master/domain/text/language.dart';
 
 void main() {
   Future<void> pumpApp(WidgetTester tester, AppConfig config) async {
@@ -18,8 +19,16 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// The FTUE opens on language select, so the dev nav (and with it the
+  /// gallery link) is only reachable after picking a language.
+  Future<void> enterApp(WidgetTester tester, AppConfig config) async {
+    await pumpApp(tester, config);
+    await tester.tap(find.text(Language.english.endonym));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> openGallery(WidgetTester tester) async {
-    await pumpApp(tester, AppConfig.dev());
+    await enterApp(tester, AppConfig.dev());
     await tester.tap(find.widgetWithText(OutlinedButton, 'Style Gallery'));
     await tester.pumpAndSettle();
   }
@@ -116,7 +125,7 @@ void main() {
 
     group('$flavor flavor', () {
       testWidgets('offers no way into the gallery', (tester) async {
-        await pumpApp(tester, config);
+        await enterApp(tester, config);
         expect(
           find.widgetWithText(OutlinedButton, 'Style Gallery'),
           findsNothing,

@@ -39,6 +39,10 @@ dependencies:
   go_router: ^18.0.0
   firebase_core: ^4.14.0
   characters: ^1.4.1
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.3
+  unorm_dart: ^0.3.2
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +67,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Required for `flutter gen-l10n` to produce importable localizations.
+  generate: true
 
   # Fonts are BUNDLED, never taken from the device: many budget Android
   # phones in PK/IN ship without a Urdu-capable font, and the result is a

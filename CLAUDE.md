@@ -126,12 +126,38 @@ All tokens live in `lib/app/theme/` — import the `theme.dart` barrel.
   Every token, both themes, all three scripts on one page — check it after any
   theme or font change.
 
+## Localization
+
+- Every user-facing string comes from `AppLocalizations.of(context)`. ARB
+  files in `lib/l10n/` (`app_en.arb` is the template; `ur` and `hi` follow).
+  Enforced by `tool/check_localized_strings.dart` in CI, which flags literals
+  passed to `Text(...)` or to a user-facing named argument (`title:`,
+  `label:`, `tooltip:`, …). Dev-only surfaces — the Style Gallery and
+  `StubScreen`'s route nav — are allowlisted; they never ship.
+- The generated `app_localizations*.dart` is gitignored. CI runs
+  `flutter gen-l10n` before analyze, and fails if
+  `l10n_untranslated.json` is non-empty — a missing translation must not
+  silently ship English to an Urdu player.
+- The Urdu and Hindi ARB files are machine-drafted and carry an
+  `@@x-review-status` marker. **A native speaker must review them before
+  release**, same rule as the word content (Ch07).
+- Language names on the picker (`Language.endonym`) are deliberately NOT
+  localized — a player who reads only Urdu has to find the Urdu card.
+
 ## Text handling (critical)
 
 - ALWAYS use `.characters` (grapheme clusters from `package:characters`),
-  never `.split('')` or raw `.length`, on any user-facing word/letter.
-- Normalize all Urdu via `ScriptNormalizer` before compare or grid placement
-  (Yeh/Kaf/Heh variants, strip harakat and ZW*, never merge Alef Madda).
+  never `.split('')` or raw `.length`, on any user-facing word/letter. In
+  practice: call `ScriptNormalizer.graphemes(word, language)`, which
+  normalizes first so placement and matching agree on what a "letter" is.
+- Normalize via `ScriptNormalizer.normalize` BEFORE any compare and BEFORE
+  grid placement — never compare raw strings. Urdu maps Yeh/Kaf/Heh variants
+  and strips harakat + ZW*; Hindi is NFC + ZWJ/ZWNJ stripped; English is
+  uppercase + trim. Alef Madda (آ) is deliberately never merged into ا.
+- Reading direction is a language property, not a rendering fix-up:
+  `Language.primaryDirection` is west for Urdu, so a horizontal word makes
+  the column index DECREASE. `GridDirections.forLanguage(language, tier)`
+  gives the allowed vectors, mirrored per script.
 - Grid cells: Noto Naskh Arabic (Urdu), Noto Sans Devanagari (Hindi) — never
   Nastaliq in a grid cell. Nastaliq is for Urdu UI/headings/word-list only.
   Get styles from `AppTypography.gridTextStyle` / `uiTextStyle`; never build a
@@ -174,7 +200,13 @@ All tokens live in `lib/app/theme/` — import the `theme.dart` barrel.
 
 ## Definition of done for any task
 
-Code + unit tests + `flutter analyze` clean + `dart format` clean +
-`dart run tool/check_domain_purity.dart` clean +
-`dart run tool/check_no_raw_colors.dart` clean + updated CLAUDE.md if
-architecture changed + acceptance criteria for the prompt met + committed.
+Code + unit tests + `flutter analyze` clean + `dart format` clean + all three
+CI checks clean (`tool/check_domain_purity.dart`,
+`tool/check_no_raw_colors.dart`, `tool/check_localized_strings.dart`) +
+updated CLAUDE.md if architecture changed + acceptance criteria for the
+prompt met + committed.
+
+Note on `lib/domain/`: it must stay runnable as plain Dart, so it uses
+`GridVector` rather than `dart:ui`'s `Offset`, and knows nothing about
+`Locale`, `TextDirection` or font families. The Flutter-typed views of a
+`Language` live in the `LanguageX` extension in `lib/app/language/`.

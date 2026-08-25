@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/app_route.dart';
 import '../../app/config/app_config.dart';
 import '../../app/theme/theme.dart';
+import '../../l10n/app_localizations.dart';
 import 'flavor_badge.dart';
 
 /// Placeholder body shared by every route until its owning prompt (see
@@ -31,7 +32,7 @@ class StubScreen extends StatelessWidget {
               const FlavorBadge(),
               const SizedBox(height: AppTokens.space24),
               Text(
-                'WORD SEARCH MASTER',
+                AppLocalizations.of(context).appTitle,
                 style: textTheme.headlineSmall,
                 textAlign: TextAlign.center,
               ),
@@ -41,6 +42,11 @@ class StubScreen extends StatelessWidget {
                 const SizedBox(height: AppTokens.space4),
                 Text(subtitle!, style: textTheme.bodySmall),
               ],
+              const SizedBox(height: AppTokens.space8),
+              Text(
+                AppLocalizations.of(context).comingSoon,
+                style: textTheme.bodySmall,
+              ),
               const SizedBox(height: AppTokens.space32),
               const _RouteNav(),
             ],

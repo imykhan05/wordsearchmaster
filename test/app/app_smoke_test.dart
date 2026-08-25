@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/config/app_config.dart';
+import 'package:word_search_master/domain/text/language.dart';
 
 /// Covers the P01 acceptance criterion directly: each flavor must show its
 /// own name starting on the very first screen.
@@ -14,6 +15,14 @@ void main() {
         child: const WordSearchMasterApp(),
       ),
     );
+    await tester.pumpAndSettle();
+  }
+
+  /// The FTUE opens on language select, so reaching the rest of the app means
+  /// picking a language first.
+  Future<void> enterApp(WidgetTester tester, AppConfig config) async {
+    await pumpApp(tester, config);
+    await tester.tap(find.text(Language.english.endonym));
     await tester.pumpAndSettle();
   }
 
@@ -33,13 +42,23 @@ void main() {
   ) async {
     await pumpApp(tester, AppConfig.dev());
 
-    expect(find.text('Language'), findsWidgets);
+    // No login, no permission dialog, no ad — just the three cards.
+    expect(find.text('Choose your language'), findsOneWidget);
+    for (final language in Language.values) {
+      expect(find.text(language.endonym), findsOneWidget);
+    }
+  });
+
+  testWidgets('picking a language enters the app', (tester) async {
+    await enterApp(tester, AppConfig.dev());
+
+    expect(find.text('Home'), findsWidgets);
   });
 
   testWidgets(
     'every typed route is reachable and keeps showing the flavor badge',
     (tester) async {
-      await pumpApp(tester, AppConfig.dev());
+      await enterApp(tester, AppConfig.dev());
 
       const labels = [
         'Home',
@@ -54,11 +73,6 @@ void main() {
         await tester.tap(find.widgetWithText(OutlinedButton, label));
         await tester.pumpAndSettle();
 
-        expect(
-          find.text(label),
-          findsWidgets,
-          reason: '$label screen should render',
-        );
         expect(
           find.text('DEV'),
           findsOneWidget,

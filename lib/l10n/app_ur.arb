@@ -1,0 +1,22 @@
+{
+  "@@locale": "ur",
+  "@@x-review-status": "REQUIRES NATIVE SPEAKER REVIEW BEFORE RELEASE. Machine-drafted Urdu. A native reader spots a wrong register or a mis-shaped letter instantly, and 'spelling ghalat hai' reviews are very hard to undo once they land (Ch07).",
+
+  "appTitle": "ورڈ سرچ ماسٹر",
+  "chooseLanguage": "اپنی زبان منتخب کریں",
+  "navHome": "ہوم",
+  "navJourney": "سفر",
+  "navDaily": "روزانہ چیلنج",
+  "navLeaderboard": "لیڈر بورڈ",
+  "navProfile": "پروفائل",
+  "navSettings": "ترتیبات",
+  "gameLevel": "لیول {level}",
+  "@gameLevel": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "comingSoon": "جلد آ رہا ہے"
+}

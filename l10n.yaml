@@ -1,0 +1,15 @@
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-dir: lib/l10n
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+# Generated into lib/l10n and gitignored, same as the build_runner outputs.
+# CI runs `flutter gen-l10n` before analyze, because `flutter analyze` alone
+# does not trigger generation the way `flutter run`/`flutter build` do.
+#
+# `AppLocalizations.of(context)` returns non-null: a missing localization is a
+# wiring bug, and forcing every call site to null-check would be noise.
+nullable-getter: false
+# A missing translation should be loud in CI, not a silent English fallback
+# shipped to an Urdu player.
+untranslated-messages-file: l10n_untranslated.json

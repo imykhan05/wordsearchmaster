@@ -1,5 +1,6 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../widgets/stub_screen.dart';
 
 /// The core gameplay screen — grid, gesture layer, scoring. Real
@@ -11,6 +12,6 @@ class GameScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StubScreen(title: 'Game', subtitle: 'levelId = $levelId');
+    return StubScreen(title: AppLocalizations.of(context).gameLevel(levelId));
   }
 }

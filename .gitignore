@@ -52,6 +52,10 @@ app.*.map.json
 *.freezed.dart
 *.drift.dart
 
+# Generated localizations (flutter gen-l10n). The ARB files are the source.
+lib/l10n/app_localizations*.dart
+l10n_untranslated.json
+
 # Android signing (P24) — never commit the upload keystore or its credentials
 android/key.properties
 android/*.jks

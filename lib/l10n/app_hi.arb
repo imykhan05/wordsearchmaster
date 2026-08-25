@@ -1,0 +1,22 @@
+{
+  "@@locale": "hi",
+  "@@x-review-status": "REQUIRES NATIVE SPEAKER REVIEW BEFORE RELEASE. Machine-drafted Hindi. Same rule as the Urdu file — a native reader catches register and spelling problems that no test will (Ch07).",
+
+  "appTitle": "वर्ड सर्च मास्टर",
+  "chooseLanguage": "अपनी भाषा चुनें",
+  "navHome": "होम",
+  "navJourney": "यात्रा",
+  "navDaily": "दैनिक चुनौती",
+  "navLeaderboard": "लीडरबोर्ड",
+  "navProfile": "प्रोफ़ाइल",
+  "navSettings": "सेटिंग्स",
+  "gameLevel": "लेवल {level}",
+  "@gameLevel": {
+    "placeholders": {
+      "level": {
+        "type": "String"
+      }
+    }
+  },
+  "comingSoon": "जल्द आ रहा है"
+}

@@ -1,0 +1,59 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "Word Search Master",
+  "@appTitle": {
+    "description": "The app name, shown in the task switcher and on the title bar."
+  },
+
+  "chooseLanguage": "Choose your language",
+  "@chooseLanguage": {
+    "description": "Heading on the first screen of the FTUE (Ch02: splash goes straight here — no login, no permission prompt, no ad)."
+  },
+
+  "navHome": "Home",
+  "@navHome": {
+    "description": "Title of the home screen."
+  },
+
+  "navJourney": "Journey",
+  "@navJourney": {
+    "description": "Title of the journey map — the themed path that replaces a flat level list."
+  },
+
+  "navDaily": "Daily Challenge",
+  "@navDaily": {
+    "description": "Title of the once-a-day puzzle that is the same for every player."
+  },
+
+  "navLeaderboard": "Leaderboard",
+  "@navLeaderboard": {
+    "description": "Title of the leaderboard screen."
+  },
+
+  "navProfile": "Profile",
+  "@navProfile": {
+    "description": "Title of the player's profile screen."
+  },
+
+  "navSettings": "Settings",
+  "@navSettings": {
+    "description": "Title of the settings screen."
+  },
+
+  "gameLevel": "Level {level}",
+  "@gameLevel": {
+    "description": "Title of the game screen, naming which level is being played.",
+    "placeholders": {
+      "level": {
+        "type": "String",
+        "example": "47"
+      }
+    }
+  },
+
+  "comingSoon": "Coming soon",
+  "@comingSoon": {
+    "description": "Placeholder shown on screens whose real implementation lands in a later build step."
+  }
+}
