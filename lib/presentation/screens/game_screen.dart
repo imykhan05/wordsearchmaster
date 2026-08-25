@@ -1,27 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/app_route.dart';
 import '../../app/config/app_config.dart';
-import '../../app/language/selected_language.dart';
 import '../../app/theme/theme.dart';
-import '../../domain/grid/cell.dart';
-import '../../domain/grid/grid_directions.dart';
-import '../../domain/grid/grid_generator.dart';
-import '../../domain/grid/grid_result.dart';
+import '../../application/game_controller.dart';
 import '../../domain/grid/selection_resolver.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../game/game_debug_panel.dart';
 import '../game/game_grid.dart';
 import '../game/grid_geometry.dart';
+import '../game/level_complete_card.dart';
 import '../game/particles.dart';
+import '../game/pause_sheet.dart';
+import '../widgets/rolling_counter.dart';
 
-/// The core gameplay screen.
+/// The core gameplay screen. Assembled entirely from [GameController] —
+/// see its file header for the state-machine decisions this screen relies
+/// on (events as the score source of truth, no live selection in state, the
+/// atomic Zeigarnik swap).
 ///
-/// P06 SCOPE: this wires the rendering and gesture layers to a real generated
-/// grid so the engine can be played and profiled. The score counter, hint
-/// button, pause sheet, level-complete card and the Zeigarnik pre-load of the
-/// next level all land in P07, along with the GameController that replaces the
-/// local state below.
+/// The one thing this screen still owns locally is [ParticleController]: it
+/// is an animation driver, not game state, and P06 already established that
+/// pattern for it.
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({required this.levelId, super.key});
 
@@ -32,49 +35,12 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class _GameScreenState extends ConsumerState<GameScreen> {
-  /// TODO(P10): comes from the content pack. Inline here only so P06 has a
-  /// real grid to render and profile.
-  static const Map<Language, List<String>> _demoWords = {
-    Language.english: [
-      'WATER',
-      'STONE',
-      'RIVER',
-      'FOREST',
-      'LIGHT',
-      'EARTH',
-      'STORM',
-      'SEED',
-    ],
-    Language.urdu: [
-      'پانی',
-      'بادل',
-      'ہوا',
-      'زمین',
-      'درخت',
-      'دریا',
-      'سورج',
-      'برف',
-    ],
-    Language.hindi: [
-      'पानी',
-      'बादल',
-      'हवा',
-      'धरती',
-      'नदी',
-      'सूरज',
-      'रात',
-      'तारा',
-    ],
-  };
-
   final ParticleController _particles = ParticleController();
 
-  GridResult? _grid;
-  Language? _builtFor;
-  final List<String> _found = [];
-  final List<List<Cell>> _foundCells = [];
-
-  int get _levelNumber => int.tryParse(widget.levelId) ?? 1;
+  /// The family key. Stays fixed for this screen's lifetime — advancing
+  /// levels mutates `GameState.level` in place (Zeigarnik) rather than
+  /// creating a new provider instance, so this never has to change.
+  int get _initialLevel => int.tryParse(widget.levelId) ?? 1;
 
   @override
   void dispose() {
@@ -82,48 +48,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.dispose();
   }
 
-  GridResult _buildGrid(Language language) {
-    final level = _levelNumber;
-    return GridGenerator.generate(
-      // The level number IS the seed here, so the same level always rebuilds
-      // the same grid. P10 stores a real per-level seed.
-      seed: level * 7919,
-      size: level <= 5
-          ? 6
-          : level <= 20
-          ? 8
-          : level <= 60
-          ? 10
-          : 12,
-      words: _demoWords[language]!,
-      lang: language,
-      allowedDirections: GridDirections.forLevel(language, level),
-    );
-  }
+  void _onSelectionReleased(SelectionState selection, GridGeometry geometry) {
+    final notifier = ref.read(gameControllerProvider(_initialLevel).notifier);
+    final outcome = notifier.processSelection(selection);
+    if (!outcome.isValid) return;
 
-  void _onSelectionReleased(SelectionState state, GridGeometry geometry) {
-    final grid = _grid;
-    if (grid == null) return;
-
-    final language = ref.read(selectedLanguageProvider);
-    final resolver = SelectionResolver(size: grid.size);
-
-    final outcome = resolver.release(
-      state: state,
-      grid: grid.cells,
-      remainingWords: grid.placements.keys.where((w) => !_found.contains(w)),
-      language: language,
-    );
-
-    if (outcome.matchedWord == null) return;
+    final state = ref.read(gameControllerProvider(_initialLevel)).value;
+    if (state == null) return;
 
     final tokens = AppTokens.of(context);
-    final colorIndex = _found.length % tokens.colors.foundWord.length;
-
-    setState(() {
-      _found.add(outcome.matchedWord!);
-      _foundCells.add(outcome.cells);
-    });
+    // The just-found word is always the newest entry, so its index is the
+    // last one — matches the colour a found chip renders with.
+    final colorIndex =
+        (state.foundWords.length - 1) % tokens.colors.foundWord.length;
 
     // Burst from the middle of the word, per Ch03.
     final first = geometry.cellCenter(outcome.cells.first);
@@ -135,38 +72,176 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
+  Future<void> _openPauseSheet() async {
+    final notifier = ref.read(gameControllerProvider(_initialLevel).notifier);
+    notifier.pause();
+
+    final action = await showModalBottomSheet<PauseAction>(
+      context: context,
+      builder: (_) => const PauseSheet(),
+    );
+    if (!mounted) return;
+
+    switch (action) {
+      case PauseAction.restart:
+        notifier.restart();
+      case PauseAction.home:
+        context.go(const HomeRoute().location);
+      case PauseAction.resume:
+      case null:
+        notifier.resume();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final language = ref.watch(selectedLanguageProvider);
-    final tokens = AppTokens.of(context);
-    final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
-
-    if (_grid == null || _builtFor != language) {
-      _grid = _buildGrid(language);
-      _builtFor = language;
-      _found.clear();
-      _foundCells.clear();
-    }
-    final grid = _grid!;
+    final asyncState = ref.watch(gameControllerProvider(_initialLevel));
+    // Read once: everything below — the AppBar and the body alike — is a
+    // pure function of this one settled value.
+    final state = asyncState.value;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(AppLocalizations.of(context).gameLevel(widget.levelId)),
-      ),
       // No banner ad on this screen, ever (CLAUDE.md → Never do).
+      appBar: state == null ? null : _buildAppBar(context, state),
       body: SafeArea(
-        child: Column(
+        child: asyncState.when(
+          // A language switch re-runs GameController.build; the previous
+          // grid stays on screen instead of flashing a spinner underneath it.
+          skipLoadingOnReload: true,
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stackTrace) => Center(child: Text('$error')),
+          data: (state) => _GameContent(
+            state: state,
+            particles: _particles,
+            onSelectionReleased: _onSelectionReleased,
+            onLevelComplete: () => ref
+                .read(gameControllerProvider(_initialLevel).notifier)
+                .dismissLevelComplete(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Placed at the Scaffold level rather than built inline: a plain
+  /// `BackButton` pops the Navigator, but this route is reached with
+  /// go_router's `.go()`, which leaves nothing to pop — so `leading` here
+  /// always sends the player home explicitly instead.
+  AppBar _buildAppBar(BuildContext context, GameState state) {
+    final l10n = AppLocalizations.of(context);
+
+    return AppBar(
+      leading: BackButton(
+        onPressed: () => context.go(const HomeRoute().location),
+      ),
+      title: Text(l10n.gameLevel('${state.level}')),
+      actions: [
+        Center(
+          child: RollingCounter(
+            value: state.score,
+            style: AppTypography.uiTextStyle(
+              Language.english,
+              UiRole.title,
+              color: AppTokens.of(context).colors.primary,
+              weight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppTokens.space12),
+        _HintButton(
+          state: state,
+          onPressed: () => ref
+              .read(gameControllerProvider(_initialLevel).notifier)
+              .useHint(),
+        ),
+        IconButton(
+          tooltip: l10n.pauseButtonLabel,
+          onPressed: state.phase == GamePhase.playing ? _openPauseSheet : null,
+          icon: const Icon(Icons.pause_rounded),
+        ),
+        const SizedBox(width: AppTokens.space8),
+      ],
+    );
+  }
+}
+
+class _HintButton extends StatelessWidget {
+  const _HintButton({required this.state, required this.onPressed});
+
+  final GameState state;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final canHint =
+        state.phase == GamePhase.playing && state.remainingWords.isNotEmpty;
+
+    return Badge(
+      label: Text('${state.hintsUsed}'),
+      isLabelVisible: state.hintsUsed > 0,
+      child: IconButton(
+        tooltip: l10n.hintButtonLabel,
+        onPressed: canHint ? onPressed : null,
+        icon: const Icon(Icons.lightbulb_outline),
+      ),
+    );
+  }
+}
+
+/// Everything below the top bar: the grid (with the dev debug panel docked
+/// over it) and the word-list panel, plus the level-complete overlay when
+/// `state.phase` calls for it.
+///
+/// A separate widget purely so `GameScreen.build` doesn't have to thread the
+/// `AsyncValue` unwrap through a long body — `state` here is always the
+/// settled [GameState].
+class _GameContent extends ConsumerWidget {
+  const _GameContent({
+    required this.state,
+    required this.particles,
+    required this.onSelectionReleased,
+    required this.onLevelComplete,
+  });
+
+  final GameState state;
+  final ParticleController particles;
+  final void Function(SelectionState, GridGeometry) onSelectionReleased;
+  final VoidCallback onLevelComplete;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
+    final tokens = AppTokens.of(context);
+
+    return Stack(
+      children: [
+        Column(
           children: [
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(AppTokens.space16),
-                child: GameGrid(
-                  cells: grid.cells,
-                  language: language,
-                  foundWordCells: _foundCells,
-                  onSelectionReleased: _onSelectionReleased,
-                  particleController: _particles,
-                  showPerfOverlay: isDev,
+                child: Stack(
+                  children: [
+                    GameGrid(
+                      cells: state.grid.cells,
+                      language: state.language,
+                      foundWordCells: [
+                        for (final word in state.foundWords)
+                          state.grid.placements[word]!,
+                      ],
+                      hintedCell: state.hintedCell,
+                      onSelectionReleased: onSelectionReleased,
+                      particleController: particles,
+                      showPerfOverlay: isDev,
+                    ),
+                    if (isDev)
+                      Positioned(
+                        right: AppTokens.space8,
+                        bottom: AppTokens.space8,
+                        child: GameDebugPanel(level: state.level),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -177,13 +252,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 runSpacing: AppTokens.space8,
                 alignment: WrapAlignment.center,
                 children: [
-                  for (final word in grid.placements.keys)
+                  for (final word in state.allWords)
                     _WordChip(
+                      key: ValueKey(word),
                       word: word,
-                      language: language,
-                      found: _found.contains(word),
+                      language: state.language,
+                      found: state.foundWords.contains(word),
                       color:
-                          tokens.colors.foundWord[_found.indexOf(word) %
+                          tokens.colors.foundWord[state.foundWords.indexOf(
+                                word,
+                              ) %
                               tokens.colors.foundWord.length],
                     ),
                 ],
@@ -191,12 +269,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
           ],
         ),
-      ),
+        // Zeigarnik (Ch02): GameController has already generated the NEXT
+        // level's grid and word list by the time phase reaches here, so the
+        // Column above is already showing it, behind this card.
+        if (state.phase == GamePhase.levelComplete &&
+            state.completedSummary != null)
+          Positioned.fill(
+            child: LevelCompleteCard(
+              summary: state.completedSummary!,
+              onContinue: onLevelComplete,
+            ),
+          ),
+      ],
     );
   }
 }
 
-/// A target word, shown in its CONNECTED display form — the shape the player
+/// A target word, shown in its CONNECTED/display form — the shape the player
 /// maps onto the isolated letters in the grid (Ch04).
 class _WordChip extends StatelessWidget {
   const _WordChip({
@@ -204,6 +293,7 @@ class _WordChip extends StatelessWidget {
     required this.language,
     required this.found,
     required this.color,
+    super.key,
   });
 
   final String word;
@@ -211,11 +301,18 @@ class _WordChip extends StatelessWidget {
   final bool found;
   final Color color;
 
+  /// 120ms strike-through draw, in the word's own reading direction — a
+  /// literal from the bible, not on the Motion scale.
+  static const Duration _strikeDuration = Duration(milliseconds: 120);
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
+    final duration = Motion.reduced(context, _strikeDuration);
 
-    return Container(
+    return AnimatedContainer(
+      duration: duration,
+      curve: Motion.fade,
       padding: const EdgeInsets.symmetric(
         horizontal: AppTokens.space12,
         vertical: AppTokens.space4,
@@ -227,21 +324,42 @@ class _WordChip extends StatelessWidget {
         borderRadius: AppTokens.borderRadius16,
         border: Border.all(color: found ? color : tokens.colors.outline),
       ),
-      child: Text(
-        word,
-        style:
-            AppTypography.uiTextStyle(
+      child: Stack(
+        alignment: AlignmentDirectional.centerStart,
+        children: [
+          Text(
+            word,
+            style: AppTypography.uiTextStyle(
               language,
               UiRole.wordChip,
               color: found
                   ? tokens.colors.onSurfaceMuted
                   : tokens.colors.onSurface,
-            ).copyWith(
-              // TODO(P09): replace with the animated left-to-right strike draw.
-              decoration: found ? TextDecoration.lineThrough : null,
-              decorationColor: color,
-              decorationThickness: 2,
             ),
+          ),
+          Positioned.fill(
+            // Align first: Positioned.fill hands down TIGHT constraints, and
+            // without something to loosen them first, FractionallySizedBox's
+            // null heightFactor inherits that tightness and the strike bar
+            // stretches to the chip's full height instead of staying a thin
+            // line — Align is what lets Container's height: 2 win again.
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: found ? 1 : 0),
+                duration: duration,
+                curve: Motion.fade,
+                builder: (context, t, child) {
+                  return FractionallySizedBox(
+                    alignment: AlignmentDirectional.centerStart,
+                    widthFactor: t.clamp(0.0, 1.0),
+                    child: Container(height: 2, color: color),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

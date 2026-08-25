@@ -27,6 +27,9 @@ const _allowlist = {
   // Dev-flavor performance readout (P06). Its labels are units — "fps",
   // "raster" — read by whoever is profiling, never by a player.
   'lib/presentation/game/perf_overlay.dart',
+  // Dev-flavor level/phase jumper (P07). Never registered outside the dev
+  // flavor's widget tree, same as the Style Gallery route.
+  'lib/presentation/game/game_debug_panel.dart',
 };
 
 void main(List<String> args) {

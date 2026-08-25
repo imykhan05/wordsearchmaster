@@ -19,6 +19,7 @@ import 'perf_overlay.dart';
 ///
 ///   RepaintBoundary  letters      static for the whole level
 ///   RepaintBoundary  found words  repaints when a word is found
+///   RepaintBoundary  hint         one-shot appear, then static (P07)
 ///   RepaintBoundary  selection    the only layer that repaints per frame
 ///   RepaintBoundary  particles    170ms bursts, isolated from everything
 ///                    gestures     a bare Listener, no painting
@@ -32,6 +33,7 @@ class GameGrid extends StatefulWidget {
     required this.language,
     required this.foundWordCells,
     required this.onSelectionReleased,
+    this.hintedCell,
     this.particleController,
     this.showPerfOverlay = false,
     this.cache,
@@ -48,6 +50,13 @@ class GameGrid extends StatefulWidget {
   /// One entry per found word, in the order found: the colour and border
   /// weight are taken from the token palette by that index.
   final List<List<Cell>> foundWordCells;
+
+  /// The cell `GameController.useHint` last pointed at, or null. Drawn as a
+  /// one-shot appear-and-hold ring rather than a continuous pulse — an
+  /// indefinitely looping animation would keep repainting for as long as the
+  /// hint sits on screen, which is exactly the per-frame cost P06 built this
+  /// three-pass split to avoid paying outside the live selection.
+  final Cell? hintedCell;
 
   /// Fires on pointer-up with the finished drag and the geometry it was drawn
   /// against. P07's GameController matches the drag against the remaining
@@ -165,6 +174,22 @@ class GameGridState extends State<GameGrid> {
                 ),
               ),
             ),
+            if (widget.hintedCell != null)
+              // Positioned must be a direct Stack child — RepaintBoundary
+              // goes INSIDE it, not around it, or Positioned's parent data
+              // never applies and it silently expands to fill the Stack.
+              Positioned.fromRect(
+                rect: geometry.cellRect(widget.hintedCell!).inflate(4),
+                child: RepaintBoundary(
+                  // Keyed on the cell so a hint that MOVES to a new word (a
+                  // second `useHint` call) restarts the appear animation at
+                  // the new location instead of silently jumping there.
+                  child: _HintHighlight(
+                    key: ValueKey(widget.hintedCell),
+                    color: tokens.colors.info,
+                  ),
+                ),
+              ),
             RepaintBoundary(
               child: CustomPaint(
                 painter: SelectionPainter(
@@ -195,6 +220,39 @@ class GameGridState extends State<GameGrid> {
                 child: PerfOverlay(stats: _stats),
               ),
           ],
+        );
+      },
+    );
+  }
+}
+
+/// The hint ring: an outline that punches in over the hinted cell and then
+/// holds still. See [GameGrid.hintedCell] for why this is one-shot rather
+/// than a loop. Positioning is the caller's job (a `Positioned` ancestor) —
+/// this just fills whatever box it is given.
+class _HintHighlight extends StatelessWidget {
+  const _HintHighlight({required this.color, super.key});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: Motion.reduced(context, Motion.base),
+      curve: Motion.punch,
+      builder: (context, t, child) {
+        return Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Transform.scale(
+            scale: t,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: AppTokens.borderRadius8,
+                border: Border.all(color: color, width: 2.5),
+              ),
+            ),
+          ),
         );
       },
     );

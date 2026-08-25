@@ -219,6 +219,56 @@ measurably easier than English and Urdu ones at the same level number. The
 test fixture's `pickCohesive` shows the shape of the fix; the real one belongs
 in the content pipeline.
 
+## Game state machine (P07)
+
+`lib/application/game_controller.dart` is a `@riverpod` `AsyncNotifier`
+family, keyed by the level the screen was OPENED with — advancing a level
+(including via the debug panel) mutates `GameState.level` in place rather
+than creating a new provider instance, so a screen never has to remount to
+keep playing.
+
+- **`GameState` stores events, not counters.** `score`, `combo`, `hintsUsed`
+  and `stars` are all derived getters that replay `events: List<ScoreEvent>`
+  through `Scoring.*`. This is the same reason P05's `ScoreEvent` exists:
+  there is exactly one code path from events to a number, which is what lets
+  a future server replay a submission and get the same answer.
+- **No live `selection` field.** The bible's GameState shape names one; it is
+  deliberately absent. Routing a per-frame drag through Riverpod would
+  rebuild the top bar and word list 60 times a second and undo P06's
+  three-pass paint split. `GameGridState` keeps owning the live drag in its
+  own `ValueNotifier`, unchanged from P06. `GameController.processSelection`
+  only ever sees a FINISHED drag, and returns the `SelectionOutcome` directly
+  to the caller (for the particle burst) instead of parking it in state —
+  nothing else needs to remember it.
+- **The Zeigarnik swap (Ch02) is one atomic state update.** The moment a
+  level is won, the controller freezes a `LevelCompletionSummary` of the
+  level just finished AND regenerates the next level's grid in the same
+  `copyWith` — `phase` becomes `levelComplete` while `level`/`grid`/word list
+  already describe the level after it. Dismissing the card is only ever a
+  phase flip. The dev debug panel's "force levelComplete" runs this exact
+  path too, never a stub, so it is a faithful preview.
+- **`Positioned` must be a direct `Stack` child.** Wrapping it in
+  `RepaintBoundary` (`RepaintBoundary(child: Positioned(...))` instead of
+  `Positioned(child: RepaintBoundary(...))`) breaks its `StackParentData`
+  silently — `flutter analyze`/`flutter run` release builds do not catch
+  this, only an assertion during widget-tree mounting does. The visible
+  symptom is worse than a crash: the mis-parented child just expands to fill
+  the whole `Stack`. `game_grid_test.dart`'s hint-highlight test pins the
+  rendered size specifically so this cannot regress silently again.
+- **A tight-constrained `FractionallySizedBox` overrides its child's own
+  size.** `Positioned.fill` hands down TIGHT constraints; a
+  `FractionallySizedBox` with `heightFactor: null` passes that tightness
+  straight through, so a child with an explicit small height (the word-chip
+  strike-through's `Container(height: 2)`) gets stretched to fill the whole
+  box instead — the same failure shape as the `Positioned` gotcha above, one
+  level down. An `Align` between them loosens the constraint so the child's
+  own size wins again. Same lesson either way: something in this chain has
+  to loosen a tight constraint before a `FractionallySizedBox` with a null
+  factor is safe to use.
+- **`coinsEarned` is a placeholder formula** (`stars * 10`), flagged
+  `TODO(P15/P16)` — the real coin economy lives in `lib/domain/progression/`,
+  which does not exist yet.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

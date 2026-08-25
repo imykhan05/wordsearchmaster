@@ -18,5 +18,17 @@
       }
     }
   },
-  "comingSoon": "جلد آ رہا ہے"
+  "comingSoon": "جلد آ رہا ہے",
+
+  "pauseButtonLabel": "روکیں",
+  "hintButtonLabel": "اشارہ",
+  "levelCompleteTitle": "لیول مکمل!",
+  "scoreLabel": "اسکور",
+  "coinsEarnedLabel": "کمائے گئے سکے",
+  "continueButton": "آگے بڑھیں",
+  "doubleRewardPlaceholder": "ڈبل انعام — جلد آ رہا ہے",
+  "adPlaceholderLabel": "اشتہار کی جگہ — جلد آ رہا ہے",
+  "resumeButton": "جاری رکھیں",
+  "restartButton": "دوبارہ شروع کریں",
+  "soundLabel": "آواز"
 }

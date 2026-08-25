@@ -41,6 +41,7 @@ void main() {
   pumpGrid(
     WidgetTester tester, {
     List<List<Cell>> foundWordCells = const [],
+    Cell? hintedCell,
   }) async {
     final key = GlobalKey<GameGridState>();
     final stats = GridPaintStats();
@@ -60,6 +61,7 @@ void main() {
                 cells: grid.cells,
                 language: Language.english,
                 foundWordCells: foundWordCells,
+                hintedCell: hintedCell,
                 stats: stats,
                 onSelectionReleased: (state, _) => released.add(state),
               ),
@@ -340,5 +342,42 @@ void main() {
         expect(paintsWithNone, greaterThan(0));
       },
     );
+  });
+
+  group('hint highlight', () {
+    testWidgets('the ring covers ONE cell, not the whole grid — regression for '
+        'Positioned needing to be a direct Stack child', (tester) async {
+      const cell = Cell(2, 3);
+      final harness = await pumpGrid(tester, hintedCell: cell);
+      final state = harness.key.currentState!;
+      await tester.pump(const Duration(milliseconds: 250));
+
+      final hintRing = find.descendant(
+        of: find.byType(GameGrid),
+        matching: find.byType(DecoratedBox),
+      );
+      final expectedRect = state.geometry!.cellRect(cell).inflate(4);
+      final renderedRect = tester.getRect(hintRing);
+
+      expect(renderedRect.width, closeTo(expectedRect.width, 0.5));
+      expect(renderedRect.height, closeTo(expectedRect.height, 0.5));
+      expect(
+        renderedRect.width,
+        lessThan(boxSize / 2),
+        reason:
+            'a mis-parented Positioned silently expands to fill the '
+            'whole Stack — this must stay cell-sized',
+      );
+    });
+
+    testWidgets('absent when there is no hint', (tester) async {
+      await pumpGrid(tester);
+
+      final hintRing = find.descendant(
+        of: find.byType(GameGrid),
+        matching: find.byType(DecoratedBox),
+      );
+      expect(hintRing, findsNothing);
+    });
   });
 }

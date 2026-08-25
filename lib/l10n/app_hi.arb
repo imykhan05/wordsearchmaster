@@ -18,5 +18,17 @@
       }
     }
   },
-  "comingSoon": "जल्द आ रहा है"
+  "comingSoon": "जल्द आ रहा है",
+
+  "pauseButtonLabel": "रोकें",
+  "hintButtonLabel": "संकेत",
+  "levelCompleteTitle": "लेवल पूरा!",
+  "scoreLabel": "स्कोर",
+  "coinsEarnedLabel": "अर्जित सिक्के",
+  "continueButton": "आगे बढ़ें",
+  "doubleRewardPlaceholder": "डबल इनाम — जल्द आ रहा है",
+  "adPlaceholderLabel": "विज्ञापन स्थान — जल्द आ रहा है",
+  "resumeButton": "जारी रखें",
+  "restartButton": "फिर से शुरू करें",
+  "soundLabel": "आवाज़"
 }
