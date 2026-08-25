@@ -71,6 +71,12 @@ flutter:
   # Required for `flutter gen-l10n` to produce importable localizations.
   generate: true
 
+  assets:
+    # Accidental-word blocklists, scanned after filling (Ch06). Kept as assets
+    # so a native speaker can correct them without touching Dart. P10 adds the
+    # word and level packs alongside these.
+    - assets/content/
+
   # Fonts are BUNDLED, never taken from the device: many budget Android
   # phones in PK/IN ship without a Urdu-capable font, and the result is a
   # grid of tofu boxes (Ch04). Family names here must match AppFonts in

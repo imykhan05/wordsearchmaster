@@ -126,6 +126,41 @@ All tokens live in `lib/app/theme/` — import the `theme.dart` barrel.
   Every token, both themes, all three scripts on one page — check it after any
   theme or font change.
 
+## Grid engine (P04)
+
+- `GridGenerator.generate` is pure Dart and DETERMINISTIC: one `Random(seed)`
+  drives everything. Levels store a seed, never a grid — that is what makes
+  level 47 identical everywhere and the Daily Challenge work offline. Nothing
+  in `lib/domain/grid/` may use any other source of randomness.
+- It never throws and never loops forever. A word set it cannot satisfy comes
+  back in `GridResult.unplacedWords`; P10's validator fails the build on that.
+- Placements are found by *crossing-seeded* randomised search: an attempt
+  aligns a letter of the incoming word onto a cell already holding that
+  grapheme. Uniform sampling almost never hits an existing letter and left the
+  intersection ratio well below the Ch06 band.
+- Fillers come from `FillerStrategy` — frequency-weighted per language, 60%
+  biased toward the target words' own graphemes. Uniform fillers make the
+  answers visibly different from the noise.
+- After filling, the blocklist scan re-rolls accidental words. Only filler
+  cells are re-rolled; a cell belonging to a placed word is never touched.
+  Blocklists are assets (`assets/content/blocklist_*.txt`) so a native speaker
+  can fix them without touching code. **The Urdu and Hindi lists are empty and
+  flagged — they need a native speaker before release.**
+
+### Known content constraint: Hindi words rarely intersect
+
+Measured, not assumed. A crossing needs two words to share an IDENTICAL
+grapheme, and a Hindi cell holds an akshara drawn from a far larger set than
+the Latin alphabet. With words picked at random, only **17–38%** of Hindi
+words share a grapheme with anything already placed, against **91–97%** in
+English and 75–90% in Urdu.
+
+No generator can cross words that share nothing, so **P10 must assemble level
+word sets with shared aksharas in mind for Hindi**, or Hindi levels will be
+measurably easier than English and Urdu ones at the same level number. The
+test fixture's `pickCohesive` shows the shape of the fix; the real one belongs
+in the content pipeline.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

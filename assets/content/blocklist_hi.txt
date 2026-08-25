@@ -1,0 +1,17 @@
+# Accidental-word blocklist — Hindi
+#
+# INCOMPLETE. REQUIRES A NATIVE HINDI SPEAKER TO POPULATE BEFORE RELEASE.
+#
+# See blocklist_ur.txt for why this is left empty rather than guessed at: a
+# mistakenly-listed ordinary word degrades every grid containing that grapheme
+# run, and machine-guessed profanity in a language is a reliable source of
+# exactly that error.
+#
+# Note for whoever fills this in: Hindi cells hold ASKSHARAS, not consonants,
+# so entries are matched as grapheme-cluster runs. A word written with a
+# different matra split will not match — write entries the way the word is
+# actually spelled.
+#
+# Format: one word per line; # comments and blank lines ignored.
+
+# --- to be completed by a native speaker ---

@@ -1,0 +1,46 @@
+# Accidental-word blocklist — English
+#
+# Random filler letters will eventually spell something offensive. When that
+# happens it becomes a screenshot and a one-star review, so the generator
+# scans every row, column and diagonal (both directions) after filling and
+# re-rolls the filler cells that formed any word listed here (Ch06).
+#
+# Format: one word per line. Blank lines and lines starting with # are
+# ignored. Entries are normalized with ScriptNormalizer before matching, so
+# case does not matter here.
+#
+# Matching is on grapheme boundaries and is substring-based, so short entries
+# are aggressive: "ASS" also blocks GLASS and CLASS wherever they appear as a
+# run of cells. That is the intended trade — a slightly duller grid beats an
+# offensive one — but keep entries at 3+ characters or the re-roll loop will
+# thrash.
+
+ARSE
+ARSEHOLE
+BASTARD
+BITCH
+BOLLOCKS
+BUGGER
+CRAP
+CUNT
+DICK
+DYKE
+FAG
+FAGGOT
+FUCK
+KIKE
+NIGGA
+NIGGER
+PISS
+PRICK
+PUSSY
+QUEER
+RAPE
+RETARD
+SHIT
+SLUT
+SPIC
+TITS
+TWAT
+WANK
+WHORE

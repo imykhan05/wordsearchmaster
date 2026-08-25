@@ -1,0 +1,21 @@
+# Accidental-word blocklist — Urdu
+#
+# INCOMPLETE. REQUIRES A NATIVE URDU SPEAKER TO POPULATE BEFORE RELEASE.
+#
+# This file is deliberately short. A wrong entry here is not harmless: because
+# matching is substring-based on grapheme runs, a mistakenly-listed ordinary
+# word would silently degrade every grid that happens to contain those letters
+# in a line. Guessing at another language's profanity produces exactly that
+# kind of false positive, so only clearly-vulgar terms belong here and a
+# native reader must review the list — the same rule Ch07 sets for the word
+# packs themselves.
+#
+# Format: one word per line; # comments and blank lines ignored. Entries are
+# normalized (ScriptNormalizer) before matching, so Arabic-keyboard spellings
+# of the same word are handled automatically.
+#
+# The scanning mechanism itself is fully tested with injected lists in
+# test/domain/grid/grid_generator_test.dart, so an empty section here means
+# "not yet curated", never "not implemented".
+
+# --- to be completed by a native speaker ---
