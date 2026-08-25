@@ -147,6 +147,43 @@ All tokens live in `lib/app/theme/` — import the `theme.dart` barrel.
   can fix them without touching code. **The Urdu and Hindi lists are empty and
   flagged — they need a native speaker before release.**
 
+## Selection and scoring (P05)
+
+- `SelectionResolver` is pure Dart and takes a `GridPoint` in CELL UNITS, not
+  a `dart:ui` `Offset`. The presentation layer converts pixels → cell units.
+  Sub-cell precision is kept deliberately: projecting a continuous pointer
+  onto the locked line is what makes the drag feel sticky.
+- Direction locks on the second cell to one of the eight vectors, then the
+  pointer is PROJECTED onto that line. Dragging off-line must never break the
+  selection — that is a required feel property, not a nicety. Returning to the
+  anchor unlocks the direction so a player can re-aim without lifting.
+- On release, a run of fewer than two cells never matches (a tap is not an
+  attempt). Both the forward and reversed sequences are tested, and a
+  backwards trace returns its cells re-oriented to the WORD, so animations run
+  along the word rather than along the finger.
+
+### `lib/domain/scoring/scoring.dart` is a normative contract
+
+Its file header is the **scoring spec**, and P14's `submitScore.ts`
+re-implements it in TypeScript. The two must agree exactly on every input, so:
+
+- Change the spec, the Dart, and the TypeScript port together, and bump
+  `Scoring.specVersion`.
+- Scoring multiplies by an **integer** points-per-grapheme table
+  (`[10, 12, 14, 16, 18, 20]`), never by the displayed float multipliers.
+  Float rounding is the classic way two languages silently disagree by one
+  point, and one point means a rejected submission.
+- Score is computed by REPLAYING an ordered `List<ScoreEvent>`, because the
+  combo ladder depends on the sequence of correct and wrong selections. This
+  is also the anti-cheat shape from Ch08: the client submits its work, the
+  server replays it and computes the number itself.
+- `computeStars` takes **no** elapsed-time parameter. Relaxed mode cannot grow
+  a time dependency because there is no time to pass in. Blitz (v1.2) gets its
+  own function, never a flag on this one.
+- The worked example in the header (score 103, 2 stars) is the cross-language
+  parity fixture; it is asserted in `scoring_test.dart` and must be asserted in
+  the TypeScript tests too.
+
 ### Known content constraint: Hindi words rarely intersect
 
 Measured, not assumed. A crossing needs two words to share an IDENTICAL
