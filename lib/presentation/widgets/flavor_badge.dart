@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/config/app_config.dart';
+import '../../app/theme/theme.dart';
+import '../../domain/text/language.dart';
 
 /// Shows which flavor is running, in every screen, starting with the very
 /// first frame. This is the whole point of P01's acceptance test: dev/stg
@@ -13,27 +15,34 @@ class FlavorBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(appConfigProvider);
+    final tokens = AppTokens.of(context);
+
+    // Distinct hues so the three builds are never mistaken for each other on
+    // a device that has all three installed side by side.
+    final background = switch (config.flavor) {
+      Flavor.dev => tokens.colors.warn,
+      Flavor.stg => tokens.colors.info,
+      Flavor.prod => tokens.colors.success,
+    };
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.space12,
+        vertical: AppTokens.space4,
+      ),
       decoration: BoxDecoration(
-        color: _colorFor(config.flavor),
-        borderRadius: BorderRadius.circular(999),
+        color: background,
+        borderRadius: AppTokens.borderRadius16,
       ),
       child: Text(
         config.flavorName,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.4,
-          fontSize: 12,
+        style: AppTypography.uiTextStyle(
+          Language.english,
+          UiRole.label,
+          color: tokens.colors.onPrimary,
+          weight: FontWeight.w700,
         ),
       ),
     );
   }
-
-  Color _colorFor(Flavor flavor) => switch (flavor) {
-    Flavor.dev => Colors.deepOrange,
-    Flavor.stg => Colors.indigo,
-    Flavor.prod => Colors.green.shade700,
-  };
 }

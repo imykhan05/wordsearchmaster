@@ -83,3 +83,14 @@ final class SettingsRoute extends AppRoute {
   @override
   String get location => '/settings';
 }
+
+/// DEV FLAVOR ONLY — `router.dart` registers this route only when the running
+/// flavor is [Flavor.dev], so navigating to it in stg/prod 404s by design.
+final class StyleGalleryRoute extends AppRoute {
+  const StyleGalleryRoute();
+
+  static const name = 'styleGallery';
+
+  @override
+  String get location => '/dev/style-gallery';
+}

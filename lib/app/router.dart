@@ -9,7 +9,9 @@ import '../presentation/screens/language_screen.dart';
 import '../presentation/screens/leaderboard_screen.dart';
 import '../presentation/screens/profile_screen.dart';
 import '../presentation/screens/settings_screen.dart';
+import '../presentation/screens/style_gallery_screen.dart';
 import 'app_route.dart';
+import 'config/app_config.dart';
 
 part 'router.g.dart';
 
@@ -17,6 +19,8 @@ part 'router.g.dart';
 /// splash → language select, no login/permission/ad screens first).
 @riverpod
 GoRouter router(Ref ref) {
+  final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
+
   return GoRouter(
     initialLocation: const LanguageRoute().location,
     debugLogDiagnostics: false,
@@ -62,6 +66,15 @@ GoRouter router(Ref ref) {
         name: SettingsRoute.name,
         builder: (context, state) => const SettingsScreen(),
       ),
+      // Dev-only tooling. Absent from the route table entirely on stg/prod,
+      // rather than gated inside the screen — there is no build in which a
+      // player can reach it.
+      if (isDev)
+        GoRoute(
+          path: const StyleGalleryRoute().location,
+          name: StyleGalleryRoute.name,
+          builder: (context, state) => const StyleGalleryScreen(),
+        ),
     ],
   );
 }

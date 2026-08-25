@@ -26,5 +26,8 @@ jobs:
       - name: domain-purity check
         run: dart run tool/check_domain_purity.dart
 
+      - name: no-raw-colors check
+        run: dart run tool/check_no_raw_colors.dart
+
       - name: flutter test
         run: flutter test

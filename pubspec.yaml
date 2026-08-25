@@ -38,6 +38,7 @@ dependencies:
   riverpod_annotation: ^4.0.6
   go_router: ^18.0.0
   firebase_core: ^4.14.0
+  characters: ^1.4.1
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +63,38 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Fonts are BUNDLED, never taken from the device: many budget Android
+  # phones in PK/IN ship without a Urdu-capable font, and the result is a
+  # grid of tofu boxes (Ch04). Family names here must match AppFonts in
+  # lib/app/theme/app_typography.dart.
+  #
+  # These are the full Noto faces (~2.7 MB). P22 subsets them with fonttools
+  # to only the glyph ranges the content actually uses, which brings this
+  # down by roughly an order of magnitude before release.
+  fonts:
+    # Urdu GRID cells — horizontal and balanced, sits square in a cell.
+    - family: NotoNaskhArabic
+      fonts:
+        - asset: assets/fonts/NotoNaskhArabic-Regular.ttf
+        - asset: assets/fonts/NotoNaskhArabic-Bold.ttf
+          weight: 700
+    # Urdu DISPLAY/HEADING/word-chip only — never a grid cell.
+    - family: NotoNastaliqUrdu
+      fonts:
+        - asset: assets/fonts/NotoNastaliqUrdu-Regular.ttf
+        - asset: assets/fonts/NotoNastaliqUrdu-Bold.ttf
+          weight: 700
+    - family: NotoSansDevanagari
+      fonts:
+        - asset: assets/fonts/NotoSansDevanagari-Regular.ttf
+        - asset: assets/fonts/NotoSansDevanagari-Bold.ttf
+          weight: 700
+    - family: NotoSans
+      fonts:
+        - asset: assets/fonts/NotoSans-Regular.ttf
+        - asset: assets/fonts/NotoSans-Bold.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:

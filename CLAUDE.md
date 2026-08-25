@@ -100,6 +100,32 @@ lib/
 one device at once. `dev`/`stg` must never be able to serve a real ad unit —
 that is the single most common cause of a permanent AdMob/MAX account ban.
 
+## Design system
+
+All tokens live in `lib/app/theme/` — import the `theme.dart` barrel.
+
+- **Colours**: `lib/app/theme/app_tokens.dart` is the ONLY file in `lib/` that
+  may contain a colour literal. Everywhere else reads
+  `AppTokens.of(context).colors.*`. Enforced by
+  `tool/check_no_raw_colors.dart` in CI, which rejects `Color(0x...)`,
+  `Color.fromARGB/fromRGBO` and `Colors.*`.
+- **Spacing** `AppTokens.space4..space48` (4/8/12/16/24/32/48);
+  **radii** `AppTokens.radius4/8/16`. No bare numbers in `EdgeInsets`.
+- **Elevation**: `AppTokens.elevation1/2/3` — each is a tinted surface AND
+  shadows. Never shadow alone; on the dark theme a shadow against a near-black
+  ground is invisible.
+- **Found-word palette**: `colors.foundWord` (6) with matching
+  `AppTokens.foundWordBorderWidths`. Colour is never the only cue. The palette
+  was chosen by maximising minimum pairwise CIE ΔE under normal, protanopic
+  and deuteranopic vision; `found_word_palette_test.dart` re-runs that
+  simulation, so substituting a colour is checked, not assumed.
+- **Motion**: `Motion.instant/quick/base/slow` + `Motion.punch/settle/fade`.
+  Never a raw `Duration` or bare `Curves.*` at a call site. Use
+  `Motion.of(context)` so reduce-motion collapses every duration to zero.
+- **Style Gallery**: `/dev/style-gallery`, registered only on the dev flavor.
+  Every token, both themes, all three scripts on one page — check it after any
+  theme or font change.
+
 ## Text handling (critical)
 
 - ALWAYS use `.characters` (grapheme clusters from `package:characters`),
@@ -108,8 +134,14 @@ that is the single most common cause of a permanent AdMob/MAX account ban.
   (Yeh/Kaf/Heh variants, strip harakat and ZW*, never merge Alef Madda).
 - Grid cells: Noto Naskh Arabic (Urdu), Noto Sans Devanagari (Hindi) — never
   Nastaliq in a grid cell. Nastaliq is for Urdu UI/headings/word-list only.
-- Fonts are bundled assets (`assets/fonts/`), subset with `fonttools`. Never
-  rely on the device having a Urdu-capable font installed.
+  Get styles from `AppTypography.gridTextStyle` / `uiTextStyle`; never build a
+  `TextStyle` with a `fontFamily` by hand.
+- Grid cells opt out of system text scaling
+  (`AppTypography.gridTextScaler`) — the grid scales via cell size. EVERY
+  other piece of text respects the system scale; the 45+ audience this game
+  targets often runs a large system font.
+- Fonts are bundled assets (`assets/fonts/`), subset with `fonttools` in P22.
+  Never rely on the device having a Urdu-capable font installed.
 - Urdu grid direction is language-aware, not a rendering hack: horizontal
   primary direction is `Offset(-1, 0)` (column index decreases).
 
@@ -142,6 +174,7 @@ that is the single most common cause of a permanent AdMob/MAX account ban.
 
 ## Definition of done for any task
 
-Code + unit tests + `flutter analyze` clean + `dart run tool/check_domain_purity.dart`
-clean + updated CLAUDE.md if architecture changed + acceptance criteria for
-the prompt met + committed.
+Code + unit tests + `flutter analyze` clean + `dart format` clean +
+`dart run tool/check_domain_purity.dart` clean +
+`dart run tool/check_no_raw_colors.dart` clean + updated CLAUDE.md if
+architecture changed + acceptance criteria for the prompt met + committed.
