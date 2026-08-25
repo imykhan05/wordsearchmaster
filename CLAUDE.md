@@ -269,6 +269,64 @@ keep playing.
   `TODO(P15/P16)` — the real coin economy lives in `lib/domain/progression/`,
   which does not exist yet.
 
+## Local persistence + integrity (P08)
+
+Drift is the SOURCE OF TRUTH. Every read path in the app resolves against
+`lib/data/local/`; the network is background sync only, carried by the outbox.
+
+- **Seven tables** (Ch10): `profile`, `level_progress`, `daily_results`,
+  `coins_ledger`, `achievements`, `outbox`, `kv_settings`. `level_progress`
+  and `daily_results` are keyed by (language, level/date) — level 47 in Urdu
+  is a different puzzle from level 47 in Hindi and earns its stars
+  separately.
+- **Every mutation writes its game-state row AND its outbox row in ONE
+  transaction.** Never one without the other: a progress row with no outbox
+  row never syncs, and an outbox row with no progress row submits a level
+  nobody played. `outbox_atomicity_test.dart` proves it by installing a
+  SQLite trigger that aborts outbox inserts, then checking the progress row
+  rolled back too — the real repository path, no mocks.
+- **`coins_ledger` is append-only, enforced by SQLite triggers**, not by the
+  repository declining to expose an update. The balance is the SUM of
+  verified rows, never a stored number, so a wrong balance is traceable to
+  the row that caused it.
+- **Every row carries an HMAC-SHA256 tag**, keyed by an app constant + the
+  install id. Read `integrity.dart`'s header before touching any of it — it
+  states honestly that this is tamper EVIDENCE, not tamper proof. The real
+  anti-cheat is Ch08's server-side replay (P14); this keeps the local DB
+  honest between submissions.
+- **The tag binds to the row's ADDRESS** (table + primary key), not just its
+  contents. Without that, level 1's finished row can be pasted onto level 50
+  and still verify.
+- **The canonical encoding is length-prefixed and type-tagged.** A plain
+  `join('|')` gives `['a|b','c']` and `['a','b|c']` the same bytes; untagged
+  fields let `1` and `'1'` collide. Both are forgeries.
+- **`RowTags` is the ONE definition of which columns each table signs.** If
+  the repository and the migration disagree by one field, every migrated row
+  fails on the next read and the player silently loses their progress.
+- **A failed check drops the row, reports a Crashlytics non-fatal, and NEVER
+  shows the player an error.** Reports are deduped per row address — a Drift
+  stream re-emits on every write, and one bad row would otherwise file
+  thousands of identical reports. Tampered rows are excluded but NOT deleted:
+  deleting inside a stream's map is re-entrant, and a forged row is evidence.
+- **`schemaVersion` is 2.** v1 stored coins as a column on `profile`; the
+  migration converts that balance into an opening ledger row. It verifies the
+  v1 tag under the v1 field shape FIRST — migrating without checking would
+  re-sign a forged balance into a valid v2 ledger entry, a free amnesty for
+  anyone who cheated before upgrading.
+- **`beforeOpen` must not await `AppDatabase.integrity()`.** That getter
+  memoises a Future whose query cannot complete until the database finishes
+  opening, and `beforeOpen` is part of opening it — awaiting it there
+  deadlocks the connection with no error and no timeout. Resolve the install
+  id locally inside the callback instead.
+- **Auto-increment ids are allocated explicitly** (`nextRowId`), because the
+  id is the row's address and the tag binds to it. Letting SQLite assign it
+  would mean inserting first and patching the tag after — which the
+  append-only trigger forbids outright.
+- `shared_preferences` holds exactly three things: sound, haptics, selected
+  language (`UiSettingsStore`). Anything touching game state or sync goes in
+  `kv_settings` instead. `ui_settings_store_test.dart` pins that boundary by
+  asserting the full key set.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

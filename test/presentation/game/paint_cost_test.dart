@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -42,18 +43,35 @@ void main() {
     geometry = GridGeometry.fit(size: gridSize, available: canvasSize);
   });
 
-  double timeMicros(void Function() body, {int runs = iterations}) {
+  /// Per-call cost, taken as the FASTEST of several batches rather than the
+  /// mean of one.
+  ///
+  /// `flutter test` runs files in parallel, so any single batch can be
+  /// preempted mid-measurement. Noise only ever ADDS time, so the minimum is
+  /// the sample least polluted by the scheduler — and it is the ratio between
+  /// two such minima that this file asserts on. Averaging instead made the
+  /// ratio swing between 26x and 92x run to run, and occasionally dip under
+  /// the threshold with nothing about the rendering code having changed.
+  double timeMicros(
+    void Function() body, {
+    int runs = iterations,
+    int batches = 5,
+  }) {
     // Warm up first so JIT and lazy allocation are not counted.
     for (var i = 0; i < 5; i++) {
       body();
     }
 
-    final stopwatch = Stopwatch()..start();
-    for (var i = 0; i < runs; i++) {
-      body();
+    var best = double.infinity;
+    for (var batch = 0; batch < batches; batch++) {
+      final stopwatch = Stopwatch()..start();
+      for (var i = 0; i < runs; i++) {
+        body();
+      }
+      stopwatch.stop();
+      best = min(best, stopwatch.elapsedMicroseconds / runs);
     }
-    stopwatch.stop();
-    return stopwatch.elapsedMicroseconds / runs;
+    return best;
   }
 
   void paintOnce(CustomPainter painter) {

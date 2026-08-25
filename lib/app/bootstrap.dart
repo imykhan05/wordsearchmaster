@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:drift_flutter/drift_flutter.dart';
+
+import '../data/local/app_database.dart';
+import '../services/settings/ui_settings_store.dart';
 import 'config/app_config.dart';
 import 'provider_observer.dart';
 
@@ -53,9 +57,24 @@ Future<void> bootstrap(
         // TODO(P20): RemoteConfigKeys carries the sane hardcoded defaults.
       });
 
+      // 5b. UI settings. Must resolve BEFORE the first frame: the very first
+      // screen needs a locale and a text direction, and both come from the
+      // stored language choice (P08).
+      var settings = InMemoryUiSettingsStore() as UiSettingsStore;
+      await _step(config, 'settings.load', () async {
+        settings = await PrefsUiSettingsStore.open();
+      });
+
       // 6. Local DB open + migration.
+      AppDatabase? database;
       await _step(config, 'localDb.openAndMigrate', () async {
-        // TODO(P08): open the Drift DB, run migrations from schema v1.
+        final opened = AppDatabase(driftDatabase(name: 'wsm'));
+        // Drift opens lazily, so this first query is what actually runs
+        // onCreate/onUpgrade/beforeOpen. Doing it here means a failed
+        // migration is logged as a bootstrap step rather than surfacing as a
+        // mysterious error on the first gameplay read.
+        await opened.ensureInstallId();
+        database = opened;
       });
 
       // 7. Content load.
@@ -77,7 +96,15 @@ Future<void> bootstrap(
           : const <ProviderObserver>[];
       runApp(
         ProviderScope(
-          overrides: [appConfigProvider.overrideWithValue(config)],
+          overrides: [
+            appConfigProvider.overrideWithValue(config),
+            uiSettingsStoreProvider.overrideWithValue(settings),
+            // Absent only if step 6 threw. The provider then opens its own
+            // handle lazily — which will likely fail the same way, but fails
+            // at the point of use instead of taking startup down with it.
+            if (database case final AppDatabase opened)
+              appDatabaseProvider.overrideWithValue(opened),
+          ],
           observers: observers,
           child: await appBuilder(),
         ),

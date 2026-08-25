@@ -1,0 +1,145 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:word_search_master/app/language/selected_language.dart';
+import 'package:word_search_master/domain/text/language.dart';
+import 'package:word_search_master/services/audio/sound_settings.dart';
+import 'package:word_search_master/services/settings/ui_settings_store.dart';
+
+/// The `shared_preferences` carve-out (CLAUDE.md → Never do).
+///
+/// These three toggles, and nothing else, are allowed outside the
+/// integrity-tagged database. The test at the bottom is the one that matters:
+/// it pins the boundary so a future prompt cannot quietly park coins here.
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('PrefsUiSettingsStore', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('defaults are sound on, haptics on, no language chosen', () async {
+      final store = await PrefsUiSettingsStore.open();
+
+      expect(store.soundEnabled, isTrue);
+      expect(store.hapticsEnabled, isTrue);
+      expect(
+        store.selectedLanguage,
+        isNull,
+        reason: 'null is what sends a first-run player to the FTUE picker',
+      );
+    });
+
+    test('values survive a reopen', () async {
+      final store = await PrefsUiSettingsStore.open();
+      await store.setSoundEnabled(false);
+      await store.setHapticsEnabled(false);
+      await store.setSelectedLanguage(Language.urdu);
+
+      final reopened = await PrefsUiSettingsStore.open();
+      expect(reopened.soundEnabled, isFalse);
+      expect(reopened.hapticsEnabled, isFalse);
+      expect(reopened.selectedLanguage, Language.urdu);
+    });
+
+    test('an unknown stored language code falls back to the picker', () async {
+      // A downgrade from a build that shipped a fourth language must not throw
+      // on startup.
+      SharedPreferences.setMockInitialValues({'ui.selected_language': 'fr'});
+      final store = await PrefsUiSettingsStore.open();
+
+      expect(store.selectedLanguage, isNull);
+    });
+
+    test('the language is stored by its ISO code', () async {
+      final store = await PrefsUiSettingsStore.open();
+      await store.setSelectedLanguage(Language.hindi);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('ui.selected_language'), 'hi');
+    });
+  });
+
+  group('providers read and write through the store', () {
+    ProviderContainer containerWith(UiSettingsStore store) {
+      final container = ProviderContainer(
+        overrides: [uiSettingsStoreProvider.overrideWithValue(store)],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('SoundEnabled starts from the stored value', () {
+      final container = containerWith(
+        InMemoryUiSettingsStore(soundEnabled: false),
+      );
+
+      expect(container.read(soundEnabledProvider), isFalse);
+    });
+
+    test('toggling sound writes back to the store', () {
+      final store = InMemoryUiSettingsStore();
+      final container = containerWith(store);
+
+      container.read(soundEnabledProvider.notifier).toggle();
+
+      expect(container.read(soundEnabledProvider), isFalse);
+      expect(store.soundEnabled, isFalse);
+    });
+
+    test('toggling haptics writes back to the store', () {
+      final store = InMemoryUiSettingsStore();
+      final container = containerWith(store);
+
+      container.read(hapticsEnabledProvider.notifier).toggle();
+
+      expect(store.hapticsEnabled, isFalse);
+    });
+
+    test('SelectedLanguage restores the stored choice', () {
+      final container = containerWith(
+        InMemoryUiSettingsStore(selectedLanguage: Language.urdu),
+      );
+
+      expect(container.read(selectedLanguageProvider), Language.urdu);
+      expect(container.read(hasChosenLanguageProvider), isTrue);
+    });
+
+    test('with nothing stored the app opens on English, unchosen', () {
+      final container = containerWith(InMemoryUiSettingsStore());
+
+      expect(container.read(selectedLanguageProvider), Language.english);
+      expect(
+        container.read(hasChosenLanguageProvider),
+        isFalse,
+        reason: 'defaulting to English is not the same as having picked it',
+      );
+    });
+
+    test('selecting a language persists it', () {
+      final store = InMemoryUiSettingsStore();
+      final container = containerWith(store);
+
+      container.read(selectedLanguageProvider.notifier).select(Language.hindi);
+
+      expect(container.read(selectedLanguageProvider), Language.hindi);
+      expect(store.selectedLanguage, Language.hindi);
+    });
+  });
+
+  test('ONLY the three UI toggles are stored here — no game data', () async {
+    // The boundary, pinned. Coins, progress and scores belong in Drift with
+    // an HMAC tag; a plain preferences file is a one-line cheat.
+    SharedPreferences.setMockInitialValues({});
+    final store = await PrefsUiSettingsStore.open();
+    await store.setSoundEnabled(false);
+    await store.setHapticsEnabled(false);
+    await store.setSelectedLanguage(Language.urdu);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getKeys(), <String>{
+      'ui.sound_enabled',
+      'ui.haptics_enabled',
+      'ui.selected_language',
+    });
+  });
+}
