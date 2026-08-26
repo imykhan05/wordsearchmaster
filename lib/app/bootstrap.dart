@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
 import '../data/local/app_database.dart';
+import '../services/audio/audio_service.dart';
 import '../services/settings/ui_settings_store.dart';
 import 'config/app_config.dart';
 import 'provider_observer.dart';
@@ -82,6 +83,18 @@ Future<void> bootstrap(
         // TODO(P10): load + cache words/levels JSON from assets/content/.
       });
 
+      // 7b. Audio preload (Ch03 juice pass). "First-play latency must be
+      // imperceptible" means the decode cost has to be paid before the
+      // first frame that could trigger a sound — unlike step 8, this stays
+      // a normal blocking step rather than deferred, because the clips are
+      // tiny, bundled assets with no network involved.
+      AudioService? audioService;
+      await _step(config, 'audio.preload', () async {
+        final service = AudioPlayersAudioService();
+        await service.preload();
+        audioService = service;
+      });
+
       // 8. Ads init — deferred, must never block the first frame.
       unawaited(
         _step(config, 'ads.init', () async {
@@ -104,6 +117,10 @@ Future<void> bootstrap(
             // at the point of use instead of taking startup down with it.
             if (database case final AppDatabase opened)
               appDatabaseProvider.overrideWithValue(opened),
+            // Absent only if step 7b threw, in which case the default
+            // NoopAudioService binding stands — silent, never a crash.
+            if (audioService case final AudioService loaded)
+              audioServiceProvider.overrideWithValue(loaded),
           ],
           observers: observers,
           child: await appBuilder(),

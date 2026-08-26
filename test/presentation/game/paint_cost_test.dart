@@ -104,11 +104,15 @@ void main() {
       );
       addTearDown(selection.dispose);
 
+      final fadeAlpha = ValueNotifier<double>(1.0);
+      addTearDown(fadeAlpha.dispose);
+
       final selectionPainter = SelectionPainter(
         selection: selection,
         geometry: geometry,
         color: const Color(0xFFE8A33D),
         borderWidth: 2.5,
+        fadeAlpha: fadeAlpha,
       );
 
       final lettersUs = timeMicros(() => paintOnce(letters));

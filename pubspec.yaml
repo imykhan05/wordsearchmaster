@@ -48,6 +48,7 @@ dependencies:
   drift_flutter: ^0.3.1
   crypto: ^3.0.7
   shared_preferences: ^2.5.5
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -84,6 +85,9 @@ flutter:
     # so a native speaker can correct them without touching Dart. P10 adds the
     # word and level packs alongside these.
     - assets/content/
+    # Ch03 SFX — synthesised tones, see tool/generate_audio_assets.py. Whole
+    # set is ~61KB, well under the 400KB budget.
+    - assets/audio/
 
   # Fonts are BUNDLED, never taken from the device: many budget Android
   # phones in PK/IN ship without a Urdu-capable font, and the result is a

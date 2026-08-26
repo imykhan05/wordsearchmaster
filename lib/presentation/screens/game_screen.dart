@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,9 @@ import '../../application/game_controller.dart';
 import '../../domain/grid/selection_resolver.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/audio/audio_service.dart';
+import '../../services/haptics/haptics_service.dart';
+import '../game/found_word_reveal.dart';
 import '../game/game_debug_panel.dart';
 import '../game/game_grid.dart';
 import '../game/grid_geometry.dart';
@@ -36,6 +41,7 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen> {
   final ParticleController _particles = ParticleController();
+  final FoundWordRevealController _reveal = FoundWordRevealController();
 
   /// The family key. Stays fixed for this screen's lifetime — advancing
   /// levels mutates `GameState.level` in place (Zeigarnik) rather than
@@ -45,34 +51,79 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   @override
   void dispose() {
     _particles.dispose();
+    _reveal.dispose();
     super.dispose();
   }
 
-  void _onSelectionReleased(SelectionState selection, GridGeometry geometry) {
+  /// The correct-word sequence (Ch03), timed against the millisecond table
+  /// rather than approximated: 0ms audio + haptic + the grid's flash/punch
+  /// reveal, all synchronous with the match itself; particles pushed out to
+  /// start at 90ms (their own 170ms lifetime then ends them at 260ms,
+  /// exactly the spec's window); the word chip's strike-through delay lives
+  /// on `_WordChip` itself, since it only needs to react to `found` flipping
+  /// true, not to anything computed here.
+  ///
+  /// Returns whether the drag matched — `GameGrid`/`GestureLayer` use this
+  /// to decide between clearing the selection immediately or fading it out.
+  bool _onSelectionReleased(SelectionState selection, GridGeometry geometry) {
     final notifier = ref.read(gameControllerProvider(_initialLevel).notifier);
     final outcome = notifier.processSelection(selection);
-    if (!outcome.isValid) return;
+    if (!outcome.isValid) return false;
 
     final state = ref.read(gameControllerProvider(_initialLevel)).value;
-    if (state == null) return;
+    if (state == null) return true;
 
     final tokens = AppTokens.of(context);
     // The just-found word is always the newest entry, so its index is the
     // last one — matches the colour a found chip renders with.
     final colorIndex =
         (state.foundWords.length - 1) % tokens.colors.foundWord.length;
+    final color = tokens.colors.foundWord[colorIndex];
+    final borderWidth =
+        AppTokens.foundWordBorderWidths[colorIndex %
+            AppTokens.foundWordBorderWidths.length];
 
-    // Burst from the middle of the word, per Ch03.
+    ref.read(audioServiceProvider).playFound(combo: state.combo);
+    ref.read(hapticsServiceProvider).wordFound();
+    _reveal.reveal(
+      cells: outcome.cells,
+      color: color,
+      borderWidth: borderWidth,
+    );
+
+    // Burst from the middle of the word, per Ch03 — delayed to 90ms so it
+    // lands inside the spec's 90–260ms window (the burst's own 170ms
+    // lifetime supplies the other end).
     final first = geometry.cellCenter(outcome.cells.first);
     final last = geometry.cellCenter(outcome.cells.last);
-    _particles.burst(
-      origin: Offset((first.dx + last.dx) / 2, (first.dy + last.dy) / 2),
-      color: tokens.colors.foundWord[colorIndex],
-      seed: outcome.matchedWord.hashCode,
-    );
+    final origin = Offset((first.dx + last.dx) / 2, (first.dy + last.dy) / 2);
+    final seed = outcome.matchedWord.hashCode;
+    final particleDelay = Motion.reduced(context, Motion.instant);
+    if (particleDelay == Duration.zero) {
+      // Reduce-motion: no async gap to schedule at all, not just a shorter
+      // one — matches every other P09 layer skipping outright rather than
+      // merely speeding up.
+      _particles.burst(origin: origin, color: color, seed: seed);
+    } else {
+      Future.delayed(particleDelay, () {
+        if (!mounted) return;
+        _particles.burst(origin: origin, color: color, seed: seed);
+      });
+    }
+
+    return true;
+  }
+
+  /// `button_tap` (Ch03) — audio + a light haptic tick, fired from every UI
+  /// button on this screen that isn't already covered by its own
+  /// choreography (pause, hint, continue on the level-complete card).
+  void _tapFeedback() {
+    ref.read(audioServiceProvider).playButtonTap();
+    ref.read(hapticsServiceProvider).buttonTap();
   }
 
   Future<void> _openPauseSheet() async {
+    _tapFeedback();
     final notifier = ref.read(gameControllerProvider(_initialLevel).notifier);
     notifier.pause();
 
@@ -100,6 +151,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     // pure function of this one settled value.
     final state = asyncState.value;
 
+    // LEVEL COMPLETE (Ch03): confetti/stars/score are the card's own
+    // TweenAnimationBuilder timeline (`level_complete_card.dart`) — this
+    // listener only owns the two side effects that timeline can't reach,
+    // firing exactly once on the phase TRANSITION into levelComplete, never
+    // on every rebuild while already there.
+    ref.listen(gameControllerProvider(_initialLevel), (previous, next) {
+      final wasComplete = previous?.value?.phase == GamePhase.levelComplete;
+      final isComplete = next.value?.phase == GamePhase.levelComplete;
+      if (!wasComplete && isComplete) {
+        ref.read(audioServiceProvider).playLevelComplete();
+        ref.read(hapticsServiceProvider).levelComplete();
+      }
+    });
+
     return Scaffold(
       // No banner ad on this screen, ever (CLAUDE.md → Never do).
       appBar: state == null ? null : _buildAppBar(context, state),
@@ -113,10 +178,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           data: (state) => _GameContent(
             state: state,
             particles: _particles,
+            foundWordReveal: _reveal,
             onSelectionReleased: _onSelectionReleased,
-            onLevelComplete: () => ref
-                .read(gameControllerProvider(_initialLevel).notifier)
-                .dismissLevelComplete(),
+            onLevelComplete: () {
+              _tapFeedback();
+              ref
+                  .read(gameControllerProvider(_initialLevel).notifier)
+                  .dismissLevelComplete();
+            },
           ),
         ),
       ),
@@ -139,6 +208,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         Center(
           child: RollingCounter(
             value: state.score,
+            // Ch03 correct-word sequence: "160ms score roll starts" — the
+            // roll waits, the number itself is already correct underneath.
+            startDelay: RollingCounter.scoreRollDelay,
             style: AppTypography.uiTextStyle(
               Language.english,
               UiRole.title,
@@ -150,9 +222,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         const SizedBox(width: AppTokens.space12),
         _HintButton(
           state: state,
-          onPressed: () => ref
-              .read(gameControllerProvider(_initialLevel).notifier)
-              .useHint(),
+          onPressed: () {
+            _tapFeedback();
+            ref.read(gameControllerProvider(_initialLevel).notifier).useHint();
+          },
         ),
         IconButton(
           tooltip: l10n.pauseButtonLabel,
@@ -200,13 +273,15 @@ class _GameContent extends ConsumerWidget {
   const _GameContent({
     required this.state,
     required this.particles,
+    required this.foundWordReveal,
     required this.onSelectionReleased,
     required this.onLevelComplete,
   });
 
   final GameState state;
   final ParticleController particles;
-  final void Function(SelectionState, GridGeometry) onSelectionReleased;
+  final FoundWordRevealController foundWordReveal;
+  final bool Function(SelectionState, GridGeometry) onSelectionReleased;
   final VoidCallback onLevelComplete;
 
   @override
@@ -233,6 +308,8 @@ class _GameContent extends ConsumerWidget {
                       hintedCell: state.hintedCell,
                       onSelectionReleased: onSelectionReleased,
                       particleController: particles,
+                      foundWordRevealController: foundWordReveal,
+                      hapticsService: ref.watch(hapticsServiceProvider),
                       showPerfOverlay: isDev,
                     ),
                     if (isDev)
@@ -287,13 +364,91 @@ class _GameContent extends ConsumerWidget {
 
 /// A target word, shown in its CONNECTED/display form — the shape the player
 /// maps onto the isolated letters in the grid (Ch04).
-class _WordChip extends StatelessWidget {
+///
+/// Stateful purely to hold the Ch03 "140–260ms strike-through draw" delay:
+/// `found` flips to true the instant `GameController` records the match, but
+/// this chip's own visual flip waits 140ms behind the grid's flash/punch and
+/// the particle burst, which read first. A `ValueNotifier` + `Future.delayed`
+/// drives that wait, not `setState` — the same reasoning as `GameGridState`'s
+/// miss-fade: this codebase reaches for a notifier over `setState` wherever
+/// there's a choice, even for widget-local state like this.
+class _WordChip extends StatefulWidget {
   const _WordChip({
     required this.word,
     required this.language,
     required this.found,
     required this.color,
     super.key,
+  });
+
+  final String word;
+  final Language language;
+  final bool found;
+  final Color color;
+
+  @override
+  State<_WordChip> createState() => _WordChipState();
+}
+
+class _WordChipState extends State<_WordChip> {
+  /// What the chip currently DISPLAYS as found — lags `widget.found` by the
+  /// reveal delay on the way in. Seeded from the current value, not always
+  /// `false`: a chip that mounts already-found (e.g. the dev debug panel's
+  /// force-complete) must show that immediately, not replay the delay.
+  late final ValueNotifier<bool> _displayFound = ValueNotifier<bool>(
+    widget.found,
+  );
+
+  Timer? _delayTimer;
+
+  @override
+  void didUpdateWidget(_WordChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.found == widget.found) return;
+
+    _delayTimer?.cancel();
+    if (!widget.found) {
+      // Un-founding only happens via restart, alongside a fresh grid — no
+      // delay is specified or wanted for that case.
+      _displayFound.value = false;
+      return;
+    }
+
+    final delay = Motion.reduced(context, Motion.quick);
+    if (delay == Duration.zero) {
+      _displayFound.value = true;
+    } else {
+      _delayTimer = Timer(delay, () => _displayFound.value = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _delayTimer?.cancel();
+    _displayFound.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _displayFound,
+      builder: (context, found, child) => _WordChipBody(
+        word: widget.word,
+        language: widget.language,
+        found: found,
+        color: widget.color,
+      ),
+    );
+  }
+}
+
+class _WordChipBody extends StatelessWidget {
+  const _WordChipBody({
+    required this.word,
+    required this.language,
+    required this.found,
+    required this.color,
   });
 
   final String word;

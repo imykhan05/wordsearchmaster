@@ -54,4 +54,95 @@ void main() {
 
     expect(find.text('50'), findsOneWidget);
   });
+
+  group('startDelay — Ch03\'s "160ms score roll starts"', () {
+    testWidgets('the roll does not move at all until startDelay elapses', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(
+          const RollingCounter(
+            value: 0,
+            startDelay: RollingCounter.scoreRollDelay,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.pumpWidget(
+        wrap(
+          const RollingCounter(
+            value: 100,
+            startDelay: RollingCounter.scoreRollDelay,
+          ),
+        ),
+      );
+      await tester.pump();
+      // Just short of the 160ms delay: still showing the OLD value, not a
+      // partial roll toward the new one.
+      await tester.pump(const Duration(milliseconds: 150));
+
+      expect(find.text('0'), findsOneWidget);
+    });
+
+    testWidgets('the roll runs its full 400ms once the delay has passed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(
+          const RollingCounter(
+            value: 0,
+            startDelay: RollingCounter.scoreRollDelay,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.pumpWidget(
+        wrap(
+          const RollingCounter(
+            value: 100,
+            startDelay: RollingCounter.scoreRollDelay,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(RollingCounter.scoreRollDelay);
+      await tester.pump(RollingCounter.duration);
+
+      expect(find.text('100'), findsOneWidget);
+    });
+
+    testWidgets('reduce-motion collapses the delay too, not just the roll', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(
+          const RollingCounter(
+            value: 0,
+            startDelay: RollingCounter.scoreRollDelay,
+          ),
+          reduceMotion: true,
+        ),
+      );
+      await tester.pump();
+
+      await tester.pumpWidget(
+        wrap(
+          const RollingCounter(
+            value: 100,
+            startDelay: RollingCounter.scoreRollDelay,
+          ),
+          reduceMotion: true,
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.text('100'),
+        findsOneWidget,
+        reason: 'every duration collapses to zero under reduce-motion (Ch03)',
+      );
+    });
+  });
 }

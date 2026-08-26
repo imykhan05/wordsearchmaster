@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/audio/audio_service.dart';
+import '../services/haptics/haptics_service.dart';
 import 'language/language_x.dart';
 import 'language/selected_language.dart';
 import 'router.dart';
@@ -17,6 +19,13 @@ class WordSearchMasterApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final language = ref.watch(selectedLanguageProvider);
+
+    // Ch03: master mute/haptics toggles must reach the audio and haptics
+    // services instantly. Watched once, here, rather than per-screen — both
+    // providers are `ref.listen`-based side-effect syncs (see their doc
+    // comments), so this just has to keep them alive for the app's life.
+    ref.watch(audioMuteSyncProvider);
+    ref.watch(hapticsEnabledSyncProvider);
 
     return MaterialApp.router(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,

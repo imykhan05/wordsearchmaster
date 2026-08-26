@@ -327,6 +327,126 @@ Drift is the SOURCE OF TRUTH. Every read path in the app resolves against
   `kv_settings` instead. `ui_settings_store_test.dart` pins that boundary by
   asserting the full key set.
 
+## Juice — audio, haptics, choreography (P09)
+
+Every millisecond below is a literal from Ch03, not a rounded-off estimate.
+Where a number happens to already be one of `Motion`'s named durations
+(`instant` 90ms, `quick` 140ms) the call site reaches for that constant
+instead of repeating the literal; where it doesn't (120ms strike, 160ms score
+roll, the reveal's own 90/60/120ms), it is pinned as its own local
+`static const Duration`, the same pattern `ParticleLayer.lifetime` set in P06.
+
+- **`AudioService`** (`services/audio/audio_service.dart`) is the interface +
+  `NoopAudioService` + `AudioPlayersAudioService` triple, same shape as
+  `ErrorReporter`. Each `AudioClip` gets its own small ROTATING POOL of
+  `AudioPlayer`s (not `AudioPool`, which has no per-play rate control) so a
+  fast player finding two words in one clip's ~100ms lifetime doesn't cut the
+  first sound off. Every player is preloaded via `setSource` at startup and
+  kept at `ReleaseMode.stop` (never the default `release`), which is what
+  makes a play call cheap — `setPlaybackRate` + `resume`, no re-fetch.
+  `PlayerMode.lowLatency` is deliberately NOT used: it silences the
+  completion/state events the rare same-slot-overlap guard depends on, and
+  disables `seek` outright.
+- **`ComboPitchLadder`** (`services/audio/combo_pitch_ladder.dart`) is a pure
+  Dart, backend-agnostic table of playback-RATE multipliers — semitone
+  offsets `[0,2,4,7,9,12]` (C D E G A C-octave) via
+  `2^(semitones/12)` — deliberately its OWN table rather than a reuse of
+  `Scoring.comboPointsPerGrapheme`, even though both are 1-based and capped
+  at 6: scoring is a cross-language normative contract (Ch08/P14); pitch is
+  presentation-only and must never be coupled to it. `AudioService.playFound`
+  is the one caller, mapping `GameState.combo` straight through.
+- **`HapticsService`** (`services/haptics/haptics_service.dart`) wraps
+  `HapticFeedback`: `selectionTick`→`selectionClick` (unchanged from P06),
+  `wordFound`→`lightImpact`, `levelComplete`→`mediumImpact`,
+  `buttonTap`→`selectionClick`. THERE IS NO wrong-selection method — Ch03's
+  "no buzz" means the absence of a call, not a method nobody happens to call.
+  Unlike `AudioService`, its real binding (`SystemHapticsService`) is the
+  PROVIDER DEFAULT, not something `bootstrap.dart` has to remember to wire
+  in — there is no vendor SDK or asset to preload, so gating it behind Noop
+  until an override lands would only risk silently-dead haptics in
+  production if that wiring were ever forgotten.
+- **Master mute / haptics toggle** are synced by `audioMuteSyncProvider` /
+  `hapticsEnabledSyncProvider`, each a `ref.listen(..., fireImmediately:
+  true)` inside a `@riverpod void` provider — a listener, not a direct call
+  beside `ref.watch`, because a provider's `build` is supposed to stay free
+  of side effects. Watched once, at the app root (`app.dart`).
+  `AudioService.setMuted` both gates future `play*` calls AND stops whatever
+  is audible right now (`Ch03: "instantly, mid-playback"`); haptics need no
+  such stop — there is no in-flight haptic to interrupt.
+- **The correct-word sequence** is orchestrated entirely from
+  `game_screen.dart`'s `_onSelectionReleased`, never from `GameController` —
+  the established P07 seam. At 0ms: audio (`playFound(combo:)`), haptic
+  (`wordFound`), and `FoundWordRevealController.reveal(...)`, all
+  synchronous with the match. Particles are pushed to start at
+  `Motion.instant` (90ms) via `Future.delayed` — skipped entirely, not just
+  shortened, when that resolves to `Duration.zero` under reduce-motion, so
+  there is no async gap to schedule at all. The word chip's own flip to
+  "found" (`_WordChip`, now stateful) waits `Motion.quick` (140ms) before
+  starting its existing 120ms strike, via a `ValueNotifier` + `Timer` — never
+  `setState`, matching the ValueNotifier-over-setState idiom the rest of the
+  gameplay UI already uses. The top-bar score roll
+  (`RollingCounter.scoreRollDelay`, 160ms) works the same way, one level
+  down inside `RollingCounter` itself: a `_target` ValueNotifier that only
+  catches up to the real `value` once the delay elapses, so the counter
+  holds at the OLD number until then rather than lying about a live score
+  it hasn't earned to show yet.
+- **`FoundWordRevealLayer`** (`presentation/game/found_word_reveal.dart`) is
+  the 0–120ms flash/punch, mirroring `ParticleLayer`'s spawn/tick/auto-stop
+  ticker shape exactly. It is PURELY a transient handoff drawn on top of the
+  grid's existing, unmodified `FoundWordsPainter` (pass 2) — pass 2 already
+  shows the word's steady capsule the instant `GameState.foundWords` grows,
+  so this layer only owns the first 120ms: fill colour eases from
+  `AppColors.foundWordFlash` to the word's assigned hue over 90ms, fill alpha
+  eases from a bright 0.9 down to pass 2's own steady 0.28 across the full
+  120ms (so the handoff at removal is invisible, not a pop), and
+  `paintCapsule` gained an optional `scale` param for the 60–120ms
+  1.0→1.12→1.0 punch (`1.0 + 0.12·sin(π·t)`, not `Motion.punch` —
+  `easeOutBack`'s asymmetric overshoot is the wrong shape for a spec that
+  peaks exactly at the window's midpoint). `foundWordFlash` is the one
+  `AppColors` field deliberately IDENTICAL between `darkColors` and
+  `lightColors` — Ch03 names it literally "white", not a themed tone.
+- **Wrong-selection is a fade, never a different reaction.** `GestureLayer`'s
+  `onReleased` now returns whether the drag matched, and — this is the
+  important part — no longer clears `selection.value` itself on a miss; it
+  only clears on a MATCH. `GameGridState` owns the miss case: a raw `Ticker`
+  ramps a `_fadeAlpha` ValueNotifier 1.0→0.0 over 180ms, which
+  `SelectionPainter` blends into the SAME selection-colour capsule that was
+  already on screen (never a new colour, shape, or a shake) before finally
+  clearing `selection.value`. A NEW drag starting mid-fade
+  (`GestureLayer.onStarted`) snaps `_fadeAlpha` back to 1.0 immediately, so
+  it can never inherit a stale, partly-transparent alpha. Reduce-motion
+  skips the ticker and clears on the spot.
+- **Level complete**: the audio/haptic pair fires once, from a
+  `ref.listen(gameControllerProvider(...))` in `GameScreen.build` that fires
+  only on the phase TRANSITION into `levelComplete` (Riverpod's own
+  `fireImmediately: false` default already rules out a spurious fire on
+  first mount). Confetti is NOT a second ticker system — `LevelCompleteCard`
+  already redraws continuously off ONE `TweenAnimationBuilder`
+  (`masterT`), so 24 confetti pieces are generated once, seeded, and
+  painted as a pure function of that same `masterT`, gone entirely (not
+  just static) under reduce-motion. "Coin fly-to-counter" is scoped to what
+  actually exists on screen: there is no persistent coin-balance HUD yet
+  (the real coin economy is P15/P16 — see `coinsEarned`'s own TODO), so the
+  coin glyph flies straight into the card's OWN coins stat line rather than
+  across a HUD this prompt has no business inventing.
+- **Everything above respects `Motion.reduced()`.** Under reduce-motion:
+  particles and confetti are skipped outright (never spawned, not just
+  shortened to instant); the reveal layer and the wrong-selection fade
+  both collapse to an immediate state change with no ticker; the word chip
+  and the score roll both skip their pre-delay AND their own animation.
+  Audio and haptics are the one exception by design — Ch03 is explicit that
+  reduce-motion removes movement, not feedback, and every `audioService`/
+  `hapticsService` call sits OUTSIDE any `Motion.reduced` branch.
+
+Environment note: `audioplayers_linux` needs GStreamer's RUNTIME plugin
+packages (`gstreamer1.0-plugins-good`/`-base`, `gstreamer1.0-pulseaudio`), not
+just the `-dev` headers the build itself needs — without them,
+`AudioPlayer.setSource` throws a native (non-Dart) exception during
+`bootstrap.dart`'s preload step on Linux desktop specifically, which no
+Dart-level `try/catch` can catch. This is a container/sandbox-only gap for
+visual verification on this platform; Android ships its own complete codec
+stack via ExoPlayer and is unaffected.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

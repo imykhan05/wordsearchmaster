@@ -11,6 +11,7 @@ import 'package:word_search_master/domain/grid/selection_resolver.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
 import 'package:word_search_master/presentation/game/grid_painter.dart';
+import 'package:word_search_master/services/haptics/haptics_service.dart';
 
 void main() {
   const gridSize = 12;
@@ -42,28 +43,46 @@ void main() {
     WidgetTester tester, {
     List<List<Cell>> foundWordCells = const [],
     Cell? hintedCell,
+    bool matchResult = true,
+    bool reduceMotion = false,
   }) async {
     final key = GlobalKey<GameGridState>();
     final stats = GridPaintStats();
     final released = <SelectionState>[];
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.dark(),
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: boxSize,
-              height: boxSize,
-              child: GameGrid(
-                key: key,
-                cells: grid.cells,
-                language: Language.english,
-                foundWordCells: foundWordCells,
-                hintedCell: hintedCell,
-                stats: stats,
-                onSelectionReleased: (state, _) => released.add(state),
+      MediaQuery(
+        data: MediaQueryData(disableAnimations: reduceMotion),
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: boxSize,
+                height: boxSize,
+                child: GameGrid(
+                  key: key,
+                  cells: grid.cells,
+                  language: Language.english,
+                  foundWordCells: foundWordCells,
+                  hintedCell: hintedCell,
+                  stats: stats,
+                  // The default NoopHapticsService is silent by design (P09)
+                  // — this file's "haptics" group intercepts the real
+                  // `HapticFeedback` platform channel, so it needs the real
+                  // service wired the same way `GameGrid`'s actual callers do.
+                  hapticsService: SystemHapticsService(),
+                  onSelectionReleased: (state, _) {
+                    released.add(state);
+                    // These tests mostly assert paint-pass isolation, not
+                    // miss/match semantics — defaulting to "always matches"
+                    // keeps the miss-fade ticker (game_grid.dart) out of
+                    // their repaint counts. The miss-fade group below flips
+                    // this to exercise that path specifically.
+                    return matchResult;
+                  },
+                ),
               ),
             ),
           ),
@@ -378,6 +397,148 @@ void main() {
         matching: find.byType(DecoratedBox),
       );
       expect(hintRing, findsNothing);
+    });
+  });
+
+  group('wrong-selection fade — "just a 180ms fade-out", nothing else', () {
+    Future<TestGesture> dragThreeCells(
+      WidgetTester tester,
+      GameGridState state,
+    ) async {
+      final gesture = await tester.startGesture(
+        globalCenterOf(tester, state, const Cell(0, 0)),
+      );
+      await tester.pump();
+      await gesture.moveTo(globalCenterOf(tester, state, const Cell(0, 1)));
+      await tester.pump();
+      await gesture.moveTo(globalCenterOf(tester, state, const Cell(0, 2)));
+      await tester.pump();
+      return gesture;
+    }
+
+    testWidgets(
+      'a miss leaves the capsule showing, at full alpha, the instant it releases',
+      (tester) async {
+        final harness = await pumpGrid(tester, matchResult: false);
+        final state = harness.key.currentState!;
+
+        final gesture = await dragThreeCells(tester, state);
+        await gesture.up();
+        await tester.pump();
+
+        expect(
+          state.selection.value.isEmpty,
+          isFalse,
+          reason: 'a miss must not clear the capsule immediately — it fades',
+        );
+        expect(state.fadeAlpha.value, 1.0);
+      },
+    );
+
+    testWidgets('the capsule is roughly half-faded at the 180ms midpoint', (
+      tester,
+    ) async {
+      final harness = await pumpGrid(tester, matchResult: false);
+      final state = harness.key.currentState!;
+
+      final gesture = await dragThreeCells(tester, state);
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+
+      expect(state.fadeAlpha.value, closeTo(0.5, 0.1));
+      expect(
+        state.selection.value.isEmpty,
+        isFalse,
+        reason: 'still fading, not cleared yet',
+      );
+    });
+
+    testWidgets(
+      'the capsule clears and the alpha resets once 180ms fully elapses',
+      (tester) async {
+        final harness = await pumpGrid(tester, matchResult: false);
+        final state = harness.key.currentState!;
+
+        final gesture = await dragThreeCells(tester, state);
+        await gesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+
+        expect(state.selection.value.isEmpty, isTrue);
+        expect(state.fadeAlpha.value, 1.0);
+      },
+    );
+
+    testWidgets(
+      'starting a new drag mid-fade snaps straight back to full alpha',
+      (tester) async {
+        final harness = await pumpGrid(tester, matchResult: false);
+        final state = harness.key.currentState!;
+
+        final gesture = await dragThreeCells(tester, state);
+        await gesture.up();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 90));
+        expect(
+          state.fadeAlpha.value,
+          lessThan(1.0),
+          reason: 'sanity check — the fade must actually be in flight here',
+        );
+
+        // A fresh drag starts before the previous miss finished fading.
+        final second = await tester.startGesture(
+          globalCenterOf(tester, state, const Cell(3, 3)),
+        );
+        await tester.pump();
+
+        expect(
+          state.fadeAlpha.value,
+          1.0,
+          reason:
+              'the new drag must render at full opacity, not inherit the '
+              'stale partially-faded alpha',
+        );
+
+        await second.up();
+        await tester.pump();
+      },
+    );
+
+    testWidgets(
+      'reduce-motion clears a miss on the spot — no fade to observe',
+      (tester) async {
+        final harness = await pumpGrid(
+          tester,
+          matchResult: false,
+          reduceMotion: true,
+        );
+        final state = harness.key.currentState!;
+
+        final gesture = await dragThreeCells(tester, state);
+        await gesture.up();
+        await tester.pump();
+
+        expect(
+          state.selection.value.isEmpty,
+          isTrue,
+          reason: 'every duration collapses to zero under reduce-motion',
+        );
+        expect(state.fadeAlpha.value, 1.0);
+      },
+    );
+
+    testWidgets('a MATCH still clears the capsule immediately, as before', (
+      tester,
+    ) async {
+      final harness = await pumpGrid(tester);
+      final state = harness.key.currentState!;
+
+      final gesture = await dragThreeCells(tester, state);
+      await gesture.up();
+      await tester.pump();
+
+      expect(state.selection.value.isEmpty, isTrue);
     });
   });
 }

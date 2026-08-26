@@ -37,6 +37,7 @@ final class AppColors {
     required this.onSurfaceFaint,
     required this.shadow,
     required this.foundWord,
+    required this.foundWordFlash,
   });
 
   /// Page ground, behind [surface].
@@ -84,6 +85,14 @@ final class AppColors {
   /// [AppTokens.foundWordBorderWidths] value (Ch03 accessibility).
   final List<Color> foundWord;
 
+  /// The 0ms colour of the correct-word reveal (`found_word_reveal.dart`),
+  /// which eases into the word's assigned [foundWord] hue over 90ms. Ch03
+  /// specifies this literally as "white" rather than a themed tone — a
+  /// punchy flash reading the same on both themes — so this is the one
+  /// [AppColors] field that is deliberately identical between [darkColors]
+  /// and [lightColors] rather than independently tuned.
+  final Color foundWordFlash;
+
   AppColors lerpTo(AppColors other, double t) {
     return AppColors(
       background: Color.lerp(background, other.background, t)!,
@@ -106,6 +115,7 @@ final class AppColors {
         for (var i = 0; i < foundWord.length; i++)
           Color.lerp(foundWord[i], other.foundWord[i], t)!,
       ],
+      foundWordFlash: Color.lerp(foundWordFlash, other.foundWordFlash, t)!,
     );
   }
 }
@@ -293,6 +303,7 @@ final class AppTokens extends ThemeExtension<AppTokens> {
       Color(0xFF7070E1), // periwinkle
       Color(0xFFAEE892), // spring green
     ],
+    foundWordFlash: Color(0xFFFFFFFF),
   );
 
   /// Light theme, kept warm rather than clinical white — the same product,
@@ -323,6 +334,7 @@ final class AppTokens extends ThemeExtension<AppTokens> {
       Color(0xFF68275D), // plum
       Color(0xFF2929C2), // indigo
     ],
+    foundWordFlash: Color(0xFFFFFFFF),
   );
 
   static const AppTokens dark = AppTokens(

@@ -223,13 +223,21 @@ final class SelectionPainter extends CustomPainter {
     required this.geometry,
     required this.color,
     required this.borderWidth,
+    required this.fadeAlpha,
     this.stats,
-  }) : super(repaint: selection);
+  }) : super(repaint: Listenable.merge([selection, fadeAlpha]));
 
   final ValueListenable<SelectionState> selection;
   final GridGeometry geometry;
   final Color color;
   final double borderWidth;
+
+  /// 1.0 for a live drag; eased down to 0.0 over the wrong-selection 180ms
+  /// fade-out (Ch03) once the drag is released without a match. The capsule
+  /// stays in this SAME colour throughout — a miss is a fade, never a
+  /// colour or shape change, which is the whole of "no punishment feedback."
+  final ValueListenable<double> fadeAlpha;
+
   final GridPaintStats? stats;
 
   @override
@@ -237,14 +245,15 @@ final class SelectionPainter extends CustomPainter {
     stats?.selection++;
 
     final cells = selection.value.cells;
-    if (cells.isEmpty) return;
+    final alpha = fadeAlpha.value;
+    if (cells.isEmpty || alpha <= 0) return;
 
     paintCapsule(
       canvas: canvas,
       geometry: geometry,
       cells: cells,
-      fill: color.withValues(alpha: 0.34),
-      border: color,
+      fill: color.withValues(alpha: 0.34 * alpha),
+      border: color.withValues(alpha: alpha),
       borderWidth: borderWidth,
     );
   }
@@ -254,7 +263,8 @@ final class SelectionPainter extends CustomPainter {
       old.geometry != geometry ||
       old.color != color ||
       old.borderWidth != borderWidth ||
-      !identical(old.selection, selection);
+      !identical(old.selection, selection) ||
+      !identical(old.fadeAlpha, fadeAlpha);
 }
 
 /// Draws a rounded capsule running THROUGH a run of cells.
@@ -269,6 +279,7 @@ void paintCapsule({
   required Color fill,
   required Color border,
   required double borderWidth,
+  double scale = 1.0,
 }) {
   final start = geometry.cellCenter(cells.first);
   final end = geometry.cellCenter(cells.last);
@@ -287,6 +298,10 @@ void paintCapsule({
   // Zero-length runs (a single cell) have no meaningful angle; atan2(0,0) is
   // 0, which draws a circle — correct.
   canvas.rotate(atan2(delta.dy, delta.dx));
+  // Applied last so it scales the capsule about its own centre — the found-
+  // word reveal's 60–120ms punch (Ch03) is the only caller that passes
+  // anything but the default.
+  if (scale != 1.0) canvas.scale(scale);
 
   canvas.drawRRect(capsule, Paint()..color = fill);
   canvas.drawRRect(

@@ -1,7 +1,7 @@
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../domain/grid/selection_resolver.dart';
+import '../../services/haptics/haptics_service.dart';
 import 'grid_geometry.dart';
 
 /// Turns raw pointer events into a selection.
@@ -24,7 +24,8 @@ class GestureLayer extends StatefulWidget {
     required this.geometry,
     required this.selection,
     required this.onReleased,
-    this.enableHaptics = true,
+    required this.hapticsService,
+    this.onStarted,
     this.child,
     super.key,
   });
@@ -34,14 +35,24 @@ class GestureLayer extends StatefulWidget {
   /// The live drag, shared with [SelectionPainter].
   final ValueNotifier<SelectionState> selection;
 
-  /// Called on pointer up with the final state, before it is cleared. The game
-  /// controller (P07) matches it against the remaining words.
-  final void Function(SelectionState state) onReleased;
+  /// Called on pointer up with the final state, BEFORE it is cleared —
+  /// returns whether it matched a word. `GameGridState` uses the return
+  /// value to decide whether to fade the capsule out (a miss) or clear it
+  /// immediately (a match); this layer only clears on a match itself, since
+  /// a miss's capsule has to stay populated for the fade to have something
+  /// to paint (Ch03).
+  final bool Function(SelectionState state) onReleased;
 
-  /// TODO(P09): replace with HapticsService so the settings master toggle
-  /// reaches this. Ch03 makes that toggle mandatory — some players dislike
-  /// haptics entirely.
-  final bool enableHaptics;
+  /// Routes every haptic through the master toggle (Ch03) — replaces the
+  /// raw `HapticFeedback.selectionClick()` this layer called directly
+  /// before P09.
+  final HapticsService hapticsService;
+
+  /// Fired at the start of a new drag, before the anchor cell is published.
+  /// `GameGridState` uses this to cancel any miss-fade still in flight from
+  /// the previous release — without it, a fresh drag started mid-fade would
+  /// inherit the fade's stale, partially-transparent alpha.
+  final VoidCallback? onStarted;
 
   final Widget? child;
 
@@ -70,6 +81,7 @@ class _GestureLayerState extends State<GestureLayer> {
   void _onDown(PointerDownEvent event) {
     if (_activePointer != null) return;
     _activePointer = event.pointer;
+    widget.onStarted?.call();
 
     final next = _resolver.begin(
       widget.geometry.toGridPoint(event.localPosition),
@@ -92,8 +104,16 @@ class _GestureLayerState extends State<GestureLayer> {
     _activePointer = null;
 
     final finished = widget.selection.value;
-    widget.selection.value = SelectionState.empty;
-    if (!finished.isEmpty) widget.onReleased(finished);
+    if (finished.isEmpty) return;
+
+    final matched = widget.onReleased(finished);
+    // A miss leaves `selection.value` populated at the finished drag —
+    // `GameGridState` owns fading it out over 180ms and clearing it once
+    // that completes. "No punishment feedback" (Ch03) means the capsule
+    // just fades in its own selection colour; nothing here reacts to a miss.
+    if (matched) {
+      widget.selection.value = SelectionState.empty;
+    }
   }
 
   void _onCancel(PointerCancelEvent event) {
@@ -109,8 +129,8 @@ class _GestureLayerState extends State<GestureLayer> {
     // One click per cell the finger newly reaches. Dragging back to un-select
     // is silent — the click marks progress, and buzzing on the way back would
     // read as an error.
-    if (widget.enableHaptics && next.cells.length > previous.cells.length) {
-      HapticFeedback.selectionClick();
+    if (next.cells.length > previous.cells.length) {
+      widget.hapticsService.selectionTick();
     }
 
     widget.selection.value = next;
