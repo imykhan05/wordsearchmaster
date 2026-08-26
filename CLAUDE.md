@@ -447,6 +447,151 @@ Dart-level `try/catch` can catch. This is a container/sandbox-only gap for
 visual verification on this platform; Android ships its own complete codec
 stack via ExoPlayer and is unaffected.
 
+## Content pipeline + validator (P10)
+
+Word content and level definitions are ASSETS, never Dart source — this is
+what lets a native-speaker review or a level-curve retune ship without a code
+change, and what lets `tool/validate_content.dart` check them independently
+of the app.
+
+- **`assets/content/words_{ur,hi,en}.json`** — 320 entries each, schema
+  `{id, lang, word, display, roman, en, category, graphemes, difficulty,
+  hint}`, spread across 12 categories (nature, animals, food, colors, family,
+  body, home, school, sports, weather, professions, numbers) with at least 24
+  words per category per language. `word` is already `ScriptNormalizer`-
+  normalized (Ch04 rules) and `graphemes` is the precomputed, validator-
+  checked `ScriptNormalizer.graphemeCount` — every word is 2–9 graphemes.
+  `difficulty` (1–5) is derived from `graphemes` alone (2–3→1, 4–5→2, 6–7→3,
+  8→4, 9→5) and is presentation-only, never fed into `Scoring`. **Both files
+  carry a `_comment` banner: REQUIRES NATIVE SPEAKER REVIEW BEFORE RELEASE**
+  — the Urdu/Hindi word lists (and their `roman` transliterations) are
+  machine-drafted, same status as the P10-adjacent ARB files.
+  - Devanagari caught a real bug during authoring: a consonant+matra pair is
+    ONE grapheme cluster, so short words like माँ/लू/दो/नौ/सौ came out at 1
+    grapheme — below the minimum. They were swapped for longer synonyms
+    (माता, गर्मी, दोनों, नवां/NINTH, सैकड़ा) rather than hand-waved, and the
+    generation script computes every `graphemes` value through the real
+    `ScriptNormalizer` rather than by hand-counting, specifically because
+    this class of mistake is easy to miss by eye.
+- **`assets/content/levels.json` has 900 entries, not 300** — one per
+  `(id 1–300, language)` pair, matching how `level_progress`/`daily_results`
+  already key completion by `(language, level)`: level 47 in Urdu and level
+  47 in Hindi are different levels. Each row is `{id, lang, seed, gridSize,
+  wordCount, categoryPool, directionTier, theme}`, generated from the Ch07
+  curve (`1-5→grid6/words4`, `6-20→grid8/words6`, `21-60→grid10/words8`,
+  `61-150→grid10/words10`, `151-300→grid12/words12` — the same table
+  `test/domain/grid/word_fixtures.dart`'s `ch07Curve` fixture already
+  encoded). The breather rule (every 7th level) only reduces `wordCount`
+  (floored at 3) — `gridSize` and `directionTier` are untouched. `seed` is a
+  Knuth multiplicative hash of `id`, and is DELIBERATELY the same across a
+  given id's 3 language rows: `GridGenerator` and `WordSelector` each draw
+  their own independent `Random(seed)`, so sharing one seed does not
+  entangle them, and it is what makes a level id alone (no extra stored
+  field) enough to describe an identical seed across languages.
+- **`WordSelector.selectForLevel`** (`lib/domain/content/word_selector.dart`)
+  is the production port of `word_fixtures.dart`'s test-only `pickCohesive`,
+  and is CLAUDE.md's own Hindi-intersection problem being fixed, not worked
+  around: it filters the language's word pool to the level's
+  `categoryPool`/`gridSize`, then grows the chosen set by preferring a
+  candidate that shares a grapheme with what's already chosen, falling back
+  to the next eligible word when none does. It returns fewer than
+  `wordCount` rather than throwing if the filtered pool is too small —
+  `validate_content.dart` is where that shortfall is a build-breaking error,
+  never a runtime one.
+- **`WordEntry` / `LevelDefinition`** (`lib/domain/models/`) are plain final
+  classes with hand-written `==`/`hashCode`/`fromJson`, NOT `@freezed` —
+  a deliberate deviation from this doc's usual "freezed for all models"
+  rule. The codebase's own majority precedent (`Cell`, `WordPlacement`,
+  `ScoreEvent`, `LevelCompletionSummary`) already reaches for a plain class
+  over freezed for a small, read-only value with no `copyWith` need
+  (`GameState` is the one exception, specifically for its heavy `copyWith`
+  surface) — these two are exactly that shape, parsed once from a bundled
+  asset and never mutated. Only `fromJson` is implemented; content flows one
+  way, asset into the app, so `toJson` would be dead code. This also avoids
+  adding `json_serializable`/`json_annotation` as new dependencies.
+- **`ContentRepository`** (`lib/data/content/content_repository.dart`) loads
+  and caches all four JSON assets ONCE, in `load()`; every other method is a
+  synchronous lookup over the parsed maps.
+  - `getLevel(id, language)` CLAMPS `id` into 1–300 rather than throwing —
+    the same defensive shape `DirectionTier.forLevel` already uses — so a
+    corrupt or out-of-range id degrades to the nearest real level instead of
+    crashing a session.
+  - `getWordsForLevel(level)` delegates straight to `WordSelector`.
+  - `getDailySeed(date, language)` is `sha256(dateString + langCode)` folded
+    into a 31-bit non-negative int via the first 4 digest bytes. `date` is
+    read through `.toUtc()` FIRST — "the same grid on three devices" only
+    holds if every device agrees on what calendar day it is, and a LOCAL
+    calendar day disagrees near midnight depending on timezone while the UTC
+    calendar day does not; every device can compute it identically with no
+    server. `content_repository_test.dart` proves this directly: the seed is
+    identical across three independently-loaded `ContentRepository`
+    instances, stable across all 24 UTC wall-clock hours of one day, and
+    changes the instant the UTC day rolls over.
+  - Wired at `bootstrap.dart` step 7 (`content.load`), eagerly — unlike
+    `progressRepository` (lazy, watched only once a game actually starts),
+    the word/level packs are needed as soon as the home/journey screen shows
+    a single level card. There is no Noop fallback binding, unlike
+    `AudioService`/`HapticsService`: a failed load leaves the
+    `@Riverpod(keepAlive: true)` provider's own body to run (and fail the
+    same way) on first watch, surfacing as that provider's error state
+    rather than a game that silently pretends it has content.
+- **`BlocklistParser`** (`lib/domain/content/blocklist_parser.dart`) is the
+  accidental-word-list line parser, moved out of
+  `data/content/blocklist_loader.dart` into pure Dart (`BlocklistLoader.parse`
+  now just delegates to it) for exactly one reason: `tool/validate_content.dart`
+  is a plain-Dart CLI run via `dart run`, and cannot resolve anything that
+  transitively imports `package:flutter` — ultimately `dart:ui`, which the
+  standalone Dart SDK does not ship. One definition, read from both the
+  Flutter-side loader and the CLI, rather than a second copy of the same four
+  lines.
+- **`tool/validate_content.dart`** runs every Ch07 content check and exits
+  non-zero on failure, wired into `.github/workflows/ci.yaml` right after the
+  `localized-strings check` step. Because everything it needs
+  (`WordEntry`/`LevelDefinition`/`WordSelector`/`GridGenerator`/
+  `ScriptNormalizer`/`BlocklistParser`) lives under `lib/domain/`, it imports
+  all of it via `package:word_search_master/domain/...` with zero Flutter
+  exposure — the same guarantee `check_domain_purity.dart` already enforces
+  for the whole directory.
+  - Schema checks: per-word (unique id, `lang` matches the file, `word`
+    already normalized, stored `graphemes` agrees with a live
+    `ScriptNormalizer` recompute, 2–9 range, known category, `difficulty`
+    matches the graphemes band, no empty display/roman/en/hint fields) and
+    pack-wide (exactly 320 entries, ≥24 per category); per-level (id 1–300,
+    no duplicate `(id, language)`, `gridSize`/`wordCount` match the Ch07
+    curve including the breather reduction, `directionTier` matches
+    `DirectionTier.forLevel`, known `categoryPool` entries, non-empty theme,
+    non-negative seed, one shared seed per id across languages, full
+    900-combination coverage); then a cross-check that every level's
+    filtered-eligible word pool (`category ∈ categoryPool` AND
+    `graphemes ≤ gridSize`) actually reaches `wordCount`, so a level
+    `WordSelector` cannot fill is caught here, not by a player.
+  - Only once the content is schema-clean does it exercise the real
+    generator, loading the real (deliberately incomplete for Urdu/Hindi —
+    see below) blocklists via `BlocklistParser` so every placement check
+    matches runtime behavior exactly: first, all 900 `(level, language)`
+    combinations on their own canonical seed; then — "generate this level
+    500 times" — 500 FRESHLY-RESEEDED generations sampled across the real
+    curve shape (a random real level's `gridSize`/`wordCount`/`categoryPool`/
+    `directionTier`, a brand new seed), rather than the intractable literal
+    reading of 500 runs × 900 combinations. `metaSeed: 20260826` makes the
+    sample itself reproducible run to run. Both passes currently complete in
+    under 4 seconds end to end.
+  - `test/tool/validate_content_test.dart` unit-tests every pure check
+    function against hand-built fixtures (including a programmatically-built,
+    schema-valid 320-entry pack, since the count checks are meaningless
+    against a small fixture), AND re-runs the full schema + 900-combination +
+    500-fuzz passes against the real shipped `assets/content/` inside
+    `flutter test` itself — so `flutter test` alone, with no separate `dart
+    run`, already proves all three P10 acceptance criteria.
+- **Blocklist status, confirmed for P10**: `blocklist_en.txt` is populated;
+  `blocklist_ur.txt`/`blocklist_hi.txt` are deliberately near-empty and
+  flagged `REQUIRES A NATIVE ... SPEAKER` — matching-is-substring-based, so a
+  wrong entry produces false-positive re-rolls, and an incomplete-but-honest
+  list beats a guessed one. `validate_content.dart` only checks that all
+  three files exist and parse; it does not require the Urdu/Hindi lists to
+  be non-empty, since that gap is real content work for a future prompt, not
+  a P10 defect.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

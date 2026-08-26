@@ -51,5 +51,8 @@ jobs:
       - name: localized-strings check
         run: dart run tool/check_localized_strings.dart
 
+      - name: content validation (schema + 900-level placement + 500x fuzz)
+        run: dart run tool/validate_content.dart
+
       - name: flutter test
         run: flutter test

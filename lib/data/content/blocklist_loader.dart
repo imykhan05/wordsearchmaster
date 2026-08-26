@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+import '../../domain/content/blocklist_parser.dart';
 import '../../domain/text/language.dart';
 
 /// Loads the per-language accidental-word blocklists from assets.
@@ -42,11 +43,8 @@ final class BlocklistLoader {
   }
 
   /// Parses the asset format: one word per line, `#` comments and blank lines
-  /// ignored. Pure and separately testable.
-  static Set<String> parse(String contents) => {
-    for (final line in contents.split('\n'))
-      if (_isEntry(line.trim())) line.trim(),
-  };
-
-  static bool _isEntry(String line) => line.isNotEmpty && !line.startsWith('#');
+  /// ignored. Delegates to [BlocklistParser], the pure-Dart definition
+  /// `tool/validate_content.dart` also imports directly — kept here too so
+  /// existing callers of `BlocklistLoader.parse` are unaffected.
+  static Set<String> parse(String contents) => BlocklistParser.parse(contents);
 }

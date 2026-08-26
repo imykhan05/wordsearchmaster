@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:drift_flutter/drift_flutter.dart';
 
+import '../data/content/content_repository.dart';
 import '../data/local/app_database.dart';
 import '../services/audio/audio_service.dart';
 import '../services/settings/ui_settings_store.dart';
@@ -78,9 +79,14 @@ Future<void> bootstrap(
         database = opened;
       });
 
-      // 7. Content load.
+      // 7. Content load — the word packs and level defs are needed as soon
+      // as the home/journey screen shows a single level card, so unlike
+      // progressRepository (lazy, watched only once a game actually starts)
+      // this is loaded eagerly here rather than left for its provider's own
+      // build to do on first watch.
+      ContentRepository? content;
       await _step(config, 'content.load', () async {
-        // TODO(P10): load + cache words/levels JSON from assets/content/.
+        content = await ContentRepository.load();
       });
 
       // 7b. Audio preload (Ch03 juice pass). "First-play latency must be
@@ -121,6 +127,14 @@ Future<void> bootstrap(
             // NoopAudioService binding stands — silent, never a crash.
             if (audioService case final AudioService loaded)
               audioServiceProvider.overrideWithValue(loaded),
+            // Absent only if step 7 threw. Unlike audio, there is no safe
+            // Noop content pack — the provider then falls back to its own
+            // default body (ContentRepository.load() again), surfacing the
+            // same failure as this provider's error state rather than a
+            // silent empty game (CLAUDE.md → never a user-visible crash, but
+            // also never a game that pretends it has content when it doesn't).
+            if (content case final ContentRepository loaded)
+              contentRepositoryProvider.overrideWith((ref) => loaded),
           ],
           observers: observers,
           child: await appBuilder(),
