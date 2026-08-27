@@ -8,16 +8,21 @@ import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 /// The `shared_preferences` carve-out (CLAUDE.md → Never do).
 ///
-/// These three toggles, and nothing else, are allowed outside the
+/// These five toggles, and nothing else, are allowed outside the
 /// integrity-tagged database. The test at the bottom is the one that matters:
 /// it pins the boundary so a future prompt cannot quietly park coins here.
+/// The two P12 additions (`urduConnectedFormIntroShown`, `loginPromptDismissed`)
+/// are UI "have I shown this" flags, the same class as `selectedLanguage` —
+/// see `UiSettingsStore`'s own doc for why they belong here rather than in
+/// `kv_settings`.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('PrefsUiSettingsStore', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
-    test('defaults are sound on, haptics on, no language chosen', () async {
+    test('defaults are sound on, haptics on, no language chosen, both P12 '
+        'one-time flags unshown', () async {
       final store = await PrefsUiSettingsStore.open();
 
       expect(store.soundEnabled, isTrue);
@@ -27,6 +32,8 @@ void main() {
         isNull,
         reason: 'null is what sends a first-run player to the FTUE picker',
       );
+      expect(store.urduConnectedFormIntroShown, isFalse);
+      expect(store.loginPromptDismissed, isFalse);
     });
 
     test('values survive a reopen', () async {
@@ -34,11 +41,15 @@ void main() {
       await store.setSoundEnabled(false);
       await store.setHapticsEnabled(false);
       await store.setSelectedLanguage(Language.urdu);
+      await store.setUrduConnectedFormIntroShown(true);
+      await store.setLoginPromptDismissed(true);
 
       final reopened = await PrefsUiSettingsStore.open();
       expect(reopened.soundEnabled, isFalse);
       expect(reopened.hapticsEnabled, isFalse);
       expect(reopened.selectedLanguage, Language.urdu);
+      expect(reopened.urduConnectedFormIntroShown, isTrue);
+      expect(reopened.loginPromptDismissed, isTrue);
     });
 
     test('an unknown stored language code falls back to the picker', () async {
@@ -126,7 +137,7 @@ void main() {
     });
   });
 
-  test('ONLY the three UI toggles are stored here — no game data', () async {
+  test('ONLY the five UI toggles are stored here — no game data', () async {
     // The boundary, pinned. Coins, progress and scores belong in Drift with
     // an HMAC tag; a plain preferences file is a one-line cheat.
     SharedPreferences.setMockInitialValues({});
@@ -134,12 +145,16 @@ void main() {
     await store.setSoundEnabled(false);
     await store.setHapticsEnabled(false);
     await store.setSelectedLanguage(Language.urdu);
+    await store.setUrduConnectedFormIntroShown(true);
+    await store.setLoginPromptDismissed(true);
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys(), <String>{
       'ui.sound_enabled',
       'ui.haptics_enabled',
       'ui.selected_language',
+      'ui.urdu_connected_form_intro_shown',
+      'ui.login_prompt_dismissed',
     });
   });
 }

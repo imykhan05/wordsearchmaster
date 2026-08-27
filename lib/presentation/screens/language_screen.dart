@@ -5,17 +5,25 @@ import 'package:go_router/go_router.dart';
 import '../../app/app_route.dart';
 import '../../app/language/selected_language.dart';
 import '../../app/theme/theme.dart';
+import '../../data/content/content_repository.dart';
+import '../../domain/models/word_entry.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../widgets/flavor_badge.dart';
 
 /// FTUE entry point (Ch02): splash lands here directly — no login, no
 /// permission dialog, no ad. Three large cards, each rendered in its own
-/// script, because the player choosing cannot yet read the others.
+/// script, because the player choosing cannot yet read the others — each
+/// card also shows three of that language's own words, from the SAME content
+/// pack the grid itself draws from (P10), rather than a second, hand-curated
+/// list this screen would own.
 ///
-/// P12 builds the full version (sample words per card, auto-advance into
-/// level 1). This is the minimum that makes language selection real, so the
-/// app-wide [Directionality] can actually be exercised.
+/// Picking a card goes STRAIGHT into level 1 (`GameRoute('1')`), never
+/// `HomeRoute`: Ch02 is explicit — "Level 1 auto-loads. No 'Play' tap
+/// required." A returning player who lands back here (there is no other
+/// route into `/language` today) gets the same fast path; nothing about
+/// re-entering level 1 loses their saved progress, since `level_progress` —
+/// not routing — is what tracks completion (P08).
 class LanguageScreen extends ConsumerWidget {
   const LanguageScreen({super.key});
 
@@ -24,6 +32,12 @@ class LanguageScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final tokens = AppTokens.of(context);
     final selected = ref.watch(selectedLanguageProvider);
+    // `.value`, not `.when`: content is a local asset load, not a network
+    // call, but this is still the FTUE's very first frame, and a card must
+    // render (endonym only) even in the split second before it resolves
+    // rather than blocking on a spinner (CLAUDE.md → never block gameplay on
+    // a network call — the same caution applies here a fortiori).
+    final content = ref.watch(contentRepositoryProvider).value;
 
     return Scaffold(
       body: SafeArea(
@@ -45,11 +59,12 @@ class LanguageScreen extends ConsumerWidget {
                   _LanguageCard(
                     language: language,
                     isSelected: language == selected,
+                    sampleWords: content?.sampleWords(language) ?? const [],
                     onTap: () {
                       ref
                           .read(selectedLanguageProvider.notifier)
                           .select(language);
-                      context.go(const HomeRoute().location);
+                      context.go(const GameRoute('1').location);
                     },
                   ),
                   const SizedBox(height: AppTokens.space12),
@@ -74,11 +89,13 @@ class _LanguageCard extends StatelessWidget {
   const _LanguageCard({
     required this.language,
     required this.isSelected,
+    required this.sampleWords,
     required this.onTap,
   });
 
   final Language language;
   final bool isSelected;
+  final List<WordEntry> sampleWords;
   final VoidCallback onTap;
 
   @override
@@ -116,14 +133,31 @@ class _LanguageCard extends StatelessWidget {
             textDirection: language.isRtl
                 ? TextDirection.rtl
                 : TextDirection.ltr,
-            child: Text(
-              language.endonym,
-              style: AppTypography.uiTextStyle(
-                language,
-                UiRole.display,
-                color: tokens.colors.onSurface,
-              ),
-              textAlign: TextAlign.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  language.endonym,
+                  style: AppTypography.uiTextStyle(
+                    language,
+                    UiRole.display,
+                    color: tokens.colors.onSurface,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                if (sampleWords.isNotEmpty) ...[
+                  const SizedBox(height: AppTokens.space8),
+                  Text(
+                    sampleWords.map((entry) => entry.display).join('  ·  '),
+                    style: AppTypography.uiTextStyle(
+                      language,
+                      UiRole.caption,
+                      color: tokens.colors.onSurfaceMuted,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
             ),
           ),
         ),

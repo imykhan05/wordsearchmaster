@@ -78,6 +78,62 @@ void main() {
     );
   });
 
+  group('Ch02/P12 downshift — read off JourneySession, never off the DB', () {
+    test('downshift: false (the default) loads the full word list', () async {
+      final state = await container.read(
+        gameControllerProvider(const JourneySession(1)).future,
+      );
+
+      expect(state.downshifted, isFalse);
+      expect(
+        state.allWords,
+        hasLength(4),
+        reason: 'Ch07: levels 1-5 = 4 words',
+      );
+    });
+
+    test('downshift: true loads one fewer word and flags GameState', () async {
+      final state = await container.read(
+        gameControllerProvider(const JourneySession(1, downshift: true)).future,
+      );
+
+      expect(state.downshifted, isTrue);
+      expect(state.allWords, hasLength(3));
+    });
+
+    test('JourneySession equality ignores downshift — same provider instance '
+        'either way, so GameDebugPanel reconstructing the plain form still '
+        'reaches it', () {
+      expect(const JourneySession(7), const JourneySession(7, downshift: true));
+      expect(
+        const JourneySession(7).hashCode,
+        const JourneySession(7, downshift: true).hashCode,
+      );
+    });
+
+    test(
+      'restart() preserves the downshift the attempt was loaded with',
+      () async {
+        await container.read(
+          gameControllerProvider(const JourneySession(2, downshift: true))
+              .future,
+        );
+        final notifier = container.read(
+          gameControllerProvider(const JourneySession(2, downshift: true))
+              .notifier,
+        );
+
+        await notifier.restart();
+        final restarted = container.read(
+          gameControllerProvider(const JourneySession(2, downshift: true)),
+        );
+
+        expect(restarted.value!.downshifted, isTrue);
+        expect(restarted.value!.foundWords, isEmpty);
+      },
+    );
+  });
+
   group('processSelection', () {
     test('a correct word is scored and added to foundWords', () async {
       final state = await container.read(

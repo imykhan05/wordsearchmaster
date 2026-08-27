@@ -27,6 +27,7 @@ library;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/progression/coin_economy.dart';
+import '../../domain/progression/dda.dart';
 
 part 'remote_config.g.dart';
 
@@ -99,6 +100,27 @@ abstract final class RemoteConfigKeys {
     max: 5000,
   );
 
+  /// Ch02/P12: seconds of no successful-or-attempted selection before the
+  /// silent, free grapheme pulse fires. See `domain/progression/dda.dart`.
+  static const ddaStuckSeconds = RemoteConfigKey(
+    'dda_stuck_seconds',
+    25,
+    min: 5,
+    max: 300,
+  );
+
+  /// Ch02/P12: seconds of idle before the free (never rewarded-ad) hint offer
+  /// appears. Always greater than [ddaStuckSeconds] in practice, but nothing
+  /// here enforces that ordering — a console typo swapping them still clamps
+  /// into a sane range and merely fires the offer before the pulse, which
+  /// degrades gracefully rather than crashing.
+  static const ddaHintOfferSeconds = RemoteConfigKey(
+    'dda_hint_offer_seconds',
+    60,
+    min: 10,
+    max: 600,
+  );
+
   /// The whole table, for the dev panel and for
   /// `remote_config_test.dart`'s "every key has a distinct wire name" check.
   static const List<RemoteConfigKey> all = [
@@ -107,6 +129,8 @@ abstract final class RemoteConfigKeys {
     levelBaseCoins,
     coinsPerStar,
     starterGrantCoins,
+    ddaStuckSeconds,
+    ddaHintOfferSeconds,
   ];
 }
 
@@ -167,5 +191,17 @@ CoinEconomy coinEconomy(Ref ref) {
     chestEveryNLevels: config.getInt(RemoteConfigKeys.chestEveryNLevels),
     starterGrantCoins: config.getInt(RemoteConfigKeys.starterGrantCoins),
     chestTable: CoinEconomy.defaultChestTable,
+  );
+}
+
+/// The DDA thresholds, assembled from the levers — the same "one place this
+/// is built" shape as [coinEconomy] above, so a Remote Config change reaches
+/// the idle timer without a code change.
+@Riverpod(keepAlive: true)
+DdaConfig ddaConfig(Ref ref) {
+  final config = ref.watch(remoteConfigProvider);
+  return DdaConfig(
+    stuckSeconds: config.getInt(RemoteConfigKeys.ddaStuckSeconds),
+    hintOfferSeconds: config.getInt(RemoteConfigKeys.ddaHintOfferSeconds),
   );
 }

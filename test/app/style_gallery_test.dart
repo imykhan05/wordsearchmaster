@@ -6,16 +6,30 @@ import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/app/router.dart';
+import 'package:word_search_master/data/content/content_repository.dart';
+import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/text/language.dart';
 
+import '../support/fake_content.dart';
 import '../support/fake_meta.dart';
+import '../support/local_db.dart';
 
 void main() {
   Future<void> pumpApp(WidgetTester tester, AppConfig config) async {
+    // Since P12, picking a language on `LanguageScreen` lands straight on the
+    // game route (no more `HomeRoute` stopover) — so even a gallery-only test
+    // now needs the same content/database overrides `app_smoke_test.dart`
+    // uses, or `enterApp` below hangs on `ContentRepository`'s real
+    // `rootBundle` read, which never completes under `flutter_test`.
+    final content = await buildTestContentRepository();
+    final testDb = await openMemoryDatabase();
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appConfigProvider.overrideWithValue(config),
+          appDatabaseProvider.overrideWithValue(testDb.database),
+          contentRepositoryProvider.overrideWith((ref) => content),
           ...fakeMetaOverrides(),
         ],
         child: const WordSearchMasterApp(),
@@ -25,7 +39,9 @@ void main() {
   }
 
   /// The FTUE opens on language select, so anything past it is only reachable
-  /// after picking a language.
+  /// after picking a language — which lands on level 1 (P12), not
+  /// `HomeRoute`; irrelevant here since [openGallery] navigates by route
+  /// immediately afterward regardless of where it lands.
   Future<void> enterApp(WidgetTester tester, AppConfig config) async {
     await pumpApp(tester, config);
     await tester.tap(find.text(Language.english.endonym));

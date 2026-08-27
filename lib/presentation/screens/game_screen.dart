@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -10,11 +11,17 @@ import '../../app/config/app_config.dart';
 import '../../app/theme/theme.dart';
 import '../../application/game_controller.dart';
 import '../../application/progression_controller.dart';
+import '../../data/repositories/dda_repository.dart';
 import '../../domain/grid/selection_resolver.dart';
+import '../../domain/progression/dda.dart';
 import '../../domain/text/language.dart';
+import '../../domain/text/script_normalizer.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/analytics/analytics_service.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
+import '../../services/remote_config/remote_config.dart';
+import '../../services/settings/ui_settings_store.dart';
 import '../../services/time/trusted_clock.dart';
 import '../game/found_word_reveal.dart';
 import '../game/game_debug_panel.dart';
@@ -58,7 +65,29 @@ class GameScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!_isDaily) {
       final level = int.tryParse(_levelId!) ?? 1;
-      return _GameScreenBody(session: JourneySession(level));
+      // Ch02/P12: resolves whether THIS entry should downshift its word
+      // count BEFORE constructing the session — exactly the same shape as
+      // the Daily branch below resolving "today" first, and for the same
+      // reason: `GameController.build` must stay database-free (its own file
+      // header, decision 5), so the one DB read this feature needs happens
+      // here, once, per level entry — never inside the controller itself.
+      return Consumer(
+        builder: (context, ref, _) {
+          final downshiftAsync = ref.watch(journeyDownshiftProvider(level));
+          return downshiftAsync.when(
+            loading: () => const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
+            // Fail OPEN, never blocked: a broken read simply means this one
+            // attempt is not downshifted, not that the level refuses to load.
+            error: (error, _) =>
+                _GameScreenBody(session: JourneySession(level)),
+            data: (downshift) => _GameScreenBody(
+              session: JourneySession(level, downshift: downshift),
+            ),
+          );
+        },
+      );
     }
 
     return Consumer(
@@ -88,6 +117,52 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   final ParticleController _particles = ParticleController();
   final FoundWordRevealController _reveal = FoundWordRevealController();
 
+  /// Ch02/P12: the FTUE glow and the DDA stuck-pulse share this one
+  /// mechanism — see `game_grid.dart`'s [PulseController] header.
+  final PulseController _pulse = PulseController();
+
+  /// Which DDA intervention is currently offered, if any. Only
+  /// [DdaState.hintOffer] changes what's on screen (the inline banner);
+  /// [DdaState.pulse] only drives [_pulse] and never touches this.
+  final ValueNotifier<DdaState> _ddaState = ValueNotifier(DdaState.none);
+
+  /// Whether the one-time Urdu connected-form illustration has been
+  /// dismissed THIS SESSION — seeded from the persisted flag in [initState]
+  /// so a player who already saw it never sees it mount at all.
+  late final ValueNotifier<bool> _urduIntroDismissed = ValueNotifier<bool>(
+    ref.read(uiSettingsStoreProvider).urduConnectedFormIntroShown,
+  );
+
+  /// Ticks once a second while this screen is alive; see [_onIdleTick]. A
+  /// plain `Timer.periodic` rather than routing "idle seconds" through
+  /// Riverpod state — the same reasoning `GameState` itself gives for having
+  /// no live `selection` field (this file's own header, decision 2):
+  /// ticking Riverpod state every second would rebuild the top bar and word
+  /// list a second at a time for no reason, when only an occasional glow or
+  /// banner ever needs to reach the screen.
+  Timer? _idleTimer;
+
+  /// Seconds of no player activity, counted by [_idleTimer]'s own ticks
+  /// rather than a `DateTime.now()` delta — deliberately: a `Timer` fires on
+  /// simulated time under `flutter_test`'s fake clock (this codebase already
+  /// depends on that for P09's choreography delays), but a raw
+  /// `DateTime.now()` call inside the callback is NOT guaranteed to agree
+  /// with that simulated clock. Counting ticks sidesteps the question
+  /// entirely — this is a count of "how many times has the timer fired since
+  /// the last reset", nothing else.
+  int _idleSeconds = 0;
+
+  /// The last [DdaState] actually acted on, so [_tickDda] fires an
+  /// intervention (and `dda_applied`) once per TRANSITION rather than once a
+  /// second for as long as the idle period continues.
+  DdaState _lastFiredDdaState = DdaState.none;
+
+  /// The [_idleSeconds] value the next FTUE glow is due at — null means "not
+  /// yet scheduled since the last reset", which [_tickFtueGlow] fills in with
+  /// `+2` on its first look. Re-armed to `+6` after every glow, giving the
+  /// "2s then every 6s" cadence Ch02 asks for.
+  int? _nextFtueGlowAtSecond;
+
   GameSession get _session => widget.session;
 
   /// The reward for the completion currently shown on the card, or null
@@ -107,12 +182,185 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   final ValueNotifier<bool> _chestDismissed = ValueNotifier(false);
 
   @override
+  void initState() {
+    super.initState();
+    _idleTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _onIdleTick();
+    });
+  }
+
+  @override
   void dispose() {
+    _idleTimer?.cancel();
     _particles.dispose();
     _reveal.dispose();
+    _pulse.dispose();
+    _ddaState.dispose();
+    _urduIntroDismissed.dispose();
     _reward.dispose();
     _chestDismissed.dispose();
     super.dispose();
+  }
+
+  /// Any player action that should postpone the FTUE glow and the DDA
+  /// thresholds — a released drag (matched or not), a hint accepted, or the
+  /// screen becoming playable again after a pause/restart/level-advance.
+  void _resetIdleClock() {
+    _idleSeconds = 0;
+    _nextFtueGlowAtSecond = null;
+    _lastFiredDdaState = DdaState.none;
+    _ddaState.value = DdaState.none;
+    _pulse.clear();
+  }
+
+  void _onIdleTick() {
+    if (!mounted) return;
+    _idleSeconds++;
+    final state = ref.read(gameControllerProvider(_session)).value;
+    if (state == null || state.phase != GamePhase.playing) return;
+
+    // Ch02: the FTUE glow is level 1's own onboarding moment and OWNS the
+    // idle clock while it is live — DDA's broader 25s/60s thresholds would
+    // otherwise race the exact same clock during the exact window FTUE
+    // already covers. Once the first word is found (or the player is past
+    // level 1), DDA takes over as normal.
+    if (state.level == 1 &&
+        state.foundWords.isEmpty &&
+        state.session is JourneySession) {
+      _tickFtueGlow(state);
+      return;
+    }
+
+    _tickDda(state);
+  }
+
+  /// Ch02 FTUE: "At 2s of inactivity, softly glow the first letter of one
+  /// target word. Repeat every 6s until the first word is found." Always the
+  /// SAME word (`allWords.first`) every cycle, unlike DDA's pulse below,
+  /// which is deliberately random — the FTUE moment is teaching the player
+  /// to find ONE thing, not sampling the board.
+  void _tickFtueGlow(GameState state) {
+    _nextFtueGlowAtSecond ??= 2;
+    if (_idleSeconds < _nextFtueGlowAtSecond!) return;
+
+    final words = state.allWords;
+    final target = words.isEmpty ? null : words.first;
+    final cell = target == null ? null : state.grid.placements[target]?.first;
+    if (cell != null) _pulse.pulse(cell);
+    _nextFtueGlowAtSecond = _idleSeconds + 6;
+  }
+
+  /// Ch02 DDA: 25s idle → silent pulse on a RANDOM remaining word; 60s idle →
+  /// offer a free hint. [DdaEngine.stateFor] is pure — this method's only job
+  /// is noticing the TRANSITION into a new state (so an intervention and its
+  /// `dda_applied` event fire once, not once a second) and translating it
+  /// into the pulse / banner.
+  void _tickDda(GameState state) {
+    final config = ref.read(ddaConfigProvider);
+    final next = DdaEngine.stateFor(
+      idleFor: Duration(seconds: _idleSeconds),
+      config: config,
+    );
+    if (next == _lastFiredDdaState) return;
+    _lastFiredDdaState = next;
+
+    final analytics = ref.read(analyticsServiceProvider);
+    switch (next) {
+      case DdaState.none:
+        break;
+      case DdaState.pulse:
+        final remaining = state.remainingWords;
+        if (remaining.isNotEmpty) {
+          final word = remaining[Random().nextInt(remaining.length)];
+          final cell = state.grid.placements[word]?.first;
+          if (cell != null) _pulse.pulse(cell);
+        }
+        analytics.ddaApplied(
+          type: 'pulse',
+          language: state.language.code,
+          level: state.level,
+        );
+      case DdaState.hintOffer:
+        analytics.ddaApplied(
+          type: 'hint_offer',
+          language: state.language.code,
+          level: state.level,
+        );
+    }
+    _ddaState.value = next;
+  }
+
+  /// Ch02: "two consecutive abandons of the same level" — recorded when the
+  /// player explicitly leaves a JOURNEY level mid-play (the back button, or
+  /// "Home" from the pause sheet) rather than finishing it. There is no
+  /// reliable, testable signal for "the app was backgrounded" within this
+  /// prompt's scope, so that case is deliberately not covered — see
+  /// `domain/progression/dda.dart`'s `DdaAbandonRules` header.
+  ///
+  /// `ref.read` happens before the only `await` in this call chain (the
+  /// `.then` continuation captures a plain `DdaRepository`, not `ref`) — this
+  /// widget is about to navigate away and may be disposed before the write
+  /// lands, so re-reading `ref` after that point would race disposal, the
+  /// same hazard `ProgressionController`'s own header warns about.
+  void _recordAbandonIfNeeded() {
+    if (_session is! JourneySession) return;
+    final state = ref.read(gameControllerProvider(_session)).value;
+    if (state == null || state.phase == GamePhase.levelComplete) return;
+
+    final language = state.language;
+    final level = state.level;
+    unawaited(
+      ref
+          .read(ddaRepositoryProvider.future)
+          .then((repo) => repo.recordAbandon(language, level)),
+    );
+  }
+
+  /// The DDA hint offer's accept action. Calls [GameController.useHint]
+  /// DIRECTLY rather than `ProgressionController.tryBuyHint` — Ch02 is
+  /// explicit this hint is free, never a rewarded ad, so it must not touch
+  /// the coin ledger the paid hint button spends from.
+  void _acceptFreeHint() {
+    _tapFeedback();
+    ref.read(gameControllerProvider(_session).notifier).useHint();
+    _resetIdleClock();
+  }
+
+  void _dismissHintOffer() {
+    _ddaState.value = DdaState.none;
+    _resetIdleClock();
+  }
+
+  void _dismissUrduIntro() {
+    _urduIntroDismissed.value = true;
+    unawaited(
+      ref.read(uiSettingsStoreProvider).setUrduConnectedFormIntroShown(true),
+    );
+  }
+
+  /// DEV-ONLY: forces a DDA intervention without waiting on the idle timer —
+  /// wired from [GameDebugPanel]. Goes through the same code paths a real
+  /// idle period would (`_pulse`/`_ddaState`), never a stub, so the debug
+  /// panel is a faithful preview — the same rule `GameController
+  /// .debugForcePhase` already keeps for level-complete.
+  void _debugForceDda(DdaState target) {
+    final state = ref.read(gameControllerProvider(_session)).value;
+    if (state == null) return;
+
+    switch (target) {
+      case DdaState.none:
+        _resetIdleClock();
+      case DdaState.pulse:
+        final remaining = state.remainingWords;
+        if (remaining.isNotEmpty) {
+          final word = remaining[Random().nextInt(remaining.length)];
+          final cell = state.grid.placements[word]?.first;
+          if (cell != null) _pulse.pulse(cell);
+        }
+        _ddaState.value = DdaState.pulse;
+      case DdaState.hintOffer:
+        _ddaState.value = DdaState.hintOffer;
+    }
   }
 
   /// The correct-word sequence (Ch03), timed against the millisecond table
@@ -126,6 +374,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// Returns whether the drag matched — `GameGrid`/`GestureLayer` use this
   /// to decide between clearing the selection immediately or fading it out.
   bool _onSelectionReleased(SelectionState selection, GridGeometry geometry) {
+    _resetIdleClock();
     final notifier = ref.read(gameControllerProvider(_session).notifier);
     final outcome = notifier.processSelection(selection);
     if (!outcome.isValid) return false;
@@ -196,16 +445,20 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     switch (action) {
       case PauseAction.restart:
         notifier.restart();
+        _resetIdleClock();
       case PauseAction.home:
+        _recordAbandonIfNeeded();
         context.go(const HomeRoute().location);
       case PauseAction.resume:
       case null:
         notifier.resume();
+        _resetIdleClock();
     }
   }
 
   Future<void> _useHint() async {
     _tapFeedback();
+    _resetIdleClock();
     await ref.read(progressionControllerProvider.notifier).tryBuyHint(_session);
     // A denied spend leaves GameState untouched, so the hint button — which
     // renders straight off `GameState`/the coin balance — simply stays as it
@@ -262,6 +515,13 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
             chestDismissed: _chestDismissed,
             particles: _particles,
             foundWordReveal: _reveal,
+            pulseController: _pulse,
+            ddaState: _ddaState,
+            onAcceptFreeHint: _acceptFreeHint,
+            onDismissHintOffer: _dismissHintOffer,
+            urduIntroDismissed: _urduIntroDismissed,
+            onDismissUrduIntro: _dismissUrduIntro,
+            onDebugForceDda: _debugForceDda,
             onSelectionReleased: _onSelectionReleased,
             onLevelComplete: () {
               _tapFeedback();
@@ -270,6 +530,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
               ref
                   .read(gameControllerProvider(_session).notifier)
                   .dismissLevelComplete();
+              _resetIdleClock();
             },
           ),
         ),
@@ -286,7 +547,10 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
 
     return AppBar(
       leading: BackButton(
-        onPressed: () => context.go(const HomeRoute().location),
+        onPressed: () {
+          _recordAbandonIfNeeded();
+          context.go(const HomeRoute().location);
+        },
       ),
       title: Text(
         state.isDaily ? l10n.navDaily : l10n.gameLevel('${state.level}'),
@@ -357,6 +621,13 @@ class _GameContent extends ConsumerWidget {
     required this.chestDismissed,
     required this.particles,
     required this.foundWordReveal,
+    required this.pulseController,
+    required this.ddaState,
+    required this.onAcceptFreeHint,
+    required this.onDismissHintOffer,
+    required this.urduIntroDismissed,
+    required this.onDismissUrduIntro,
+    required this.onDebugForceDda,
     required this.onSelectionReleased,
     required this.onLevelComplete,
   });
@@ -375,6 +646,24 @@ class _GameContent extends ConsumerWidget {
   final ValueNotifier<bool> chestDismissed;
   final ParticleController particles;
   final FoundWordRevealController foundWordReveal;
+
+  /// Ch02/P12: drives the FTUE glow / DDA stuck-pulse on the grid.
+  final PulseController pulseController;
+
+  /// Ch02/P12: whether the free-hint offer banner is currently shown.
+  final ValueListenable<DdaState> ddaState;
+  final VoidCallback onAcceptFreeHint;
+  final VoidCallback onDismissHintOffer;
+
+  /// Ch02/P12: whether the one-time Urdu connected-form illustration has
+  /// been dismissed (so it renders at most once, ever).
+  final ValueListenable<bool> urduIntroDismissed;
+  final VoidCallback onDismissUrduIntro;
+
+  /// DEV-ONLY: forces [GameDebugPanel]'s DDA buttons through the real code
+  /// paths. Null-safe to call — see `GameDebugPanel`'s own dev-only gating.
+  final void Function(DdaState) onDebugForceDda;
+
   final bool Function(SelectionState, GridGeometry) onSelectionReleased;
   final VoidCallback onLevelComplete;
 
@@ -387,6 +676,31 @@ class _GameContent extends ConsumerWidget {
       children: [
         Column(
           children: [
+            ValueListenableBuilder<bool>(
+              valueListenable: urduIntroDismissed,
+              builder: (context, dismissed, child) {
+                final show =
+                    !dismissed &&
+                    state.language == Language.urdu &&
+                    state.level == 1 &&
+                    state.session is JourneySession;
+                if (!show) return const SizedBox.shrink();
+                return _UrduConnectedFormIntro(
+                  word: state.allWords.isEmpty ? '' : state.allWords.first,
+                  onDismiss: onDismissUrduIntro,
+                );
+              },
+            ),
+            ValueListenableBuilder<DdaState>(
+              valueListenable: ddaState,
+              builder: (context, dda, child) {
+                if (dda != DdaState.hintOffer) return const SizedBox.shrink();
+                return _DdaHintOfferBanner(
+                  onAccept: onAcceptFreeHint,
+                  onDismiss: onDismissHintOffer,
+                );
+              },
+            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(AppTokens.space16),
@@ -400,6 +714,7 @@ class _GameContent extends ConsumerWidget {
                           state.grid.placements[word]!,
                       ],
                       hintedCell: state.hintedCell,
+                      pulseController: pulseController,
                       onSelectionReleased: onSelectionReleased,
                       particleController: particles,
                       foundWordRevealController: foundWordReveal,
@@ -410,7 +725,10 @@ class _GameContent extends ConsumerWidget {
                       Positioned(
                         right: AppTokens.space8,
                         bottom: AppTokens.space8,
-                        child: GameDebugPanel(level: state.level),
+                        child: GameDebugPanel(
+                          level: state.level,
+                          onForceDda: onDebugForceDda,
+                        ),
                       ),
                   ],
                 ),
@@ -636,6 +954,165 @@ class _WordChipBody extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The Ch02 60s DDA offer: "a soft inline prompt", never a dialog — the
+/// grid stays fully visible and playable underneath it (CLAUDE.md → never
+/// block gameplay on anything, including the game's own systems). Copy is
+/// deliberately neutral: no mention of being stuck, of difficulty, or of the
+/// game doing anything different — see `dda.dart`'s [DdaState] doc and
+/// CLAUDE.md's "never surface any message implying the game was made
+/// easier".
+class _DdaHintOfferBanner extends StatelessWidget {
+  const _DdaHintOfferBanner({required this.onAccept, required this.onDismiss});
+
+  final VoidCallback onAccept;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppTokens.space16,
+        AppTokens.space8,
+        AppTokens.space16,
+        0,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.space16,
+        vertical: AppTokens.space8,
+      ),
+      decoration: BoxDecoration(
+        color: tokens.elevation1.surface,
+        borderRadius: AppTokens.borderRadius16,
+        border: Border.all(color: tokens.colors.outlineSoft),
+        boxShadow: tokens.elevation1.shadows,
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.lightbulb_outline, color: tokens.colors.info),
+          const SizedBox(width: AppTokens.space12),
+          Expanded(child: Text(l10n.ddaHintOfferMessage)),
+          TextButton(onPressed: onAccept, child: Text(l10n.ddaHintOfferAccept)),
+          IconButton(
+            tooltip: l10n.ddaHintOfferDismiss,
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Ch02 FTUE: "For Urdu only, on the very first level, show a one-time
+/// inline illustration mapping the connected word form to its isolated
+/// letters, with an arrow. Once. Never again." [word] renders as a whole
+/// (its own font shaping joins the letters, exactly as the word chip below
+/// the grid already shows it); the row underneath re-splits it through
+/// [ScriptNormalizer.graphemes] — the SAME call `GridGenerator` used to place
+/// it — so each letter renders alone, in the isolated presentation form the
+/// grid itself shows.
+class _UrduConnectedFormIntro extends StatelessWidget {
+  const _UrduConnectedFormIntro({required this.word, required this.onDismiss});
+
+  final String word;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
+    final letters = word.isEmpty
+        ? const <String>[]
+        : ScriptNormalizer.graphemes(word, Language.urdu);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppTokens.space16,
+        AppTokens.space8,
+        AppTokens.space16,
+        0,
+      ),
+      padding: const EdgeInsets.all(AppTokens.space16),
+      decoration: BoxDecoration(
+        color: tokens.elevation1.surface,
+        borderRadius: AppTokens.borderRadius16,
+        border: Border.all(color: tokens.colors.outline),
+        boxShadow: tokens.elevation1.shadows,
+      ),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.urduLetterFormIntro,
+              textAlign: TextAlign.center,
+              style: AppTypography.uiTextStyle(
+                Language.urdu,
+                UiRole.body,
+                color: tokens.colors.onSurface,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space12),
+            Text(
+              word,
+              textAlign: TextAlign.center,
+              style: AppTypography.uiTextStyle(
+                Language.urdu,
+                UiRole.title,
+                color: tokens.colors.onSurface,
+              ),
+            ),
+            const SizedBox(height: AppTokens.space8),
+            Icon(
+              Icons.arrow_downward_rounded,
+              color: tokens.colors.onSurfaceMuted,
+            ),
+            const SizedBox(height: AppTokens.space8),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: AppTokens.space8,
+              runSpacing: AppTokens.space8,
+              children: [
+                for (final letter in letters)
+                  Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: tokens.colors.surfaceElevated,
+                      borderRadius: AppTokens.borderRadius8,
+                      border: Border.all(color: tokens.colors.outline),
+                    ),
+                    child: Text(
+                      letter,
+                      style: AppTypography.gridTextStyle(
+                        Language.urdu,
+                        cellSize: 36,
+                        color: tokens.colors.onSurface,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppTokens.space12),
+            Align(
+              alignment: Alignment.center,
+              child: TextButton(
+                onPressed: onDismiss,
+                child: Text(l10n.gotItButtonLabel),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

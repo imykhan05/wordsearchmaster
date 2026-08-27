@@ -37,6 +37,7 @@ class GameGrid extends StatefulWidget {
     required this.foundWordCells,
     required this.onSelectionReleased,
     this.hintedCell,
+    this.pulseController,
     this.particleController,
     this.foundWordRevealController,
     this.hapticsService = const NoopHapticsService(),
@@ -61,6 +62,14 @@ class GameGrid extends StatefulWidget {
   /// hint sits on screen, which is exactly the per-frame cost P06 built this
   /// three-pass split to avoid paying outside the live selection.
   final Cell? hintedCell;
+
+  /// Drives the FTUE/DDA "look here" pulse (Ch02/P12) — a silent, free,
+  /// NON-CONSUMING nudge, deliberately separate from [hintedCell]: it must
+  /// never append a `HintUsed` event or cost a star, so it cannot be the same
+  /// slot `GameController.useHint` writes. Null when neither the FTUE glow
+  /// nor the DDA stuck-pulse is active for this build (most levels, most of
+  /// the time).
+  final PulseController? pulseController;
 
   /// Fires on pointer-up with the finished drag and the geometry it was drawn
   /// against, and returns whether it matched a word. P07's GameController
@@ -268,6 +277,25 @@ class GameGridState extends State<GameGrid>
                   ),
                 ),
               ),
+            if (widget.pulseController != null)
+              ValueListenableBuilder<PulseSignal?>(
+                valueListenable: widget.pulseController!.signal,
+                builder: (context, signal, child) {
+                  if (signal == null) return const SizedBox.shrink();
+                  // Positioned must stay a direct Stack child — the
+                  // RepaintBoundary goes INSIDE it, matching the hint ring
+                  // below and the P07 gotcha CLAUDE.md documents.
+                  // ValueListenableBuilder itself creates no RenderObject, so
+                  // it does not break that chain.
+                  return Positioned.fromRect(
+                    rect: geometry.cellRect(signal.cell).inflate(4),
+                    child: RepaintBoundary(
+                      key: ValueKey(signal.nonce),
+                      child: _PulseHighlight(color: tokens.colors.primary),
+                    ),
+                  );
+                },
+              ),
             RepaintBoundary(
               child: CustomPaint(
                 painter: SelectionPainter(
@@ -331,6 +359,95 @@ class _HintHighlight extends StatelessWidget {
                 border: Border.all(color: color, width: 2.5),
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// One "look here" nudge: which [cell] to glow, plus a [nonce] that changes
+/// on every call to [PulseController.pulse] even when the cell is the same —
+/// see that class's doc for why identity, not just equality, has to change.
+final class PulseSignal {
+  const PulseSignal({required this.cell, required this.nonce});
+
+  final Cell cell;
+  final int nonce;
+}
+
+/// Drives [GameGrid.pulseController] — the FTUE glow (Ch02: "softly glow the
+/// first letter of one target word", repeated every 6s) and the DDA stuck-
+/// pulse (Ch02: 25s idle → "pulse the first grapheme of a random remaining
+/// word") share this one mechanism, since both are "make one cell glow for a
+/// moment" and differ only in WHICH cell and WHEN — decisions that belong to
+/// the idle timer in `game_screen.dart`, not to the grid.
+///
+/// Deliberately NOT `GameState`: see `domain/progression/dda.dart`'s library
+/// header for why this stays outside Riverpod state and outside the ordered
+/// `events` log entirely — it is silent, free, and must never read back as a
+/// hint.
+final class PulseController {
+  final ValueNotifier<PulseSignal?> _signal = ValueNotifier(null);
+
+  ValueListenable<PulseSignal?> get signal => _signal;
+
+  int _nonce = 0;
+
+  /// Glows [cell]. A fresh [PulseSignal.nonce] every call, even for the SAME
+  /// cell twice in a row — `ValueNotifier` only notifies on inequality, and
+  /// without a changing nonce the FTUE glow's 6s repeat on the same first
+  /// word would silently stop re-triggering after its first play.
+  void pulse(Cell cell) {
+    _signal.value = PulseSignal(cell: cell, nonce: _nonce++);
+  }
+
+  void clear() => _signal.value = null;
+
+  void dispose() => _signal.dispose();
+}
+
+/// The pulse's own visual: a soft, low-alpha glow — deliberately NOT
+/// [_HintHighlight]'s outlined ring, so a player can never mistake a free,
+/// silent nudge for the ring a spent hint draws.
+///
+/// One-shot fade in/out under normal motion; a static (not merely
+/// instantaneous) translucent disc under reduce-motion, checked directly via
+/// [MediaQuery.disableAnimationsOf] rather than [Motion.reduced] — a
+/// collapsed-to-zero animation duration would land this widget on its FINAL
+/// frame (faded back OUT, alpha 0), which would make the nudge invisible to
+/// exactly the reduce-motion players Ch03 says still need the feedback.
+class _PulseHighlight extends StatelessWidget {
+  const _PulseHighlight({required this.color});
+
+  final Color color;
+
+  static const Duration _pulseDuration = Duration(milliseconds: 900);
+  static const double _peakAlpha = 0.55;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: _peakAlpha * 0.7),
+        ),
+      );
+    }
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: _pulseDuration,
+      curve: Curves.easeInOut,
+      builder: (context, t, child) {
+        // Fades in over the first half, out over the second — a single
+        // breath, not a loop; a fresh nonce is what replays it.
+        final wave = (t < 0.5 ? t * 2 : (1 - t) * 2).clamp(0.0, 1.0);
+        return Opacity(
+          opacity: _peakAlpha * wave,
+          child: DecoratedBox(
+            decoration: BoxDecoration(shape: BoxShape.circle, color: color),
           ),
         );
       },

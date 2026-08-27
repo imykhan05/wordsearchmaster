@@ -198,5 +198,45 @@
     "placeholders": {
       "cost": { "type": "int", "example": "50" }
     }
+  },
+
+  "ddaHintOfferMessage": "Want a hint?",
+  "@ddaHintOfferMessage": {
+    "description": "Ch02/P12 DDA: neutral copy on the soft inline banner offered after 60s of idle. Deliberately says nothing about being stuck or about difficulty — CLAUDE.md forbids implying the game was made easier."
+  },
+
+  "ddaHintOfferAccept": "Show hint",
+  "@ddaHintOfferAccept": {
+    "description": "Button on the DDA hint-offer banner. Accepting reveals a FREE hint — never a rewarded ad."
+  },
+
+  "ddaHintOfferDismiss": "Not now",
+  "@ddaHintOfferDismiss": {
+    "description": "Tooltip on the DDA hint-offer banner's close button."
+  },
+
+  "urduLetterFormIntro": "In the grid, each letter stands alone",
+  "@urduLetterFormIntro": {
+    "description": "Ch02 FTUE: caption on the one-time, Urdu-only, level-1-only illustration mapping the connected word form to its isolated grid letters."
+  },
+
+  "gotItButtonLabel": "Got it",
+  "@gotItButtonLabel": {
+    "description": "Dismiss button on the one-time Urdu connected-form illustration."
+  },
+
+  "saveProgressPromptMessage": "Sign in to save your progress",
+  "@saveProgressPromptMessage": {
+    "description": "Ch02: the post-level-8 login offer, framed as saving progress rather than as an account requirement."
+  },
+
+  "saveProgressPromptAction": "Sign in",
+  "@saveProgressPromptAction": {
+    "description": "Accept button on the save-progress banner. A stub until P13's real auth flow lands."
+  },
+
+  "saveProgressPromptDismiss": "Dismiss",
+  "@saveProgressPromptDismiss": {
+    "description": "Tooltip on the save-progress banner's close button."
   }
 }

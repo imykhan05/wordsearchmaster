@@ -6,6 +6,7 @@ import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/data/local/outbox_kind.dart';
 import 'package:word_search_master/data/repositories/coins_repository.dart';
+import 'package:word_search_master/data/repositories/dda_repository.dart';
 import 'package:word_search_master/data/repositories/progress_repository.dart';
 import 'package:word_search_master/domain/progression/coin_economy.dart';
 import 'package:word_search_master/domain/progression/day_key.dart';
@@ -87,6 +88,19 @@ void main() {
 
       final coins = await container.read(coinsRepositoryProvider.future);
       expect(await coins.watchBalance().first, reward.coinsEarned);
+    });
+
+    test('clears any pending DDA abandon streak — Ch02/P12: finishing breaks '
+        'the "never manages to finish this one" pattern', () async {
+      final (container, _) = await harness();
+      final ddaRepo = await container.read(ddaRepositoryProvider.future);
+      await ddaRepo.recordAbandon(Language.english, 1);
+      expect(await ddaRepo.abandonCount(Language.english, 1), 1);
+
+      final controller = container.read(progressionControllerProvider.notifier);
+      await controller.recordCompletion(summary(level: 1));
+
+      expect(await ddaRepo.abandonCount(Language.english, 1), 0);
     });
 
     test('a chest level pays the level coins PLUS the chest', () async {

@@ -67,5 +67,13 @@
     "placeholders": {
       "cost": { "type": "int" }
     }
-  }
+  },
+  "ddaHintOfferMessage": "اشارہ چاہیے؟",
+  "ddaHintOfferAccept": "اشارہ دکھائیں",
+  "ddaHintOfferDismiss": "ابھی نہیں",
+  "urduLetterFormIntro": "گرڈ میں ہر حرف الگ سے لکھا جاتا ہے",
+  "gotItButtonLabel": "سمجھ گیا",
+  "saveProgressPromptMessage": "اپنی پیش رفت محفوظ کرنے کے لیے سائن ان کریں",
+  "saveProgressPromptAction": "سائن ان",
+  "saveProgressPromptDismiss": "خارج کریں"
 }

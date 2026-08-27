@@ -27,6 +27,20 @@ abstract interface class UiSettingsStore {
   /// Null until the player picks one on the FTUE language screen.
   Language? get selectedLanguage;
   Future<void> setSelectedLanguage(Language value);
+
+  /// Ch02/P12: has the one-time Urdu connected-form→isolated-letters
+  /// illustration already been shown? A UI-only "have I shown this tutorial"
+  /// flag, not game state — the same carve-out as [selectedLanguage] — so it
+  /// belongs here rather than in `kv_settings`.
+  bool get urduConnectedFormIntroShown;
+  Future<void> setUrduConnectedFormIntroShown(bool value);
+
+  /// Ch02/P12: has the player dismissed the post-level-8 "save your
+  /// progress" login prompt? Framing, not an account — no auth exists yet
+  /// (P13) — so this is purely "stop showing me this", the same class of
+  /// toggle as the two above.
+  bool get loginPromptDismissed;
+  Future<void> setLoginPromptDismissed(bool value);
 }
 
 /// Defaults only, forgotten on restart. The binding in tests.
@@ -35,6 +49,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.soundEnabled = true,
     this.hapticsEnabled = true,
     this.selectedLanguage,
+    this.urduConnectedFormIntroShown = false,
+    this.loginPromptDismissed = false,
   });
 
   @override
@@ -43,6 +59,10 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool hapticsEnabled;
   @override
   Language? selectedLanguage;
+  @override
+  bool urduConnectedFormIntroShown;
+  @override
+  bool loginPromptDismissed;
 
   @override
   Future<void> setSoundEnabled(bool value) async => soundEnabled = value;
@@ -51,6 +71,12 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setSelectedLanguage(Language value) async =>
       selectedLanguage = value;
+  @override
+  Future<void> setUrduConnectedFormIntroShown(bool value) async =>
+      urduConnectedFormIntroShown = value;
+  @override
+  Future<void> setLoginPromptDismissed(bool value) async =>
+      loginPromptDismissed = value;
 }
 
 /// The real one. Values are read once at startup and cached in memory, so
@@ -61,6 +87,8 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _soundKey = 'ui.sound_enabled';
   static const String _hapticsKey = 'ui.haptics_enabled';
   static const String _languageKey = 'ui.selected_language';
+  static const String _urduIntroKey = 'ui.urdu_connected_form_intro_shown';
+  static const String _loginPromptKey = 'ui.login_prompt_dismissed';
 
   final SharedPreferences _prefs;
 
@@ -95,6 +123,21 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setSelectedLanguage(Language value) =>
       _prefs.setString(_languageKey, value.code);
+
+  @override
+  bool get urduConnectedFormIntroShown =>
+      _prefs.getBool(_urduIntroKey) ?? false;
+
+  @override
+  Future<void> setUrduConnectedFormIntroShown(bool value) =>
+      _prefs.setBool(_urduIntroKey, value);
+
+  @override
+  bool get loginPromptDismissed => _prefs.getBool(_loginPromptKey) ?? false;
+
+  @override
+  Future<void> setLoginPromptDismissed(bool value) =>
+      _prefs.setBool(_loginPromptKey, value);
 }
 
 /// Overridden in `bootstrap.dart` with the prefs-backed store.

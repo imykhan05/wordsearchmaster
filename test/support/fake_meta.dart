@@ -29,6 +29,7 @@ List<Override> fakeMetaOverrides({
   int coins = 0,
   StreakState streak = StreakState.empty,
   DailyOutcome? todaysDaily,
+  int highestCompletedLevel = 0,
 }) => [
   journeyMapProvider.overrideWith(
     (ref) => Stream.value(
@@ -49,6 +50,9 @@ List<Override> fakeMetaOverrides({
     ),
   ),
   coinBalanceProvider.overrideWith((ref) => Stream.value(coins)),
+  highestCompletedLevelProvider.overrideWith(
+    (ref) => Stream.value(highestCompletedLevel),
+  ),
   currentStreakProvider.overrideWith(
     (ref) => Stream.value(
       StreakTransition(state: streak, event: StreakEvent.unchanged),

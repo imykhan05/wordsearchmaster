@@ -821,6 +821,202 @@ skips it gets a free hint.
   with the screen stuck on its spinner. `test/support/fake_content.dart` builds
   an in-memory pack OUTSIDE the pump and injects it already-resolved.
 
+## FTUE + anti-frustration / DDA (P12)
+
+Ch02's first-60-seconds sequence and the silent difficulty assist. Both are
+explicitly SILENT systems — CLAUDE.md's own instruction for this prompt was
+"the player should never be told they exist," which shapes almost every
+decision below.
+
+### `lib/domain/progression/dda.dart` — pure Dart, no clock, no I/O
+
+- `DdaConfig` (`stuckSeconds`/`hintOfferSeconds`, RemoteConfig-backed,
+  defaults 25/60) and `DdaEngine.stateFor(idleFor:, config:)` are the whole
+  decision function: below `stuckSeconds` → `DdaState.none`; at or past it →
+  `pulse`; at or past `hintOfferSeconds` → `hintOffer`. Total, deterministic,
+  no third state past `hintOffer` no matter how long idling continues.
+- **This is NOT a field on `GameState`.** `GameState`'s getters are all
+  replays of `events` (`game_controller.dart`'s decision 1) — DDA is a
+  function of TIME PASSING WITH NO PLAYER ACTION, the one thing that shape
+  cannot express. Folding it in would mean either ticking Riverpod state
+  every second (rebuilding the top bar and word list for nothing, the exact
+  mistake P06/P07 spent two prompts avoiding) or a stale timestamp
+  `GameState` cannot keep current on its own. So the idle `Timer` and the
+  countdown it drives live entirely in `game_screen.dart`
+  (`_GameScreenBodyState`), and `dda.dart` only ever answers a pure question
+  about a `Duration` it is handed.
+- `DdaAbandonRules.shouldDownshift` (2 consecutive abandons) and
+  `DdaDownshift.dropOneWord` (drop the LAST word, never shrink `gridSize` —
+  fewer words can only make `GridGenerator` succeed more easily, never less,
+  where a smaller grid risks a word that no longer fits) are the other half:
+  the pure rule for "two consecutive abandons of the same level → next
+  attempt uses one fewer word."
+
+### The idle timer counts TICKS, not `DateTime.now()` deltas
+
+`_GameScreenBodyState._idleSeconds` is incremented once per firing of a
+`Timer.periodic(Duration(seconds: 1), ...)`, never computed as
+`DateTime.now().difference(lastActivity)`. A `Timer` fires on simulated time
+under `flutter_test`'s fake clock — this codebase already depends on that for
+every P09 choreography delay — but a raw `DateTime.now()` call made INSIDE
+the callback is not guaranteed to agree with that simulated clock. Counting
+ticks sidesteps the question entirely: it is a count of "how many times has
+the timer fired since the last reset," provable with nothing but
+`tester.pump(duration)`, which is exactly how `ftue_dda_test.dart` proves the
+15-second acceptance criterion — pump 2 real seconds, assert the glow fired,
+release the glowed word's selection, done.
+
+### FTUE glow (2s, repeat 6s) and the DDA pulse (25s) share ONE mechanism
+
+`PulseController`/`PulseSignal` (`game_grid.dart`) are a small, ValueNotifier-
+driven "glow this cell" primitive — deliberately NOT the same slot as
+`GameGrid.hintedCell`, because it must never append a `HintUsed` event or cost
+a star; it is silent and free by construction, not by a UI convention someone
+could forget. `_PulseHighlight`'s own visual (a soft filled disc) is
+deliberately different from `_HintHighlight`'s outlined ring, so a player can
+never mistake a free nudge for the ring a spent hint draws. Under
+reduce-motion it renders a STATIC translucent disc rather than collapsing to
+an instantaneous animation — `Motion.reduced`'s usual zero-duration trick
+would land a fade-in-fade-out on its own final (invisible) frame, which is
+exactly backwards for something meant to convey information.
+
+Both `_tickFtueGlow` (level 1, before the first word is found — always the
+SAME word, `allWords.first`, because the FTUE moment is teaching the player
+to find ONE thing) and `_tickDda` (25s idle, any level, a RANDOM remaining
+word — Ch02's own distinction) write into the same `PulseController`; a
+`PulseSignal` carries a `nonce` that changes on every call even for the
+identical cell, because `ValueNotifier` only notifies on inequality and
+without it the FTUE glow's 6s repeat would silently stop replaying its
+animation after the first cycle. FTUE OWNS the idle clock while it is armed
+— DDA's broader thresholds do not race it during the exact window FTUE
+already covers; once the first word is found (or the player is past level
+1), DDA takes over as normal.
+
+### The 60s free hint offer
+
+A soft inline banner (`_DdaHintOfferBanner`), never a dialog — the grid stays
+fully visible and playable underneath it. Accepting it calls
+`GameController.useHint()` DIRECTLY, never `ProgressionController.tryBuyHint`
+— Ch02 is explicit this hint is free, never a rewarded ad ("monetising
+frustration is how you get uninstalls"), so it must not touch the coin
+ledger the paid hint button spends from. Copy is deliberately neutral ("Want
+a hint?" / "Show hint" / "Not now") — no mention of being stuck, of
+difficulty, or of the game doing anything different, per CLAUDE.md's "never
+surface any message implying the game was made easier." `ftue_dda_test.dart`
+proves this both by widget-tree assertion (a banned-substring scan over
+every `Text` in the tree, explicitly excluding `GameDebugPanel`'s own "DDA"
+section header — dev-only tooling a player never sees, allowlisted from the
+l10n check for the identical reason) and is why a raw SOURCE grep for the
+same substrings was tried and abandoned: `dda.dart`'s own doc comments
+legitimately say "stuck" and "downshift" everywhere, and a comment is not a
+message shown to a player.
+
+### Two consecutive abandons → the next attempt drops a word
+
+**An ABANDON, in this build, is an explicit leave** — the AppBar back button,
+or "Home" from the pause sheet — while `GameState.phase != levelComplete`.
+There is no reliable, testable signal for "the app was backgrounded" within
+this prompt's scope (Android lifecycle callbacks, `AppLifecycleState`
+plumbing) so that case is deliberately NOT covered; resuming from the pause
+sheet, or finishing the level, is not an abandon.
+`DdaRepository` (`data/repositories/`) persists the per-`(language, level)`
+count as a tagged `kv_settings` row (`dda_abandon:{lang}:{level}`), the same
+carve-out `KvKeys.streakState` already uses — a small, sparse counter set
+with no need to be queried as one, so a table would buy nothing and cost a
+migration. `ProgressionController.recordCompletion`'s journey branch clears
+it the moment the level is actually finished, since the pattern this counts
+is specifically "never manages to finish this one."
+
+**`GameController` stays database-free — this is load-bearing, not a
+nicety.** The obvious place to check-and-consume the downshift is inside
+`GameController.build`, and that is exactly where it was first written — and
+it broke 27 existing tests, because `build` gaining ANY dependency on
+`ddaRepositoryProvider` → `appDatabaseProvider` means every bare
+`ProviderContainer` test that constructs a `JourneySession` directly (most of
+`game_controller_test.dart`) now hangs on `appDatabaseProvider`'s default
+`driftDatabase()` connection, which never resolves under `flutter_test`. The
+fix mirrors the Daily branch's own existing shape: `journeyDownshiftProvider`
+(`game_controller.dart`) is the ONE place `DdaRepository` is read, consumed
+and the `dda_applied` analytics event fired — resolved by `GameScreen`'s
+outer widget via a `Consumer`, exactly like it already resolves
+`currentDayProvider` before building a `DailySession`, BEFORE constructing
+`JourneySession(level, downshift: ...)`. `GameController.build` reads that
+flag straight off its own family key, synchronously, and never touches the
+database. `JourneySession.downshift` is deliberately EXCLUDED from `==`/
+`hashCode`: the family key names WHICH puzzle this is (the starting level),
+not how this one attempt happens to be tuned, and including it would let
+`GameDebugPanel` — which reconstructs a plain `JourneySession(widget.level)`
+to reach the mounted controller — silently talk to a different provider
+instance than the one actually on screen. `GameState.downshifted` (a real,
+freezed field) is the live truth for everything AFTER the initial load —
+`restart()` reads it off the current state rather than re-consulting the
+session, and the Zeigarnik swap's next-level generation always sets it
+`false` explicitly, since that swap advances `state.level` without
+remounting and so never passes through the `journeyDownshiftProvider` gate at
+all.
+
+### Language-select: sample words + no Play tap
+
+`LanguageScreen` now shows three of each language's own words
+(`ContentRepository.sampleWords`, first-N-in-file-order — decoration for
+onboarding, never gameplay content, so no seed is needed the way
+`getWordsForLevel` needs one) under each endonym, and picking a card routes
+straight into `GameRoute('1')`, never `HomeRoute` — Ch02: "Level 1 auto-loads.
+No 'Play' tap required." There is no other route into `/language` today, so
+this is unconditional rather than gated on "is this the first-ever pick";
+`app_smoke_test.dart` and `style_gallery_test.dart` both needed their
+`enterApp` helpers updated for this, since reaching ANY route past language
+select now touches the game screen first.
+
+### The one-time Urdu illustration
+
+`_UrduConnectedFormIntro` (`game_screen.dart`) shows once, ever, only for
+Urdu on level 1: the connected word (a plain `Text(word)` — Arabic-script
+shaping joins the letters automatically when rendered as one run, exactly as
+the word-list chip below the grid already shows it) above an arrow above the
+SAME word re-split through `ScriptNormalizer.graphemes` — the identical call
+`GridGenerator` used to place it — so each letter renders alone, in the
+isolated presentation form the grid itself shows. The "have I shown this"
+flag lives in `UiSettingsStore` (`urduConnectedFormIntroShown`), not
+`kv_settings` — a UI-only tutorial flag is exactly the shared_preferences
+carve-out CLAUDE.md already makes for `selectedLanguage`, not game state.
+
+### Post-level-8 login offer
+
+A dismissible `MetaCard` banner on the home screen (`_SaveProgressBanner`),
+gated on a new `highestCompletedLevelProvider`
+(`presentation/meta/journey_providers.dart`, the same
+`ProgressRepository.watchHighestCompletedLevel` join the journey map already
+uses). No real auth exists yet (P13), so accepting it is a stub — a
+`SnackBar` plus dismissal, the same status as P18's `doubleRewardPlaceholder`/
+`adPlaceholderLabel` ad placeholders. Its own "dismissed" flag
+(`UiSettingsStore.loginPromptDismissed`) is the same UI-toggle carve-out as
+the Urdu intro's.
+
+### Analytics — the minimal shape this prompt actually needs
+
+`services/analytics/analytics_service.dart` is the first thing written into
+that folder (previously just a `.gitkeep`): `AnalyticsService` (one method,
+`logEvent(name, params)`), `NoopAnalyticsService` as the binding on every
+flavor until Firebase Analytics lands (P19/P20, mirroring
+`error_reporter.dart`'s identical call), and a `DdaAnalytics` extension
+supplying the one typed event this prompt needs, `ddaApplied(type:,
+language:, level:)`. Deliberately NOT a typed `AnalyticsEvent` hierarchy for
+a taxonomy of one entry — that is exactly the premature abstraction
+CLAUDE.md's "Never do" section warns against; a future prompt that needs a
+second event widens the interface or adds its own extension alongside
+`DdaAnalytics` rather than this file guessing today at a shape nothing calls
+yet.
+
+### Dev toggle
+
+`GameDebugPanel` gained a `DDA` row — one `ActionChip` per `DdaState`,
+wired through `onForceDda` into `game_screen.dart`'s `_debugForceDda`, which
+drives the exact same `PulseController`/`_ddaState` the real idle timer would
+rather than a stub — the same "no faithful-preview shortcuts" discipline
+`GameController.debugForcePhase` already keeps for level-complete. This row
+is P12's own acceptance criterion 2, verbatim.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

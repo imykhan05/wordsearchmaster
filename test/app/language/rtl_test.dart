@@ -1,31 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:word_search_master/app/app.dart';
+import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/app/language/language_x.dart';
 import 'package:word_search_master/app/theme/app_typography.dart';
+import 'package:word_search_master/data/content/content_repository.dart';
+import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/text/language.dart';
 
+import '../../support/fake_content.dart';
+import '../../support/fake_meta.dart';
+import '../../support/local_db.dart';
+
 void main() {
-  /// Pumps the app and picks [language] from the FTUE cards, landing on Home.
+  /// Pumps the app, picks [language] from the FTUE cards, then navigates to
+  /// Home — this suite is about directionality/locale mirroring on a STABLE
+  /// screen, not the P12 auto-advance-into-level-1 behaviour itself (that is
+  /// `app_smoke_test.dart`'s job), so it steps past the game screen
+  /// deliberately rather than asserting anything about it.
+  ///
+  /// Content/database are injected already-resolved for the same reason
+  /// `app_smoke_test.dart` does it: since P12, picking a language always
+  /// touches the game route first (`journeyDownshiftProvider` +
+  /// `GameController`), and both providers' defaults hang under
+  /// `flutter_test` — see `fake_content.dart`/`local_db.dart`.
   ///
   /// The key is per-language on purpose: without it a second `pumpWidget` in
   /// the same test reuses the existing element (and with it the existing
   /// ProviderScope container and router), so the app would still be sitting on
   /// Home rather than back at language select.
   Future<void> pumpAndSelect(WidgetTester tester, Language language) async {
+    final content = await buildTestContentRepository();
+    final testDb = await openMemoryDatabase();
+
     await tester.pumpWidget(
       ProviderScope(
         key: ValueKey('scope-${language.code}'),
-        overrides: [appConfigProvider.overrideWithValue(AppConfig.dev())],
+        overrides: [
+          appConfigProvider.overrideWithValue(AppConfig.dev()),
+          appDatabaseProvider.overrideWithValue(testDb.database),
+          contentRepositoryProvider.overrideWith((ref) => content),
+          ...fakeMetaOverrides(),
+        ],
         child: const WordSearchMasterApp(),
       ),
     );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(language.endonym));
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(Navigator).first);
+    GoRouter.of(context).go(const HomeRoute().location);
     await tester.pumpAndSettle();
   }
 

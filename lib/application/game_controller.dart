@@ -53,6 +53,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../app/language/selected_language.dart';
 import '../data/content/content_repository.dart';
+import '../data/repositories/dda_repository.dart';
 import '../domain/grid/cell.dart';
 import '../domain/grid/grid_directions.dart';
 import '../domain/grid/grid_generator.dart';
@@ -60,9 +61,11 @@ import '../domain/grid/grid_result.dart';
 import '../domain/grid/selection_resolver.dart';
 import '../domain/models/level_definition.dart';
 import '../domain/progression/daily_puzzle.dart';
+import '../domain/progression/dda.dart';
 import '../domain/scoring/score_event.dart';
 import '../domain/scoring/scoring.dart';
 import '../domain/text/language.dart';
+import '../services/analytics/analytics_service.dart';
 import 'game_session.dart';
 
 export 'game_session.dart';
@@ -177,6 +180,13 @@ sealed class GameState with _$GameState {
     required DateTime startedAt,
     required GamePhase phase,
     required LevelCompletionSummary? completedSummary,
+
+    /// True when THIS attempt's word list was already trimmed by
+    /// [DdaAbandonRules] — two consecutive abandons of this level (Ch02/P12).
+    /// Carried on [GameState] rather than re-derived, so [restart] can honour
+    /// it without a second `DdaRepository` read/write: the decision was
+    /// already made and consumed for this attempt in [GameController.build].
+    @Default(false) bool downshifted,
   }) = _GameState;
 
   bool get isDaily => session is DailySession;
@@ -240,11 +250,24 @@ class GameController extends _$GameController {
     final language = ref.watch(selectedLanguageProvider);
     final content = await ref.watch(contentRepositoryProvider.future);
 
+    // Ch02/P12: "two consecutive abandons of the same level → next attempt
+    // uses ... one fewer word" — READ ONLY here, off the session itself, not
+    // checked against `DdaRepository` in this method. Decision 5 above (and
+    // the file header) is exactly why: this controller stays synchronous and
+    // database-free by construction, so the actual DB read+consume+analytics
+    // live in `journeyDownshiftProvider` below, resolved by `GameScreen`
+    // BEFORE it constructs the `JourneySession` this build sees — the same
+    // shape the Daily branch already uses to resolve "today" first. See
+    // `GameState.downshifted`'s own doc for why `restart` re-reads THIS
+    // value off `GameState` rather than the session a second time.
+    final downshift = session is JourneySession && session.downshift;
+
     return _loadSession(
       session: session,
       language: language,
       content: content,
       level: session.level,
+      downshift: downshift,
     );
   }
 
@@ -328,6 +351,11 @@ class GameController extends _$GameController {
 
   /// Reloads the CURRENT level from scratch and unpauses. Same seed, same
   /// grid (P04 determinism) — only the found words and score reset.
+  ///
+  /// Carries [GameState.downshifted] forward rather than re-reading
+  /// `DdaRepository`: the downshift for this attempt was already decided and
+  /// consumed in [build], so restarting it must not silently hand back the
+  /// full word list, and must not consume a second downshift either.
   Future<void> restart() async {
     final current = state.value;
     if (current == null) return;
@@ -339,6 +367,7 @@ class GameController extends _$GameController {
         language: current.language,
         content: content,
         level: current.level,
+        downshift: current.downshifted,
       ),
     );
   }
@@ -394,6 +423,7 @@ class GameController extends _$GameController {
     required Language language,
     required ContentRepository content,
     required int level,
+    bool downshift = false,
   }) {
     final definition = _definitionFor(
       session: session,
@@ -406,13 +436,18 @@ class GameController extends _$GameController {
       session: session,
       level: level,
       language: language,
-      grid: _generateGrid(definition: definition, content: content),
+      grid: _generateGrid(
+        definition: definition,
+        content: content,
+        downshift: downshift,
+      ),
       foundWords: const [],
       events: const [],
       hintedCell: null,
       startedAt: DateTime.now(),
       phase: GamePhase.playing,
       completedSummary: null,
+      downshifted: downshift,
     );
   }
 
@@ -471,6 +506,12 @@ class GameController extends _$GameController {
           startedAt: DateTime.now(),
           phase: GamePhase.levelComplete,
           completedSummary: summary,
+          // A fresh Zeigarnik-swapped board is never itself downshifted —
+          // `journeyDownshiftProvider` is only consulted when `GameScreen`
+          // mounts a level, and a swap advances `state.level` WITHOUT
+          // remounting (this file's own header), so the next level never
+          // passes through that gate.
+          downshifted: false,
         );
     }
   }
@@ -493,8 +534,12 @@ class GameController extends _$GameController {
   static GridResult _generateGrid({
     required LevelDefinition definition,
     required ContentRepository content,
+    bool downshift = false,
   }) {
-    final words = content.getWordsForLevel(definition);
+    var words = content.getWordsForLevel(definition);
+    // Ch02/P12: see `domain/progression/dda.dart`'s `DdaDownshift` header for
+    // why this drops a word rather than shrinking `gridSize`.
+    if (downshift) words = DdaDownshift.dropOneWord(words);
 
     return GridGenerator.generate(
       // The definition's own seed — the same one `validate_content.dart`
@@ -510,4 +555,33 @@ class GameController extends _$GameController {
       ),
     );
   }
+}
+
+/// Ch02/P12: whether entering [level] right now should downshift its word
+/// count — the ONLY place `DdaRepository` is read+consumed for this feature.
+///
+/// Lives OUTSIDE [GameController] on purpose (see `build`'s own comment):
+/// `GameScreen` resolves this FIRST, exactly like it already resolves
+/// [currentDayProvider] before building a [DailySession], then constructs
+/// `JourneySession(level, downshift: ...)` from the answer — so
+/// `GameController.build` only ever reads a plain bool off its own family
+/// key and never touches the database itself.
+///
+/// autoDispose (no `keepAlive`): this is consulted once per level ENTRY, not
+/// held for the life of the app — the same lifetime `journeyMapProvider` and
+/// its siblings already use for "a meta screen is transient" (their own
+/// header).
+@riverpod
+Future<bool> journeyDownshift(Ref ref, int level) async {
+  final language = ref.watch(selectedLanguageProvider);
+  final ddaRepo = await ref.watch(ddaRepositoryProvider.future);
+
+  final downshift = await ddaRepo.shouldDownshift(language, level);
+  if (downshift) {
+    await ddaRepo.consumeDownshift(language, level);
+    ref
+        .read(analyticsServiceProvider)
+        .ddaApplied(type: 'downshift', language: language.code, level: level);
+  }
+  return downshift;
 }

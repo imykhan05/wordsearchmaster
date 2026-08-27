@@ -46,6 +46,7 @@ import '../data/content/content_repository.dart';
 import '../data/repositories/coins_repository.dart';
 import '../data/repositories/collections_repository.dart';
 import '../data/repositories/daily_repository.dart';
+import '../data/repositories/dda_repository.dart';
 import '../data/repositories/progress_repository.dart';
 import '../data/repositories/streak_repository.dart';
 import '../domain/progression/coin_economy.dart';
@@ -116,6 +117,7 @@ class ProgressionController extends _$ProgressionController {
       collectionsRepositoryProvider.future,
     );
     final contentFuture = ref.read(contentRepositoryProvider.future);
+    final ddaRepoFuture = ref.read(ddaRepositoryProvider.future);
     // -------------------------------------------------------------------
 
     final today = await clock.today();
@@ -172,6 +174,12 @@ class ProgressionController extends _$ProgressionController {
           hintsUsed: summary.hintsUsed,
           events: summary.events,
         );
+
+        // Ch02/P12: finishing the level breaks whatever consecutive-abandon
+        // streak `DdaRepository` was counting for it — see
+        // `domain/progression/dda.dart`'s `DdaAbandonRules` header.
+        final ddaRepo = await ddaRepoFuture;
+        await ddaRepo.clearAbandon(summary.language, level);
 
         final coins = economy.coinsForLevel(stars: summary.stars);
         // Rolled with a fresh, unseeded Random rather than the level's own

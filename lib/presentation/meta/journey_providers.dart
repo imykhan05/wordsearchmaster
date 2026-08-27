@@ -83,6 +83,18 @@ Stream<int> coinBalance(Ref ref) async* {
   yield* coins.watchBalance();
 }
 
+/// The highest journey level finished in the selected language — Ch02/P12's
+/// "login is offered only after level 8" gate on the home screen. Reuses
+/// `ProgressRepository.watchHighestCompletedLevel` rather than re-deriving
+/// it from `journeyMap`'s node list: that state is shaped for painting 300
+/// nodes, this just needs one number.
+@riverpod
+Stream<int> highestCompletedLevel(Ref ref) async* {
+  final language = ref.watch(selectedLanguageProvider);
+  final progress = await ref.watch(progressRepositoryProvider.future);
+  yield* progress.watchHighestCompletedLevel(language);
+}
+
 /// The streak, aged forward to today.
 ///
 /// Resolves "today" through [TrustedClock] rather than `DateTime.now()`, so

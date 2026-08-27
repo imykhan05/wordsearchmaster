@@ -29,10 +29,28 @@ sealed class GameSession {
 
 /// A numbered level from the Ch07 curve.
 final class JourneySession extends GameSession {
-  const JourneySession(this.level);
+  const JourneySession(this.level, {this.downshift = false});
 
   @override
   final int level;
+
+  /// Ch02/P12: true when this ATTEMPT should generate its grid with one
+  /// fewer word — two consecutive abandons of this level, resolved and
+  /// consumed by `journeyDownshiftProvider` (`game_controller.dart`) BEFORE
+  /// `GameScreen` constructs this session, never inside `GameController`
+  /// itself. See `GameController`'s file header, decision 5: mixing a
+  /// database read into the state machine's own `build` would make the
+  /// hottest, purely-derived path in the app await I/O.
+  ///
+  /// DELIBERATELY EXCLUDED from [==]/[hashCode] — the family key names WHICH
+  /// puzzle this is (the starting level), not how this one attempt happens to
+  /// be tuned. Including it would let two callers that construct
+  /// `JourneySession(n)` with different `downshift` values silently talk to
+  /// two different provider instances for what is supposed to be the SAME
+  /// screen's controller — exactly the bug `GameDebugPanel` would hit, since
+  /// it reconstructs `JourneySession(widget.level)` at its own default to
+  /// reach the notifier for whatever session is actually mounted.
+  final bool downshift;
 
   @override
   bool operator ==(Object other) =>

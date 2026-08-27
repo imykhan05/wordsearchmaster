@@ -54,7 +54,9 @@ void main() {
   }
 
   /// The FTUE opens on language select, so reaching the rest of the app means
-  /// picking a language first.
+  /// picking a language first — which now (P12) lands straight on level 1,
+  /// not `HomeRoute`; a test that wants `HomeRoute` itself navigates there
+  /// explicitly afterward via [goTo].
   Future<void> enterApp(WidgetTester tester, AppConfig config) async {
     await pumpApp(tester, config);
     await tester.tap(find.text(Language.english.endonym));
@@ -84,11 +86,16 @@ void main() {
     }
   });
 
-  testWidgets('picking a language enters the app', (tester) async {
-    await enterApp(tester, AppConfig.dev());
+  testWidgets(
+    'picking a language enters the app straight into level 1 — Ch02: no '
+    'Play tap required',
+    (tester) async {
+      await enterApp(tester, AppConfig.dev());
 
-    expect(find.text('Home'), findsWidgets);
-  });
+      expect(find.byType(GameGrid), findsOneWidget);
+      expect(find.text('Level 1'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'the remaining stub routes still render and keep the flavor badge',

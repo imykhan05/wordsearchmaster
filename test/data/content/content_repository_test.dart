@@ -150,6 +150,38 @@ void main() {
     });
   });
 
+  group('sampleWords — Ch02/P12 language-select decoration', () {
+    test('returns up to count entries from the language pool', () async {
+      final repo = await ContentRepository.load(bundle: _bundle());
+
+      final words = repo.sampleWords(Language.english, count: 3);
+
+      expect(words, hasLength(2), reason: 'the fixture only has 2 EN words');
+      expect(words.map((e) => e.word), ['WATER', 'FIRE']);
+    });
+
+    test('defaults to 3', () async {
+      final repo = await ContentRepository.load(bundle: _bundle());
+
+      expect(repo.sampleWords(Language.hindi), hasLength(1));
+    });
+
+    test('an empty language pool returns empty, not a throw', () async {
+      final repo = await ContentRepository.load(
+        bundle: _FakeBundle({
+          'assets/content/words_en.json': jsonEncode({'words': <Object?>[]}),
+          'assets/content/words_hi.json': jsonEncode({'words': <Object?>[]}),
+          'assets/content/words_ur.json': jsonEncode({'words': <Object?>[]}),
+          'assets/content/levels.json': jsonEncode({
+            'levels': [_levelJson(id: 1, lang: 'en', seed: 1, wordCount: 0)],
+          }),
+        }),
+      );
+
+      expect(repo.sampleWords(Language.english), isEmpty);
+    });
+  });
+
   group('getDailySeed — "same grid on three devices"', () {
     test('three independently-loaded repositories agree for the same date+language', () async {
       final repoA = await ContentRepository.load(bundle: _bundle());

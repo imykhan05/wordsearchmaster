@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
+import '../../services/settings/ui_settings_store.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
 
@@ -38,6 +41,9 @@ class HomeScreen extends ConsumerWidget {
               const _StreakBanner(),
               const SizedBox(height: AppTokens.space16),
               const CoinBalanceTile(),
+              // Renders nothing (and no extra gap) until level 8 is
+              // completed and stays dismissible after that — see its own doc.
+              const _SaveProgressBanner(),
               const SizedBox(height: AppTokens.space32),
               FilledButton(
                 onPressed: () {
@@ -166,6 +172,95 @@ class _StreakBanner extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Ch02/P12: "Login is offered only after level 8, framed as 'save your
+/// progress', and is dismissible." No real auth exists yet (P13) — accepting
+/// the offer is a stub, the same status as `doubleRewardPlaceholder`/
+/// `adPlaceholderLabel`'s P18 ad placeholders, and dismisses the banner
+/// exactly as declining it does, rather than leaving a half-finished flow on
+/// screen.
+///
+/// A `ConsumerStatefulWidget` purely to hold [_dismissed] — the persisted
+/// flag it is seeded from (`UiSettingsStore.loginPromptDismissed`) is a plain
+/// synchronous field, not itself an observable Riverpod stream, so a local
+/// `ValueNotifier` is what lets dismissing it repaint just this card. Same
+/// shape as `game_screen.dart`'s `_urduIntroDismissed`.
+class _SaveProgressBanner extends ConsumerStatefulWidget {
+  const _SaveProgressBanner();
+
+  @override
+  ConsumerState<_SaveProgressBanner> createState() =>
+      _SaveProgressBannerState();
+}
+
+class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
+  late final ValueNotifier<bool> _dismissed = ValueNotifier<bool>(
+    ref.read(uiSettingsStoreProvider).loginPromptDismissed,
+  );
+
+  @override
+  void dispose() {
+    _dismissed.dispose();
+    super.dispose();
+  }
+
+  void _dismiss() {
+    _dismissed.value = true;
+    unawaited(ref.read(uiSettingsStoreProvider).setLoginPromptDismissed(true));
+  }
+
+  void _acceptStub(AppLocalizations l10n) {
+    // TODO(P13): replace with the real guest→Google sign-in flow.
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.comingSoon)));
+    _dismiss();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
+    final highest = ref.watch(highestCompletedLevelProvider).value ?? 0;
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _dismissed,
+      builder: (context, dismissed, child) {
+        if (dismissed || highest < 8) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: AppTokens.space16),
+          child: MetaCard(
+            child: Row(
+              children: [
+                Icon(Icons.cloud_outlined, color: tokens.colors.info),
+                const SizedBox(width: AppTokens.space12),
+                Expanded(
+                  child: Text(
+                    l10n.saveProgressPromptMessage,
+                    style: AppTypography.uiTextStyle(
+                      Language.english,
+                      UiRole.body,
+                      color: tokens.colors.onSurface,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _acceptStub(l10n),
+                  child: Text(l10n.saveProgressPromptAction),
+                ),
+                IconButton(
+                  tooltip: l10n.saveProgressPromptDismiss,
+                  onPressed: _dismiss,
+                  icon: const Icon(Icons.close, size: 18),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

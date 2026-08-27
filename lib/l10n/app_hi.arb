@@ -67,5 +67,13 @@
     "placeholders": {
       "cost": { "type": "int" }
     }
-  }
+  },
+  "ddaHintOfferMessage": "संकेत चाहिए?",
+  "ddaHintOfferAccept": "संकेत दिखाएं",
+  "ddaHintOfferDismiss": "अभी नहीं",
+  "urduLetterFormIntro": "ग्रिड में हर अक्षर अलग दिखता है",
+  "gotItButtonLabel": "समझ गया",
+  "saveProgressPromptMessage": "अपनी प्रगति सहेजने के लिए साइन इन करें",
+  "saveProgressPromptAction": "साइन इन",
+  "saveProgressPromptDismiss": "खारिज करें"
 }

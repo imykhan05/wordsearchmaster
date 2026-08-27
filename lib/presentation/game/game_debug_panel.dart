@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/theme.dart';
 import '../../application/game_controller.dart';
+import '../../domain/progression/dda.dart';
 import '../../domain/text/language.dart';
 
-/// DEV FLAVOR ONLY. Jump to any level or force any [GamePhase] without
-/// playing to it — the fastest way to eyeball level 20 or the result card
-/// without a 20-level run.
+/// DEV FLAVOR ONLY. Jump to any level, force any [GamePhase], or force any
+/// [DdaState] without waiting on the idle timer — the fastest way to eyeball
+/// level 20, the result card, or the Ch02 DDA pulse/hint-offer without
+/// playing a 20-level run or sitting idle for a real 60 seconds. The DDA
+/// acceptance criterion ("DDA states trigger via a dev toggle") is this row.
 ///
 /// Its own expand/collapse and text field are ordinary [StatefulWidget]
 /// concerns local to this one dev widget, not game state — the same
@@ -15,9 +18,15 @@ import '../../domain/text/language.dart';
 /// Allowlisted in `tool/check_localized_strings.dart` alongside it: neither
 /// ships to a player.
 class GameDebugPanel extends ConsumerStatefulWidget {
-  const GameDebugPanel({required this.level, super.key});
+  const GameDebugPanel({required this.level, this.onForceDda, super.key});
 
   final int level;
+
+  /// Forces a DDA state through the real code paths in `game_screen.dart` —
+  /// null on any screen that has not wired one in (there is none today, but
+  /// the field stays optional rather than every call site being forced to
+  /// supply a no-op).
+  final void Function(DdaState state)? onForceDda;
 
   @override
   ConsumerState<GameDebugPanel> createState() => _GameDebugPanelState();
@@ -136,6 +145,24 @@ class _GameDebugPanelState extends ConsumerState<GameDebugPanel> {
                   ),
               ],
             ),
+            if (widget.onForceDda != null) ...[
+              const SizedBox(height: AppTokens.space8),
+              Text('DDA', style: captionStyle),
+              const SizedBox(height: AppTokens.space4),
+              Wrap(
+                spacing: AppTokens.space4,
+                runSpacing: AppTokens.space4,
+                children: [
+                  for (final state in DdaState.values)
+                    ActionChip(
+                      label: Text(state.name, style: captionStyle),
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: tokens.colors.surfaceHigh,
+                      onPressed: () => widget.onForceDda!(state),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),

@@ -97,6 +97,13 @@ final class ContentRepository {
       if (_levelsById[id]?[language] case final LevelDefinition level) level,
   ];
 
+  /// A small, deterministic sample of [language]'s words — decoration for
+  /// the language-select cards (Ch02 FTUE), never gameplay content, so
+  /// "first [count] in file order" is enough: nothing here is ever placed on
+  /// a grid, so unlike [getWordsForLevel] there is no seed to be faithful to.
+  List<WordEntry> sampleWords(Language language, {int count = 3}) =>
+      (_wordsByLanguage[language] ?? const <WordEntry>[]).take(count).toList();
+
   /// The distinct categories present in [language]'s word pack, sorted.
   ///
   /// Read from the CONTENT rather than from a constant list in Dart: the
