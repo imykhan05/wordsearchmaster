@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/app/theme/theme.dart';
 import 'package:word_search_master/application/game_controller.dart';
+import 'package:word_search_master/data/content/content_repository.dart';
+import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/grid/cell.dart';
 import 'package:word_search_master/domain/grid/grid_result.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
@@ -17,6 +19,9 @@ import 'package:word_search_master/presentation/screens/game_screen.dart';
 import 'package:word_search_master/services/audio/audio_service.dart';
 import 'package:word_search_master/services/audio/combo_pitch_ladder.dart';
 import 'package:word_search_master/services/haptics/haptics_service.dart';
+
+import '../../support/fake_content.dart';
+import '../../support/local_db.dart';
 
 /// A recording double for both services — every call this test cares about
 /// lands in a plain list, not a mock framework.
@@ -83,10 +88,29 @@ void main() {
     HapticsService? hapticsService,
     bool reduceMotion = false,
   }) async {
+    // TWO OVERRIDES THAT ARE NOT OPTIONAL SINCE P11:
+    //
+    // 1. CONTENT. `GameController.build` now awaits `ContentRepository`
+    //    (P10/P11) instead of reading a hardcoded word list. Left to its
+    //    default, that resolves through `rootBundle`, whose asset reads never
+    //    complete under `flutter_test`'s fake async — `pumpAndSettle` then
+    //    spins until it times out, with the screen stuck on its spinner. The
+    //    in-memory fixture is built OUTSIDE the pump (a real await, before
+    //    the fake clock is in play) and injected already-resolved.
+    //
+    // 2. DATABASE. `ProgressionController.recordCompletion` writes on the
+    //    level-complete transition; the default `appDatabaseProvider` opens a
+    //    real `drift_flutter` connection that does not exist in a widget
+    //    test. An in-memory one — the same seam every P08 repository test
+    //    already opens — lets the award actually land.
+    final content = await buildTestContentRepository();
+    final testDb = await openMemoryDatabase();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appConfigProvider.overrideWithValue(AppConfig.prod()),
+          appDatabaseProvider.overrideWithValue(testDb.database),
+          contentRepositoryProvider.overrideWith((ref) => content),
           if (audioService != null)
             audioServiceProvider.overrideWithValue(audioService),
           if (hapticsService != null)
@@ -129,8 +153,12 @@ void main() {
     'a found word gets a thin strike-through, not a bar covering the text',
     (tester) async {
       final container = await pumpGameScreen(tester);
-      final notifier = container.read(gameControllerProvider(1).notifier);
-      final state = container.read(gameControllerProvider(1)).value!;
+      final notifier = container.read(
+        gameControllerProvider(JourneySession(1)).notifier,
+      );
+      final state = container
+          .read(gameControllerProvider(JourneySession(1)))
+          .value!;
       final placement = state.grid.placementDetails.first;
 
       notifier.processSelection(
@@ -179,10 +207,14 @@ void main() {
     'loaded and visible behind the result card',
     (tester) async {
       final container = await pumpGameScreen(tester);
-      final notifier = container.read(gameControllerProvider(1).notifier);
+      final notifier = container.read(
+        gameControllerProvider(JourneySession(1)).notifier,
+      );
 
       for (var level = 1; level <= 20; level++) {
-        final state = container.read(gameControllerProvider(1)).value!;
+        final state = container
+            .read(gameControllerProvider(JourneySession(1)))
+            .value!;
         expect(state.level, level, reason: 'one level at a time, in order');
         expect(state.phase, GamePhase.playing);
 
@@ -197,13 +229,24 @@ void main() {
         }
         await tester.pump();
 
+        // Let the P11 award chain (streak → progress → coins → badges, all
+        // real database writes) actually finish before moving on. Without
+        // this, twenty levels' worth of in-flight Drift transactions are
+        // still pending when the tree is torn down, which `flutter_test`
+        // correctly reports as a leak. `runAsync` steps outside the fake
+        // clock, which is the only way a real async I/O chain can complete.
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+
         expect(
           find.byType(LevelCompleteCard),
           findsOneWidget,
           reason: 'level $level should be complete',
         );
 
-        final behindTheCard = container.read(gameControllerProvider(1)).value!;
+        final behindTheCard = container
+            .read(gameControllerProvider(JourneySession(1)))
+            .value!;
         expect(
           behindTheCard.level,
           level + 1,
@@ -227,7 +270,7 @@ void main() {
       }
 
       expect(
-        container.read(gameControllerProvider(1)).value!.level,
+        container.read(gameControllerProvider(JourneySession(1))).value!.level,
         21,
         reason: '20 levels finished back to back without throwing',
       );
@@ -266,7 +309,9 @@ void main() {
     ) async {
       final audio = _RecordingAudioService();
       final container = await pumpGameScreen(tester, audioService: audio);
-      final state = container.read(gameControllerProvider(1)).value!;
+      final state = container
+          .read(gameControllerProvider(JourneySession(1)))
+          .value!;
       final words = state.grid.placementDetails.take(6).toList();
       expect(
         words.length,
@@ -350,7 +395,9 @@ void main() {
           hapticsService: haptics,
           reduceMotion: true,
         );
-        final state = container.read(gameControllerProvider(1)).value!;
+        final state = container
+            .read(gameControllerProvider(JourneySession(1)))
+            .value!;
         final placement = state.grid.placementDetails.first;
 
         final matched = releaseSelection(tester, selectionFor(placement));
@@ -397,7 +444,9 @@ void main() {
           audioService: audio,
           hapticsService: haptics,
         );
-        final state = container.read(gameControllerProvider(1)).value!;
+        final state = container
+            .read(gameControllerProvider(JourneySession(1)))
+            .value!;
 
         for (final placement in state.grid.placementDetails) {
           releaseSelection(tester, selectionFor(placement));

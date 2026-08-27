@@ -110,5 +110,93 @@
   "soundLabel": "Sound",
   "@soundLabel": {
     "description": "Label next to the sound on/off switch in the pause sheet."
+  },
+
+  "streakLabel": "Day streak",
+  "@streakLabel": {
+    "description": "Label under the streak counter on the home screen — days in a row with at least one completed level."
+  },
+
+  "streakFreezesLabel": "{count, plural, =1{1 freeze} other{{count} freezes}}",
+  "@streakFreezesLabel": {
+    "description": "How many unused streak freezes the player holds. A freeze is auto-spent to cover a missed day.",
+    "placeholders": {
+      "count": { "type": "int", "example": "2" }
+    }
+  },
+
+  "streakFrozenMessage": "A freeze covered your missed day",
+  "@streakFrozenMessage": {
+    "description": "Shown when a streak freeze was automatically consumed to keep the streak alive after a missed day."
+  },
+
+  "coinsLabel": "Coins",
+  "@coinsLabel": {
+    "description": "Label next to the player's coin balance."
+  },
+
+  "playButton": "Play",
+  "@playButton": {
+    "description": "Primary button on the home screen; opens the journey map at the current level."
+  },
+
+  "regionTitle": "Region {number}",
+  "@regionTitle": {
+    "description": "Header above each ten-level stretch of the journey map.",
+    "placeholders": {
+      "number": { "type": "int", "example": "3" }
+    }
+  },
+
+  "levelLocked": "Locked",
+  "@levelLocked": {
+    "description": "Accessibility label for a journey node the player has not unlocked yet. Locked nodes stay visible but dimmed."
+  },
+
+  "dailyAlreadyPlayed": "You've played today's puzzle",
+  "@dailyAlreadyPlayed": {
+    "description": "Shown on the Daily Challenge screen when today's one attempt has already been used."
+  },
+
+  "dailyPlayButton": "Play today's puzzle",
+  "@dailyPlayButton": {
+    "description": "Button that starts the Daily Challenge."
+  },
+
+  "dailyOneAttempt": "One attempt per day",
+  "@dailyOneAttempt": {
+    "description": "Explains the Daily Challenge rule, shown under the play button."
+  },
+
+  "collectionsTitle": "Collections",
+  "@collectionsTitle": {
+    "description": "Heading of the badge grid — one badge per completed word category, per language."
+  },
+
+  "collectionsProgress": "{done} of {total}",
+  "@collectionsProgress": {
+    "description": "Progress inside an unearned collection badge, e.g. '7 of 25' levels of that category finished.",
+    "placeholders": {
+      "done": { "type": "int", "example": "7" },
+      "total": { "type": "int", "example": "25" }
+    }
+  },
+
+  "chestOpenTitle": "Chest!",
+  "@chestOpenTitle": {
+    "description": "Heading on the chest-opening celebration shown every 5th level."
+  },
+
+  "notEnoughCoins": "Not enough coins",
+  "@notEnoughCoins": {
+    "description": "Shown on the hint button when the player's balance cannot cover a hint."
+  },
+
+  "hintCost": "{cost} coins",
+  "@hintCost": {
+    "description": "What a hint costs, shown next to the hint button.",
+    "placeholders": {
+      "cost": { "type": "int", "example": "50" }
+    }
   }
 }

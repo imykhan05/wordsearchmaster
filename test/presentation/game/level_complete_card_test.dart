@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/app/theme/app_theme.dart';
 import 'package:word_search_master/application/game_controller.dart';
+import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/level_complete_card.dart';
 
@@ -11,11 +12,14 @@ import 'package:word_search_master/presentation/game/level_complete_card.dart';
 /// reduce-motion turning it off entirely rather than just speeding it up.
 void main() {
   const summary = LevelCompletionSummary(
+    session: JourneySession(3),
+    language: Language.english,
     level: 3,
     score: 103,
     stars: 2,
     maxCombo: 4,
-    coinsEarned: 20,
+    hintsUsed: 1,
+    events: [],
   );
 
   Widget wrap({required bool reduceMotion}) {
@@ -26,7 +30,11 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(
-          body: LevelCompleteCard(summary: summary, onContinue: () {}),
+          body: LevelCompleteCard(
+            summary: summary,
+            coinsEarned: 20,
+            onContinue: () {},
+          ),
         ),
       ),
     );

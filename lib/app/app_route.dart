@@ -57,6 +57,21 @@ final class DailyRoute extends AppRoute {
   String get location => '/daily';
 }
 
+/// Today's puzzle itself, distinct from [DailyRoute] (the pre-game screen
+/// showing "play" or today's already-recorded result). No path parameter —
+/// unlike [GameRoute], WHICH day is a [GameSession] resolves at runtime via
+/// `TrustedClock`, not something the URL should let a link encode (a
+/// `/game/daily/2026-08-26` link would let a player jump straight to a day
+/// that isn't today, defeating the one-attempt gate).
+final class DailyGameRoute extends AppRoute {
+  const DailyGameRoute();
+
+  static const name = 'dailyGame';
+
+  @override
+  String get location => '/game/daily';
+}
+
 final class LeaderboardRoute extends AppRoute {
   const LeaderboardRoute();
 

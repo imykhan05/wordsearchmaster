@@ -30,5 +30,42 @@
   "adPlaceholderLabel": "विज्ञापन स्थान — जल्द आ रहा है",
   "resumeButton": "जारी रखें",
   "restartButton": "फिर से शुरू करें",
-  "soundLabel": "आवाज़"
+  "soundLabel": "आवाज़",
+
+  "streakLabel": "दिनों की लड़ी",
+  "streakFreezesLabel": "{count, plural, =1{1 फ़्रीज़} other{{count} फ़्रीज़}}",
+  "@streakFreezesLabel": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "streakFrozenMessage": "एक फ़्रीज़ ने आपका छूटा हुआ दिन पूरा कर दिया",
+  "coinsLabel": "सिक्के",
+  "playButton": "खेलें",
+  "regionTitle": "क्षेत्र {number}",
+  "@regionTitle": {
+    "placeholders": {
+      "number": { "type": "int" }
+    }
+  },
+  "levelLocked": "बंद",
+  "dailyAlreadyPlayed": "आप आज की पहेली खेल चुके हैं",
+  "dailyPlayButton": "आज की पहेली खेलें",
+  "dailyOneAttempt": "दिन में एक बार",
+  "collectionsTitle": "संग्रह",
+  "collectionsProgress": "{total} में से {done}",
+  "@collectionsProgress": {
+    "placeholders": {
+      "done": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "chestOpenTitle": "संदूक!",
+  "notEnoughCoins": "सिक्के पर्याप्त नहीं",
+  "hintCost": "{cost} सिक्के",
+  "@hintCost": {
+    "placeholders": {
+      "cost": { "type": "int" }
+    }
+  }
 }

@@ -8,28 +8,42 @@ import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/app/router.dart';
 import 'package:word_search_master/domain/text/language.dart';
 
+import '../support/fake_meta.dart';
+
 void main() {
   Future<void> pumpApp(WidgetTester tester, AppConfig config) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [appConfigProvider.overrideWithValue(config)],
+        overrides: [
+          appConfigProvider.overrideWithValue(config),
+          ...fakeMetaOverrides(),
+        ],
         child: const WordSearchMasterApp(),
       ),
     );
     await tester.pumpAndSettle();
   }
 
-  /// The FTUE opens on language select, so the dev nav (and with it the
-  /// gallery link) is only reachable after picking a language.
+  /// The FTUE opens on language select, so anything past it is only reachable
+  /// after picking a language.
   Future<void> enterApp(WidgetTester tester, AppConfig config) async {
     await pumpApp(tester, config);
     await tester.tap(find.text(Language.english.endonym));
     await tester.pumpAndSettle();
   }
 
+  /// Navigates by ROUTE rather than by tapping a nav button.
+  ///
+  /// P11 replaced the home screen's `StubScreen` — and with it the dev
+  /// route-nav row that used to carry a "Style Gallery" button — with the real
+  /// Ch02 home. Driving the router directly is what this test always meant
+  /// anyway: the claim under test is "the gallery route is registered on dev
+  /// and renders", not "some other screen links to it".
   Future<void> openGallery(WidgetTester tester) async {
     await enterApp(tester, AppConfig.dev());
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Style Gallery'));
+
+    final context = tester.element(find.byType(Navigator).first);
+    GoRouter.of(context).go(const StyleGalleryRoute().location);
     await tester.pumpAndSettle();
   }
 

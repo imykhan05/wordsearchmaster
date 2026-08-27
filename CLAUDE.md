@@ -592,6 +592,235 @@ of the app.
   be non-empty, since that gap is real content work for a future prompt, not
   a P10 defect.
 
+## Meta-game — journey, coins, chests, streaks, daily (P11)
+
+Ch02's five retention systems. They are CORE, not extras: the grid engine is
+what makes the game good, and this is what makes it worth opening tomorrow.
+
+### The pure rules live in `lib/domain/progression/`
+
+Every rule below is plain Dart with no clock, no I/O and no randomness it did
+not receive as an argument — so all of it is walked in a loop by
+`test/domain/progression/`, and none of it needs a device to be checked.
+
+- **`DayKey`** is a UTC calendar day. Both day-counting systems (streak, daily)
+  use it, and both use UTC for the same reason `getDailySeed` already did
+  (P10): a LOCAL calendar day disagrees across timezones, so "the same puzzle
+  for everyone" and "one attempt per day" would both be negotiable. `daysSince`
+  subtracts UTC MIDNIGHTS, never local ones — local days are 23 or 25 hours
+  long twice a year, and a naive subtraction drops or doubles a streak day for
+  half the world.
+- **`StreakRules`** is a state machine, and `settle` is the whole trick. A
+  streak decays with time passing rather than with anything the player does,
+  so the stored state goes stale on its own and EVERY reader has to age it
+  forward first. `settle` is that ageing: pure, idempotent, and called on both
+  paths — the home screen renders through it without writing, `registerPlay`
+  runs it before extending. One definition, so the number shown and the number
+  stored cannot disagree.
+  - Three things Ch02 leaves open, decided here: a freeze PRESERVES the streak
+    rather than extending it (coming back to 8 after a day away would be the
+    game claiming you played on a day you did not); freezes are only spent when
+    they FULLY cover the gap (one freeze cannot save a three-day absence, so it
+    is not burned trying); and a broken streak KEEPS its freezes (they were
+    earned, and `maxFreezes` already stops them accumulating).
+- **`CoinEconomy`** holds every tunable on an INSTANCE, not as `static const`s,
+  because the live-ops levers arrive from Remote Config at runtime — and
+  because "tuned so a player runs low every ~4 levels" is only checkable if the
+  tuning is data a simulation can be handed.
+- **`EconomySimulation`** is that simulation: it replays a described player
+  against a described economy and reports how often they reached for a hint
+  they could not afford. "Runs low" deliberately means WANTED A HINT AND COULD
+  NOT PAY, not "balance hit zero" — a player who never hints can sit at zero
+  forever and feel nothing, and the wanted-but-unaffordable moment is the exact
+  one P18's rewarded ad has to be worth showing at.
+  - **The shipped tuning is measured, not guessed.** `levelBaseCoins: 10,
+    coinsPerStar: 5` puts the `typical` profile at **one dry level every 4.00**
+    across 400 twenty-level runs, median 5 dry levels per run, median ending
+    balance ~130 — so the wallet oscillates rather than draining or filling.
+    The surface is smooth either side (perStar 4 → 3.6, perStar 6 → 4.5), so
+    this is a tuning with room, not a knife edge. `coin_economy_test.dart`
+    re-runs the measurement and fails the build outside 3.5–4.5.
+  - The economy test asserts the AGGREGATE, not one seeded run, and says so:
+    a single 20-level run swings between 3 and 6 dry levels purely on its
+    seed, so pinning one seed would pass for exactly one tuning and prove
+    nothing about the economy.
+  - Coins are STAR-WEIGHTED, which gives a hint a second cost beyond its
+    price: using one drops a star, which drops the payout, which makes the next
+    hint harder to afford. That coupling is what turns the wallet into a
+    difficulty dial.
+  - The chest table is weighted toward the bottom (40/35/20/5 over 20–40 /
+    41–80 / 81–140 / 141–200). A flat 20–200 roll has the same mean and no
+    memorable outcomes — every chest becomes "about 110" and the open animation
+    is a loading spinner.
+  - `starterGrantCoins` is exactly one hint's worth. The first hint is free and
+    the second is not, so the cost of a hint is learned by using one.
+- **`JourneyRegion`/`JourneyMap`** — ten levels a region, six accents cycling
+  (thirty visually distinct accents do not exist, and a player sees two or
+  three regions at once). A region knows its ACCENT INDEX, never a `Color`;
+  `lib/domain/` cannot import `dart:ui`, and the indirection is right anyway.
+  **UNLOCKING IS DERIVED, NEVER STORED**: `level <= highestCompleted + 1`,
+  computed from the same verified `level_progress` rows everything else reads,
+  so there is no "unlocked" flag anywhere to forge.
+- **`Collections`** derives a badge per (category, language) from level
+  progress; the `achievements` row is a CACHE of that plus an unlock
+  timestamp, never its source. Editing the row buys a timestamp and nothing
+  else, because the grid still asks `level_progress` whether the category is
+  actually complete.
+  - `newlyEarnedBy` takes `completedBefore` — THE SET AS IT WAS BEFORE THE
+    WRITE — and the caller must read it before writing the new progress row.
+    An earlier version took the after-set and subtracted `justCompleted` to
+    reconstruct "before", which is wrong for a REPLAY: subtracting a level the
+    player had already finished makes the category look incomplete, so
+    finishing an old level in a completed category re-fired its badge every
+    time. There is no way to tell those cases apart from the after-set alone.
+- **`DailyPuzzle`** gives the daily a FIXED shape (10x10, 8 words, diagonals)
+  rather than borrowing a level from the Ch07 curve. It is a leaderboard
+  puzzle, so every player must get the same board; borrowing would compare a
+  player at level 3 and one at level 280 across a 6x6 and a 12x12. Only the
+  seed and the category move with the date. Its `LevelDefinition.id` is 0,
+  which is never a real journey level — so a daily can never be mistaken for
+  one, including by `ProgressRepository`.
+
+### Trusted time (`services/time/trusted_clock.dart`)
+
+Both retention systems that count days are worth cheating, and both are cheated
+the same way. So the day boundary is resolved in ONE place, in a stated order
+of trust: server time when online (authoritative in BOTH directions — a server
+saying "earlier" is correcting a clock that was set forward); local time
+offline (Ch12 requires the Daily playable with the radio off, so refusing to
+answer is not an option); and local time FLOORED AT THE HIGHEST DAY ALREADY
+SEEN, persisted in `kv_settings`.
+
+Stated as honestly as `integrity.dart` states its own limits: this does not
+stop a clock set FORWARD offline. That player reaches tomorrow's Daily early
+and pays for it — the floor then holds them there until real time catches up,
+and their streak breaks across the gap they invented. Blocking it outright
+needs a server, which is what makes this defence in depth and not the defence;
+Ch08's server-side replay (P14) is where a submission is adjudicated.
+
+The server offset is cached for the session, so the home screen's streak
+counter does not make a network call every time it rebuilds.
+
+### Live-ops levers (`services/remote_config/`)
+
+P20 owns the Firebase binding; P11 owns the SHAPE — a typed key table with the
+default and the sane range living ON the key, not at each call site. Every
+lookup can fail (no network on first launch, a fetch timeout, a key a newer
+console added), and all of those have to resolve to the same number. A fetched
+value is CLAMPED, never trusted: a console typo setting `hint_cost_coins` to 0
+must not hand out free hints, and `chest_every_n_levels: 0` IS allowed because
+"chests off" is a legitimate A/B arm.
+
+`coinEconomyProvider` is the one place `CoinEconomy` is built for the running
+app — gameplay reads it rather than `CoinEconomy.defaults`, which is what makes
+a Remote Config change reach the wallet without a code change.
+
+### Persistence
+
+- **Streak state is a `kv_settings` row, not an eighth table.** It is a single
+  value with no key space to query, so a table would buy nothing and cost a
+  schema migration. It carries an integrity tag like any other row — Ch02 makes
+  the streak prominent enough to be worth forging, which is exactly why
+  CLAUDE.md forbids `shared_preferences` for it. A forged row reads as EMPTY
+  (the Ch10 rule for a failed check) and stays on disk as evidence.
+- `LocalRepository` grew `readKv`/`writeKv` so the three things that now need
+  tagged KV rows cannot each get the field list subtly wrong — the same
+  argument `RowTags` makes.
+- **`DailyRepository` records the FIRST attempt, not the best.** One attempt
+  per day with a best-of write would let a player grind the daily leaderboard.
+  The check runs inside the transaction so a double tap cannot land twice.
+- **Never `watch(...).first` for a snapshot.** `ProgressRepository.completedLevels`
+  and `CollectionsRepository.unlockedRows` exist because taking the first event
+  of a Drift stream OPENS a live query and then cancels it — and cancelling
+  schedules Drift's cleanup timer, which outlives the caller. In a widget test
+  that surfaces as "a Timer is still pending after the widget tree was
+  disposed"; in the app it is a subscription's worth of work for a value
+  nobody is watching. A caller that wants a value asks for a value.
+
+### `GameController`'s family key became a sealed `GameSession` (P11)
+
+P07 keyed it by level number, which was right while a level number described
+every puzzle that existed. The Daily is a puzzle no level number describes: it
+is seeded by a DATE, has a fixed shape, is playable once, and — the part that
+actually forces the fork — **must not perform the Zeigarnik swap**, because
+there is no next daily today.
+
+The alternatives were a second controller duplicating the state machine, or a
+reserved level number smuggling a mode through an `int`. Both hide the fork;
+a sealed key names it, and every `switch` over it is exhaustive, so Blitz
+(v1.2) cannot be added without the compiler pointing at each place that has to
+decide.
+
+`GameController` also finally reads REAL CONTENT: P07's `_demoWords` constant
+and inline size ladder are gone, replaced by `ContentRepository` (P10). A
+level's identity now lives in the same validated pack `validate_content.dart`
+checks.
+
+### `ProgressionController` — awards, and why they are not in `GameController`
+
+`GameController` is synchronous and purely derived on purpose. Coins, chests,
+the streak and badges all need the database, and the database is async; mixing
+them in would make the moment a word is found await a transaction. So the fork
+is exact: `GameController` freezes the GAMEPLAY facts the instant a level is
+won (`LevelCompletionSummary` carries no coins), and `ProgressionController`
+turns that into everything touching a repository. `game_screen.dart`'s existing
+`ref.listen` on the `levelComplete` transition is the seam.
+
+**EVERY `ref` READ HAPPENS BEFORE THE FIRST `await`, and this is load-bearing.**
+Nothing WATCHES this controller — it is reached through `ref.read(...notifier)`
+and called — so a read placed after an `await` races its own disposal and
+throws `UnmountedRefException`. That is not theoretical: it is what happens
+when a player taps back out of the game screen while the award for the level
+they just finished is still being written, and the visible symptom is coins
+that silently never arrive. `keepAlive: true` guards it, and every method
+resolves its entire dependency set synchronously at the top as well — belt and
+braces, because `keepAlive` is one annotation away from being tidied off.
+
+`tryBuyHint` is the ONLY path allowed to call `GameController.useHint`: it
+debits the ledger first and reveals only if the debit succeeded. A caller that
+skips it gets a free hint.
+
+### Presentation
+
+- **The journey map is a `SliverList` of REGIONS, not a `ListView` of 300
+  nodes.** Ch02 wants locked nodes visible but dimmed, so the map genuinely
+  holds all 300; on the 2GB target that rules out building them eagerly.
+  Auto-scroll uses a FIXED per-region extent rather than measuring, because
+  the current node's offset has to be known before layout — `initialScrollOffset`
+  then opens the map at the player's node with no visible jump, where a
+  post-mount `ensureVisible` would animate away from them.
+- Locked nodes stay in the tree, dimmed, and keep a `Locked` semantics label
+  in their own `container: true` node — "visible future" has to include
+  non-visually.
+- **The chest takes the screen BEFORE the level-complete card**, and dismissing
+  it reveals the card underneath with the chest's coins already in the figure.
+  The chest is the rarer, louder moment; stacking it on an already-celebrating
+  card would bury it.
+- `ChestOpenCard` follows `LevelCompleteCard`'s P09 shape exactly — ONE
+  `TweenAnimationBuilder`, one painter, no ticker of its own — and under
+  reduce-motion the burst is skipped outright rather than shortened.
+- `AppColors.regionAccent` is a SEPARATE six-colour list from `foundWord`.
+  Reusing that palette would couple a decorative map accent to a set chosen by
+  maximising pairwise CIE ΔE under three kinds of colour vision, and guarded by
+  `found_word_palette_test.dart` — a region accent has no such job, and tying
+  them together would make every future map restyle re-run an accessibility
+  search it does not need.
+- Category names in the collections grid are still the raw content keys
+  ("animals"), flagged `TODO(P17/P21)`: localizing them means twelve more ARB
+  entries per language for the same native speaker who still owes a review on
+  the word packs, so they are flagged WITH that work rather than machine-drafted
+  here.
+
+### Testing notes that will bite again
+
+- A widget test must not drive a live Drift query stream. `test/support/fake_meta.dart`
+  overrides the meta providers with settled values for route-level tests; the
+  joins are covered in the domain and repository tests instead.
+- `ContentRepository`'s default reads `rootBundle`, whose asset reads never
+  complete under `flutter_test`'s fake async — `pumpAndSettle` just times out
+  with the screen stuck on its spinner. `test/support/fake_content.dart` builds
+  an in-memory pack OUTSIDE the pump and injects it already-resolved.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

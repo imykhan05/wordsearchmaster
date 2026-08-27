@@ -40,6 +40,14 @@ GoRouter router(Ref ref) {
         name: JourneyRoute.name,
         builder: (context, state) => const JourneyScreen(),
       ),
+      // Registered BEFORE GameRoute: go_router matches route entries in
+      // order, and GameRoute's `/game/:levelId` pattern would otherwise also
+      // match this literal path, treating "daily" as a level id.
+      GoRoute(
+        path: const DailyGameRoute().location,
+        name: DailyGameRoute.name,
+        builder: (context, state) => const GameScreen.daily(),
+      ),
       GoRoute(
         path: GameRoute.pathPattern,
         name: GameRoute.name,

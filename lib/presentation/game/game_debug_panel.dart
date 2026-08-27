@@ -38,7 +38,9 @@ class _GameDebugPanelState extends ConsumerState<GameDebugPanel> {
   void _jump() {
     final level = int.tryParse(_levelField.text);
     if (level == null || level < 1) return;
-    ref.read(gameControllerProvider(widget.level).notifier).jumpToLevel(level);
+    ref
+        .read(gameControllerProvider(JourneySession(widget.level)).notifier)
+        .jumpToLevel(level);
   }
 
   @override
@@ -126,7 +128,10 @@ class _GameDebugPanelState extends ConsumerState<GameDebugPanel> {
                     visualDensity: VisualDensity.compact,
                     backgroundColor: tokens.colors.surfaceHigh,
                     onPressed: () => ref
-                        .read(gameControllerProvider(widget.level).notifier)
+                        .read(
+                          gameControllerProvider(JourneySession(widget.level))
+                              .notifier,
+                        )
                         .debugForcePhase(phase),
                   ),
               ],

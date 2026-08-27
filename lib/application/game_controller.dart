@@ -1,4 +1,4 @@
-/// The playable game's state machine (P07).
+/// The playable game's state machine (P07, extended in P11).
 ///
 /// ARCHITECTURE DECISIONS, IN ONE PLACE:
 ///
@@ -22,27 +22,50 @@
 ///    directly to the caller instead of parking it in state — nothing else
 ///    needs to remember it once the caller's particle burst has fired.
 ///
-/// 3. THE ZEIGARNIK SWAP (Ch02) IS ATOMIC. The moment a level is won,
-///    `_prepareLevelComplete` both freezes a [LevelCompletionSummary] of the
-///    level just finished AND regenerates the grid for the NEXT level, in
-///    the same state update. `phase` becomes `levelComplete` while `level`,
-///    `grid` and the word list already describe the level after it — so the
-///    result card sits on top of a fully playable next board, and dismissing
-///    the card is just a phase flip, never a new load.
+/// 3. THE ZEIGARNIK SWAP (Ch02) IS ATOMIC, AND JOURNEY-ONLY. The moment a
+///    journey level is won, `_prepareLevelComplete` both freezes a
+///    [LevelCompletionSummary] of the level just finished AND regenerates the
+///    grid for the NEXT level, in the same state update. `phase` becomes
+///    `levelComplete` while `level`, `grid` and the word list already describe
+///    the level after it — so the result card sits on top of a fully playable
+///    next board, and dismissing the card is just a phase flip, never a new
+///    load. A DAILY does not swap: there is no next daily today, so the board
+///    stays put and the card's dismiss sends the player back rather than into
+///    another puzzle.
+///
+/// 4. CONTENT COMES FROM `ContentRepository`, NOT FROM DART (P10/P11). The
+///    seed, grid size, word count, direction tier and word list of every
+///    puzzle are read from `assets/content/`. P07's `_demoWords` constant and
+///    its inline size ladder are gone; a level's identity now lives in the
+///    same validated content pack `tool/validate_content.dart` checks.
+///
+/// 5. AWARDS ARE NOT COMPUTED HERE. Coins, chests, the streak and collection
+///    badges all follow a completion, but all of them need the database and
+///    all of them are async. Mixing them into `processSelection` would make
+///    the synchronous, purely-derived heart of this controller await I/O. So
+///    the summary this file freezes is the GAMEPLAY result — level, score,
+///    stars, combo — and `ProgressionController` turns that into rewards on
+///    the phase transition. See its header for the seam.
 library;
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../app/language/selected_language.dart';
+import '../data/content/content_repository.dart';
 import '../domain/grid/cell.dart';
 import '../domain/grid/grid_directions.dart';
 import '../domain/grid/grid_generator.dart';
 import '../domain/grid/grid_result.dart';
 import '../domain/grid/selection_resolver.dart';
+import '../domain/models/level_definition.dart';
+import '../domain/progression/daily_puzzle.dart';
 import '../domain/scoring/score_event.dart';
 import '../domain/scoring/scoring.dart';
 import '../domain/text/language.dart';
+import 'game_session.dart';
+
+export 'game_session.dart';
 
 part 'game_controller.freezed.dart';
 part 'game_controller.g.dart';
@@ -62,49 +85,74 @@ enum GamePhase {
 /// it, [GameController] has already moved [GameState] on to the NEXT level's
 /// grid and word list (the Zeigarnik swap above), so the numbers this level
 /// scored are no longer recoverable from live state.
+///
+/// GAMEPLAY ONLY — no coins, no chest, no streak. Decision 5 above: those are
+/// `ProgressionController`'s output, keyed off this.
 final class LevelCompletionSummary {
   const LevelCompletionSummary({
+    required this.session,
+    required this.language,
     required this.level,
     required this.score,
     required this.stars,
     required this.maxCombo,
-    required this.coinsEarned,
+    required this.hintsUsed,
+    required this.events,
   });
+
+  /// Which puzzle this summarises. Carried so `ProgressionController` can tell
+  /// a journey completion (progress row + coins + streak) from a daily one
+  /// (daily_results row + streak, no journey progress) without guessing from
+  /// the level number.
+  final GameSession session;
+
+  /// `GameState.language` at the moment of completion — `level_progress` and
+  /// `daily_results` are both keyed by (language, ...) (P10/CLAUDE.md), and
+  /// this summary is `ProgressionController`'s only input, so it has to carry
+  /// its own copy rather than the caller re-reading live state that may have
+  /// already moved on (Zeigarnik).
+  final Language language;
 
   final int level;
   final int score;
   final int stars;
   final int maxCombo;
+  final int hintsUsed;
 
-  /// TODO(P15/P16): placeholder formula. The real coin economy lives in
-  /// `lib/domain/progression/`, which does not exist yet — this keeps the
-  /// result card honest (a real, earned number) without inventing a chest /
-  /// currency system ahead of the prompt that owns it.
-  final int coinsEarned;
+  /// The ordered log this level produced. Handed to the repositories so the
+  /// outbox payload carries the events the server replays (Ch08/P14) rather
+  /// than the client's total.
+  final List<ScoreEvent> events;
+
+  bool get isDaily => session is DailySession;
 
   @override
   bool operator ==(Object other) =>
       other is LevelCompletionSummary &&
+      other.session == session &&
+      other.language == language &&
       other.level == level &&
       other.score == score &&
       other.stars == stars &&
       other.maxCombo == maxCombo &&
-      other.coinsEarned == coinsEarned;
+      other.hintsUsed == hintsUsed;
 
   @override
-  int get hashCode => Object.hash(level, score, stars, maxCombo, coinsEarned);
+  int get hashCode =>
+      Object.hash(session, language, level, score, stars, maxCombo, hintsUsed);
 
   @override
   String toString() =>
-      'LevelCompletionSummary(level: $level, score: $score, stars: $stars, '
-      'maxCombo: $maxCombo, coinsEarned: $coinsEarned)';
+      'LevelCompletionSummary($session, ${language.code}, level: $level, '
+      'score: $score, stars: $stars, maxCombo: $maxCombo, '
+      'hints: $hintsUsed)';
 }
 
 /// The game screen's entire state, minus the live drag (see decision 2
 /// above). Immutable; [GameController] always replaces it wholesale.
 ///
 /// Uses freezed rather than a hand-written class, unlike most value types in
-/// `lib/domain/` — this one earns it: nine fields, mutated from eight
+/// `lib/domain/` — this one earns it: ten fields, mutated from eight
 /// different call sites in [GameController], is exactly the shape a
 /// hand-written `copyWith` gets tedious and error-prone for.
 @freezed
@@ -112,6 +160,7 @@ sealed class GameState with _$GameState {
   const GameState._();
 
   const factory GameState({
+    required GameSession session,
     required int level,
     required Language language,
     required GridResult grid,
@@ -130,6 +179,8 @@ sealed class GameState with _$GameState {
     required LevelCompletionSummary? completedSummary,
   }) = _GameState;
 
+  bool get isDaily => session is DailySession;
+
   /// Every target word for this level, in the grid's own placement order.
   List<String> get allWords => grid.placements.keys.toList(growable: false);
 
@@ -138,7 +189,7 @@ sealed class GameState with _$GameState {
   List<String> get remainingWords =>
       allWords.where((word) => !foundWords.contains(word)).toList();
 
-  bool get isLevelWon => remainingWords.isEmpty;
+  bool get isLevelWon => remainingWords.isEmpty && allWords.isNotEmpty;
 
   /// Replays [events]. See the scoring spec header in
   /// lib/domain/scoring/scoring.dart for why this is a replay and not a
@@ -175,39 +226,26 @@ int _runningCombo(List<ScoreEvent> events) {
   return combo;
 }
 
-/// Coins awarded per star on completion. See the TODO on
-/// [LevelCompletionSummary.coinsEarned].
-const int _coinsPerStar = 10;
-
-/// TODO(P10): comes from the content pack. Inline here only so the game is
-/// playable end to end; moved verbatim from P06's `game_screen.dart`.
-const Map<Language, List<String>> _demoWords = {
-  Language.english: [
-    'WATER',
-    'STONE',
-    'RIVER',
-    'FOREST',
-    'LIGHT',
-    'EARTH',
-    'STORM',
-    'SEED',
-  ],
-  Language.urdu: ['پانی', 'بادل', 'ہوا', 'زمین', 'درخت', 'دریا', 'سورج', 'برف'],
-  Language.hindi: ['पानी', 'बादल', 'हवा', 'धरती', 'नदी', 'सूरज', 'रात', 'तारा'],
-};
-
-/// Drives one game screen. Family-keyed by the STARTING level only —
-/// advancing to the next level (Zeigarnik) mutates `state.level` in place
-/// rather than creating a new provider instance, so the screen never has to
-/// re-navigate or remount to keep playing.
+/// Drives one game screen, keyed by the session it was OPENED with.
+///
+/// For a journey session the key is the STARTING level only — advancing
+/// (Zeigarnik) mutates `state.level` in place rather than creating a new
+/// provider instance, so the screen never has to re-navigate or remount.
 @riverpod
 class GameController extends _$GameController {
   @override
-  Future<GameState> build(int initialLevel) async {
+  Future<GameState> build(GameSession session) async {
     // Watched, not read: switching language mid-session must regenerate the
     // grid for the new script, exactly as P06's screen-level rebuild did.
     final language = ref.watch(selectedLanguageProvider);
-    return _loadLevel(level: initialLevel, language: language);
+    final content = await ref.watch(contentRepositoryProvider.future);
+
+    return _loadSession(
+      session: session,
+      language: language,
+      content: content,
+      level: session.level,
+    );
   }
 
   /// Resolves a finished drag against the puzzle and applies its effect.
@@ -253,6 +291,13 @@ class GameController extends _$GameController {
 
   /// Spends a hint on the next unfound word, revealing only its starting
   /// cell — enough to nudge, not enough to solve the word for the player.
+  ///
+  /// THE COINS ARE NOT SPENT HERE. `ProgressionController.tryBuyHint` debits
+  /// the ledger and calls this only if the debit succeeded, for the same
+  /// reason awards are not computed here (decision 5): the wallet is async and
+  /// this is not. A caller that skips that step gets a free hint, which is why
+  /// `game_screen.dart` routes every hint tap through the progression
+  /// controller and nothing else calls this.
   void useHint() {
     final current = state.value;
     if (current == null || current.phase != GamePhase.playing) return;
@@ -283,11 +328,18 @@ class GameController extends _$GameController {
 
   /// Reloads the CURRENT level from scratch and unpauses. Same seed, same
   /// grid (P04 determinism) — only the found words and score reset.
-  void restart() {
+  Future<void> restart() async {
     final current = state.value;
     if (current == null) return;
+
+    final content = await ref.read(contentRepositoryProvider.future);
     state = AsyncData(
-      _loadLevel(level: current.level, language: current.language),
+      _loadSession(
+        session: current.session,
+        language: current.language,
+        content: content,
+        level: current.level,
+      ),
     );
   }
 
@@ -300,9 +352,19 @@ class GameController extends _$GameController {
   }
 
   /// DEV-ONLY: jumps straight to [level], bypassing normal progression.
-  void jumpToLevel(int level) {
-    final language = state.value?.language ?? Language.english;
-    state = AsyncData(_loadLevel(level: level, language: language));
+  Future<void> jumpToLevel(int level) async {
+    final current = state.value;
+    final language = current?.language ?? Language.english;
+    final content = await ref.read(contentRepositoryProvider.future);
+
+    state = AsyncData(
+      _loadSession(
+        session: JourneySession(level),
+        language: language,
+        content: content,
+        level: level,
+      ),
+    );
   }
 
   /// DEV-ONLY: forces [phase] without playing to it. Forcing
@@ -327,11 +389,24 @@ class GameController extends _$GameController {
     );
   }
 
-  GameState _loadLevel({required int level, required Language language}) {
+  GameState _loadSession({
+    required GameSession session,
+    required Language language,
+    required ContentRepository content,
+    required int level,
+  }) {
+    final definition = _definitionFor(
+      session: session,
+      language: language,
+      content: content,
+      level: level,
+    );
+
     return GameState(
+      session: session,
       level: level,
       language: language,
-      grid: _generateGrid(level: level, language: language),
+      grid: _generateGrid(definition: definition, content: content),
       foundWords: const [],
       events: const [],
       hintedCell: null,
@@ -341,48 +416,98 @@ class GameController extends _$GameController {
     );
   }
 
-  /// The Zeigarnik swap: freeze this level's summary and move [wonState] on
-  /// to the next level's grid, all at once. See decision 3 above.
+  /// The Zeigarnik swap for a journey level: freeze this level's summary and
+  /// move [wonState] on to the next level's grid, all at once (decision 3).
+  ///
+  /// A DAILY skips the swap entirely and keeps its own finished board on
+  /// screen behind the card — regenerating "the next daily" would mean
+  /// showing tomorrow's puzzle a day early, and there is nothing else to move
+  /// to.
   GameState _prepareLevelComplete(GameState wonState) {
     final summary = LevelCompletionSummary(
+      session: wonState.session,
+      language: wonState.language,
       level: wonState.level,
       score: wonState.score,
       stars: wonState.stars,
       maxCombo: Scoring.maxComboIn(wonState.events),
-      coinsEarned: wonState.stars * _coinsPerStar,
+      hintsUsed: wonState.hintsUsed,
+      events: List.unmodifiable(wonState.events),
     );
 
-    final nextLevel = wonState.level + 1;
-    return wonState.copyWith(
-      level: nextLevel,
-      grid: _generateGrid(level: nextLevel, language: wonState.language),
-      foundWords: const [],
-      events: const [],
-      hintedCell: null,
-      startedAt: DateTime.now(),
-      phase: GamePhase.levelComplete,
-      completedSummary: summary,
-    );
+    switch (wonState.session) {
+      case DailySession():
+        return wonState.copyWith(
+          phase: GamePhase.levelComplete,
+          completedSummary: summary,
+        );
+
+      case JourneySession():
+        final content = ref.read(contentRepositoryProvider).value;
+        // Only reachable if the content pack failed to load, in which case
+        // the state we are in was built from it too. Freeze the summary and
+        // hold the finished board rather than crashing on the win.
+        if (content == null) {
+          return wonState.copyWith(
+            phase: GamePhase.levelComplete,
+            completedSummary: summary,
+          );
+        }
+
+        final nextLevel = wonState.level + 1;
+        final definition = _definitionFor(
+          session: JourneySession(nextLevel),
+          language: wonState.language,
+          content: content,
+          level: nextLevel,
+        );
+
+        return wonState.copyWith(
+          level: nextLevel,
+          grid: _generateGrid(definition: definition, content: content),
+          foundWords: const [],
+          events: const [],
+          hintedCell: null,
+          startedAt: DateTime.now(),
+          phase: GamePhase.levelComplete,
+          completedSummary: summary,
+        );
+    }
   }
 
-  static GridResult _generateGrid({
-    required int level,
+  static LevelDefinition _definitionFor({
+    required GameSession session,
     required Language language,
+    required ContentRepository content,
+    required int level,
+  }) => switch (session) {
+    JourneySession() => content.getLevel(level, language),
+    DailySession(:final day) => DailyPuzzle.definitionFor(
+      day: day,
+      language: language,
+      seed: content.getDailySeed(day.utcMidnight, language),
+      categories: content.categoriesFor(language),
+    ),
+  };
+
+  static GridResult _generateGrid({
+    required LevelDefinition definition,
+    required ContentRepository content,
   }) {
+    final words = content.getWordsForLevel(definition);
+
     return GridGenerator.generate(
-      // The level number IS the seed, so the same level always rebuilds the
-      // same grid (P04). P10 stores a real per-level seed.
-      seed: level * 7919,
-      size: level <= 5
-          ? 6
-          : level <= 20
-          ? 8
-          : level <= 60
-          ? 10
-          : 12,
-      words: _demoWords[language]!,
-      lang: language,
-      allowedDirections: GridDirections.forLevel(language, level),
+      // The definition's own seed — the same one `validate_content.dart`
+      // proved places completely for all 900 (level, language) combinations,
+      // so a grid built here is a grid that has already been checked.
+      seed: definition.seed,
+      size: definition.gridSize,
+      words: [for (final entry in words) entry.word],
+      lang: definition.language,
+      allowedDirections: GridDirections.forLanguage(
+        definition.language,
+        definition.directionTier,
+      ),
     );
   }
 }

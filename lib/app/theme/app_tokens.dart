@@ -38,6 +38,7 @@ final class AppColors {
     required this.shadow,
     required this.foundWord,
     required this.foundWordFlash,
+    required this.regionAccent,
   });
 
   /// Page ground, behind [surface].
@@ -93,6 +94,23 @@ final class AppColors {
   /// and [lightColors] rather than independently tuned.
   final Color foundWordFlash;
 
+  /// Journey-map region accents (Ch02/P11), indexed by
+  /// `JourneyRegion.accentIndex`.
+  ///
+  /// Six, cycling — `JourneyRegion.accentCount` says why: thirty visually
+  /// distinct accents do not exist, and a player sees two or three regions at
+  /// once on a scrolling map, so a cycle reads as variety.
+  ///
+  /// A SEPARATE LIST FROM [foundWord], despite both being six colours that
+  /// sit on the same surface. Reusing that palette would couple a decorative
+  /// map accent to a set whose members were chosen by maximising pairwise
+  /// CIE ΔE under three kinds of colour vision, and whose ordering
+  /// `found_word_palette_test.dart` actively guards. A region accent has no
+  /// such job — nothing about the map asks a player to tell two regions
+  /// apart by hue — so tying the two together would mean every future map
+  /// restyle had to re-run an accessibility search it does not need.
+  final List<Color> regionAccent;
+
   AppColors lerpTo(AppColors other, double t) {
     return AppColors(
       background: Color.lerp(background, other.background, t)!,
@@ -116,6 +134,10 @@ final class AppColors {
           Color.lerp(foundWord[i], other.foundWord[i], t)!,
       ],
       foundWordFlash: Color.lerp(foundWordFlash, other.foundWordFlash, t)!,
+      regionAccent: [
+        for (var i = 0; i < regionAccent.length; i++)
+          Color.lerp(regionAccent[i], other.regionAccent[i], t)!,
+      ],
     );
   }
 }
@@ -304,6 +326,14 @@ final class AppTokens extends ThemeExtension<AppTokens> {
       Color(0xFFAEE892), // spring green
     ],
     foundWordFlash: Color(0xFFFFFFFF),
+    regionAccent: [
+      Color(0xFF4FA3A5), // teal
+      Color(0xFF8E7CC3), // violet
+      Color(0xFFD98E4A), // amber
+      Color(0xFF5B8DD9), // steel blue
+      Color(0xFFC96A8A), // rose
+      Color(0xFF7FB069), // moss
+    ],
   );
 
   /// Light theme, kept warm rather than clinical white — the same product,
@@ -335,6 +365,14 @@ final class AppTokens extends ThemeExtension<AppTokens> {
       Color(0xFF2929C2), // indigo
     ],
     foundWordFlash: Color(0xFFFFFFFF),
+    regionAccent: [
+      Color(0xFF2A7F81), // teal
+      Color(0xFF5F4B9B), // violet
+      Color(0xFFA8611C), // amber
+      Color(0xFF2F5FA8), // steel blue
+      Color(0xFF9B3A5C), // rose
+      Color(0xFF4A7A32), // moss
+    ],
   );
 
   static const AppTokens dark = AppTokens(

@@ -23,11 +23,19 @@ class LevelCompleteCard extends StatelessWidget {
   const LevelCompleteCard({
     required this.summary,
     required this.onContinue,
+    this.coinsEarned = 0,
     super.key,
   });
 
   final LevelCompletionSummary summary;
   final VoidCallback onContinue;
+
+  /// Coins this completion paid out, INCLUDING any chest — resolved by
+  /// `ProgressionController` (P11), not by [summary]. `GameController` freezes
+  /// gameplay facts only (score, stars, combo); the wallet is a database
+  /// concern and async, so `game_screen.dart` awaits the award and passes the
+  /// number in here rather than this card reaching into a repository itself.
+  final int coinsEarned;
 
   static const int _starStaggerMs = 140;
   static const int _starPopMs = 140;
@@ -80,7 +88,7 @@ class LevelCompleteCard extends StatelessWidget {
         builder: (context, masterT, child) {
           final scoreT = _scoreProgress(masterT);
           final displayedScore = (summary.score * scoreT).round();
-          final displayedCoins = (summary.coinsEarned * scoreT).round();
+          final displayedCoins = (coinsEarned * scoreT).round();
 
           return Stack(
             children: [
@@ -249,12 +257,11 @@ class _StatLine extends StatelessWidget {
 }
 
 /// Ch03's "coin fly-to-counter", scoped to what actually exists on screen:
-/// there is no persistent coin-balance HUD anywhere yet (the real coin
-/// economy is P15/P16 — see `GameState.coinsEarned`'s own TODO), so this
-/// flies a coin glyph directly INTO the card's own coins stat line rather
-/// than across widgets this prompt has no business inventing. Driven by the
-/// same `scoreT` the coins figure itself rolls up on, so the coin visibly
-/// arrives as the number lands.
+/// there is still no persistent coin-balance HUD (P15/P16), so this flies a
+/// coin glyph directly INTO the card's own coins stat line rather than across
+/// widgets this prompt has no business inventing. Driven by the same
+/// `scoreT` the coins figure itself rolls up on, so the coin visibly arrives
+/// as the number lands.
 class _CoinFly extends StatelessWidget {
   const _CoinFly({required this.progress});
 

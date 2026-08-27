@@ -30,5 +30,42 @@
   "adPlaceholderLabel": "اشتہار کی جگہ — جلد آ رہا ہے",
   "resumeButton": "جاری رکھیں",
   "restartButton": "دوبارہ شروع کریں",
-  "soundLabel": "آواز"
+  "soundLabel": "آواز",
+
+  "streakLabel": "دن کی لڑی",
+  "streakFreezesLabel": "{count, plural, =1{1 فریز} other{{count} فریز}}",
+  "@streakFreezesLabel": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "streakFrozenMessage": "ایک فریز نے آپ کا چھوٹا ہوا دن پورا کر دیا",
+  "coinsLabel": "سکے",
+  "playButton": "کھیلیں",
+  "regionTitle": "علاقہ {number}",
+  "@regionTitle": {
+    "placeholders": {
+      "number": { "type": "int" }
+    }
+  },
+  "levelLocked": "بند",
+  "dailyAlreadyPlayed": "آپ آج کی پہیلی کھیل چکے ہیں",
+  "dailyPlayButton": "آج کی پہیلی کھیلیں",
+  "dailyOneAttempt": "دن میں ایک بار",
+  "collectionsTitle": "مجموعے",
+  "collectionsProgress": "{total} میں سے {done}",
+  "@collectionsProgress": {
+    "placeholders": {
+      "done": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "chestOpenTitle": "صندوق!",
+  "notEnoughCoins": "سکے کافی نہیں",
+  "hintCost": "{cost} سکے",
+  "@hintCost": {
+    "placeholders": {
+      "cost": { "type": "int" }
+    }
+  }
 }

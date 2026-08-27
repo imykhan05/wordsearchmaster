@@ -7,7 +7,10 @@ import 'package:drift_flutter/drift_flutter.dart';
 
 import '../data/content/content_repository.dart';
 import '../data/local/app_database.dart';
+import '../data/repositories/streak_repository.dart';
 import '../services/audio/audio_service.dart';
+import '../services/diagnostics/error_reporter.dart';
+import '../services/time/trusted_clock.dart';
 import '../services/settings/ui_settings_store.dart';
 import 'config/app_config.dart';
 import 'provider_observer.dart';
@@ -89,6 +92,41 @@ Future<void> bootstrap(
         content = await ContentRepository.load();
       });
 
+      // 7a. Trusted clock + streak settle (P11).
+      //
+      // The rollback guard's high-water mark lives in `kv_settings`, so the
+      // clock has to be built over the OPENED database — the default provider
+      // keeps its mark in memory, which would silently lose the guard across
+      // launches (exactly when a wound-back clock would be used).
+      //
+      // Settling the streak here, rather than waiting for the next
+      // completion, is what makes "a freeze is consumed on a missed day"
+      // durable for a player who opens the app and does not finish a level:
+      // `StreakRules.settle` is idempotent, and `settleAndPersist` writes
+      // nothing when nothing changed, so this cannot churn the row on resume.
+      TrustedClock? clock;
+      await _step(config, 'time.trustedClock', () async {
+        if (database case final AppDatabase opened) {
+          final integrity = await opened.integrity();
+          final built = TrustedClock(
+            marks: DriftDayHighWaterMarkStore(
+              database: opened,
+              integrity: integrity,
+              reporter: const NoopErrorReporter(),
+            ),
+            // TODO(P13): a real ServerTimeSource once Firebase is wired.
+          );
+          clock = built;
+
+          final streaks = StreakRepository(
+            database: opened,
+            integrity: integrity,
+            reporter: const NoopErrorReporter(),
+          );
+          await streaks.settleAndPersist(await built.today());
+        }
+      });
+
       // 7b. Audio preload (Ch03 juice pass). "First-play latency must be
       // imperceptible" means the decode cost has to be paid before the
       // first frame that could trigger a sound — unlike step 8, this stays
@@ -135,6 +173,12 @@ Future<void> bootstrap(
             // also never a game that pretends it has content when it doesn't).
             if (content case final ContentRepository loaded)
               contentRepositoryProvider.overrideWith((ref) => loaded),
+            // Absent only if step 7a threw (or the database never opened), in
+            // which case the default in-memory-mark clock stands: the app
+            // still knows what day it is, only the anti-rollback floor is
+            // lost. Degrading the guard beats refusing to answer.
+            if (clock case final TrustedClock resolved)
+              trustedClockProvider.overrideWithValue(resolved),
           ],
           observers: observers,
           child: await appBuilder(),

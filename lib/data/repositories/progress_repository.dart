@@ -62,6 +62,26 @@ final class ProgressRepository extends LocalRepository {
       watchAll(language)
           .map((rows) => rows.fold(0, (best, row) => max(best, row.level)));
 
+  /// A ONE-SHOT read of the level numbers finished in [language].
+  ///
+  /// Not `watchAll(...).first`, and the difference is not cosmetic: taking the
+  /// first event of a Drift stream OPENS a live query, delivers one row set,
+  /// then cancels — and cancelling schedules Drift's own cleanup timer, which
+  /// outlives the caller. In a widget test that lands as "a Timer is still
+  /// pending after the widget tree was disposed"; in the app it is a
+  /// subscription's worth of work for a snapshot nobody is watching. A caller
+  /// that wants a value rather than a feed should ask for a value.
+  Future<Set<int>> completedLevels(Language language) async {
+    final rows = await (database.select(
+      database.levelProgress,
+    )..where((row) => row.languageCode.equals(language.code))).get();
+
+    return {
+      for (final row in rows)
+        if (_isIntact(row)) row.level,
+    };
+  }
+
   /// Records a finished level and queues its submission, ATOMICALLY.
   ///
   /// [score] is kept only when it beats what is already stored: replaying a

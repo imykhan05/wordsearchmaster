@@ -88,6 +88,29 @@ final class ContentRepository {
     );
   }
 
+  /// Every level definition for [language], ordered by id.
+  ///
+  /// Feeds the journey map and `Collections`, both of which need the whole
+  /// language at once rather than one level at a time.
+  List<LevelDefinition> levelsFor(Language language) => [
+    for (var id = firstLevel; id <= lastLevel; id++)
+      if (_levelsById[id]?[language] case final LevelDefinition level) level,
+  ];
+
+  /// The distinct categories present in [language]'s word pack, sorted.
+  ///
+  /// Read from the CONTENT rather than from a constant list in Dart: the
+  /// twelve Ch07 categories are a property of the shipped assets, and
+  /// `tool/validate_content.dart` is what pins them. A second hardcoded copy
+  /// here would be one more thing to drift.
+  List<String> categoriesFor(Language language) {
+    final categories = <String>{
+      for (final entry in _wordsByLanguage[language] ?? const <WordEntry>[])
+        entry.category,
+    }.toList()..sort();
+    return categories;
+  }
+
   /// A deterministic seed for the daily challenge: `sha256(dateString +
   /// langCode)`, folded down to a 31-bit non-negative int suitable for
   /// `Random(seed)`/`GridGenerator.generate(seed:)`.

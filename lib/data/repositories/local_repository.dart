@@ -113,4 +113,47 @@ abstract base class LocalRepository {
           ),
         );
   }
+
+  // -------------------------------------------------------------------------
+  // kv_settings
+  // -------------------------------------------------------------------------
+  //
+  // Shared here rather than reimplemented per repository for the same reason
+  // `RowTags` is one file: a caller that forgot to tag a write, or that
+  // verified a different field list than the writer signed, would fail every
+  // read afterwards and look to the player like lost progress.
+
+  /// The verified value of [key], or null when it is absent OR fails its tag.
+  ///
+  /// A tampered KV row reads as MISSING, not as an error — the Ch10 rule for
+  /// any failed check. A forged streak therefore resets to zero rather than
+  /// paying out, and the row stays on disk as evidence.
+  Future<String?> readKv(String key) async {
+    final row = await (database.select(
+      database.kvSettings,
+    )..where((row) => row.key.equals(key))).getSingleOrNull();
+    if (row == null) return null;
+
+    final intact = guard.accepts(
+      table: LocalTables.kvSettings,
+      rowKey: key,
+      expected: RowTags.kvSetting(integrity, key: key, value: row.value),
+      stored: row.integrityTag,
+    );
+    return intact ? row.value : null;
+  }
+
+  /// Writes [value] under [key] with a fresh tag.
+  ///
+  /// Safe to call inside a caller's transaction; takes no transaction of its
+  /// own so it can be paired atomically with an outbox row.
+  Future<void> writeKv(String key, String value) => database
+      .into(database.kvSettings)
+      .insertOnConflictUpdate(
+        KvSettingsCompanion.insert(
+          key: key,
+          value: value,
+          integrityTag: RowTags.kvSetting(integrity, key: key, value: value),
+        ),
+      );
 }

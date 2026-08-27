@@ -261,4 +261,21 @@ abstract final class KvKeys {
 
   /// Last time a full cloud sync completed, millis since epoch.
   static const String lastSyncAt = 'last_sync_at';
+
+  /// The streak and its freezes (P11), as the JSON `StreakState` encodes to.
+  ///
+  /// A KV row rather than an eighth table, and deliberately: it is a SINGLE
+  /// value with no key space to query, so a table would buy nothing and cost a
+  /// schema migration. It carries an integrity tag like any other row — a
+  /// streak is game state and Ch02 makes it prominent enough to be worth
+  /// forging, which is exactly why CLAUDE.md forbids `shared_preferences`
+  /// here.
+  static const String streakState = 'streak_state';
+
+  /// The highest day the app has ever resolved, `yyyy-MM-dd`.
+  ///
+  /// The monotonic floor `services/time/trusted_clock.dart` uses to refuse a
+  /// clock that has been wound backwards. Tagged, because an untagged
+  /// high-water mark is one string edit away from being no defence at all.
+  static const String dayHighWaterMark = 'day_high_water_mark';
 }
