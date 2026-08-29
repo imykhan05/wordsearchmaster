@@ -1017,6 +1017,152 @@ rather than a stub — the same "no faithful-preview shortcuts" discipline
 `GameController.debugForcePhase` already keeps for level-complete. This row
 is P12's own acceptance criterion 2, verbatim.
 
+## Firebase, App Check, guest-first auth (P13)
+
+### Credentials are NOT in this repository, and that is a visible state
+
+`flutterfire configure` needs an interactive Firebase login and three
+projects that only a human with the account can create, so
+`FlavorFirebaseOptions.forFlavor` returns **null** for all three flavors and
+`docs/firebase-setup.md` is the runbook that fills it in. Everything else —
+the bootstrap order, App Check, auth, the merge — is written and tested.
+
+The important consequence: **"unconfigured" and "airplane mode" are ONE code
+path, not two.** A null options object makes `LiveFirebaseGateway.initialize`
+return null, every Firebase-backed service keeps its Noop binding, and the
+app runs as a local-only guest. That is the same path a plane produces, so
+the degraded path is exercised every time anyone runs the app locally instead
+of being discovered by the first player in the air. Placeholder credentials
+would have compiled and then failed at the first network call with an
+authentication error that looks like an app bug — and could have shipped.
+
+### Bootstrap: the order is the point, and two pairs are load-bearing
+
+`initializeServices` implements Ch13's nine steps exactly. Two orderings are
+not stylistic:
+
+- **3 before 4** (App Check before auth) because App Check attests the
+  requests auth makes. Activate it afterwards and the first sign-in of every
+  session goes out unattested — the one request an attacker would imitate.
+- **1 before 2** (error handlers before `initializeApp`) because the
+  exception most worth catching is the one initialisation itself throws.
+  Crashlytics buffers to disk, so a handler installed before the SDK exists
+  still records.
+
+Every step runs inside `_step`, which catches everything. `ErrorReporter`
+starts as a Noop and is UPGRADED to Crashlytics the moment step 2 lands —
+steps 1–2 have nowhere else to report to, by definition.
+
+**`bootstrap()` is `initializeServices()` + `runApp`.** The split exists so
+the airplane-mode criterion is testable: `Firebase.initializeApp` cannot run
+under `flutter_test`, so a bootstrap that called it inline would be
+untestable by construction. `FirebaseGateway` is the seam, and
+`bootstrap_offline_test.dart` injects one that fails the way a plane does —
+plus a THROWING one, because "returns null" and "raises" are different bugs.
+`openDatabase`/`loadContent`/`loadAudio` are injectable for the same reason
+(the P11/P12 lesson: `rootBundle` and `drift_flutter` both hang under fake
+async).
+
+### The merge is where a player's progress is actually at risk
+
+`lib/domain/progression/account_merge.dart` is pure Dart implementing Ch02's
+four rules — levels max(), coins summed, achievements unioned, streak max —
+plus four decisions Ch02 leaves open:
+
+1. **A LEVEL ROW IS MERGED WHOLE, NOT FIELD BY FIELD.** max(stars) from one
+   side and max(bestScore) from the other synthesises a row describing a run
+   that never happened: 3 stars (so, no hints) beside a score only reachable
+   with one. The better row wins entire, so `hintsUsed`/`completedAt` still
+   belong to the attempt that scored those stars.
+2. **COINS COME BACK AS A DELTA, NOT A BALANCE**, because `coins_ledger` is
+   append-only and the balance is SUM(rows) — "set the balance to X" is not
+   expressible. `coinsToCredit` is the REMOTE balance (the local rows are
+   already in the ledger; crediting the sum would pay the guest's own coins
+   twice). Summing is not idempotent, so the guard lives in
+   `AccountMergeRepository`: a ledger reason of `merge:<uid>`, checked before
+   appending. It cannot live in the domain — deciding "have I already
+   credited this" requires reading the ledger.
+3. **An achievement keeps its EARLIEST `unlockedAt`** — it is a fact about
+   the past.
+4. **The streak merges PER FIELD** (unlike rule 1) with the later day winning
+   each stamp: both sides are the same real person, so if they played on
+   device A yesterday and B today, both days happened. Freezes are capped at
+   `StreakRules.maxFreezes` so linking is not a way to hoard them.
+
+`AccountMerge.merge` is TOTAL — a failed cloud read is passed in as
+`AccountSnapshot.empty`, which makes the merge exactly a no-op. That is the
+degradation that keeps "never wipe" true offline.
+
+### `applyMerge` is ONE transaction, and there is no delete path
+
+A merge touches four tables. One-at-a-time means a failure halfway leaves an
+account that is neither the guest's nor the cloud's. So it is a single Drift
+transaction: all of it lands or none does, and "none" is the pre-merge state
+the player already had. There is no statement in the file that removes a row,
+so Ch02's "never wipe" is a property of the code rather than a promise about
+it. Rows are RE-SIGNED on write — a tag binds to the install id, so a row
+from another device could never carry one this device accepts.
+
+### Auth: guest-first, and `LinkOutcome` is sealed for one reason
+
+Anonymous sign-in is silent, in bootstrap step 4, and returns null rather
+than throwing when offline — "playing offline as a guest" is a supported
+state, not an error. `linkWithGoogle` returns a sealed `LinkOutcome` so the
+compiler forces every call site to handle **`LinkRequiresMerge`**, the
+`credential-already-in-use` case. That is the branch where forgetting to
+merge silently discards the guest's progress, and a bool-plus-error return
+would have made forgetting it easy.
+
+`AccountController` owns the whole sequence (sheet → link-or-fallback → cloud
+read → merge) rather than a button handler, because spreading it out is how
+the merge step gets skipped on one of the two paths. It keeps
+`ProgressionController`'s **every-ref-read-before-the-first-await** rule, and
+here it is not theoretical: the Google sheet owns the screen for seconds.
+
+`AccountLinkResult.linkedMergePending` is deliberately distinct from
+`failed`: the player IS signed in, so saying sign-in failed is a lie they can
+disprove by looking, and their local progress is untouched, so anything
+alarming would be worse than the truth.
+
+Sign-out returns to a fresh anonymous session and clears only
+`profile.cloudUserId`. `FirebaseAuthService.signOut` has no database handle,
+so it *cannot* delete local data — again a property, not a promise.
+
+### App Check: the provider is a pure function, enforcement is a console rule
+
+`AppCheckPolicy.forFlavor` keys off the FLAVOR, never `kDebugMode`: a
+release build of the dev flavor (what QA installs) still needs the debug
+provider, and a debug build of prod must never get one. A debug provider in
+production is a silent total outage the day enforcement turns on, which is
+why it is a switch a test enumerates rather than an `if` in bootstrap.
+
+**Enforcement stays in monitor mode for the first two weeks post-launch** —
+a console setting nothing in this repo can change, which is exactly why the
+four-step ramp is written into `app_check_gateway.dart`'s header. P13's
+acceptance criterion is satisfied by tokens ARRIVING and being counted, not
+by enforcement being on.
+
+### Firestore reads are P13's, writes are P14's
+
+`CloudAccountRepository` reads one `users/{uid}` document, only so the merge
+has something to merge. A per-level subcollection is the natural Firestore
+modelling and is likely what P14 wants for incremental sync — but it would
+be a fan-out of hundreds of reads on the one screen where the player is
+already waiting on a sign-in sheet. `CloudAccountCodec` is split out from the
+Firestore client so the parsing — where the bugs are — is testable without a
+Firestore instance, and every field degrades rather than throwing: a parse
+that threw would abort the merge, which is how one bad field loses everything.
+
+### What could not be verified here
+
+`flutterfire configure`, a real device, and the App Check console are all
+outside this environment. So criterion 3 ("App Check tokens console mein
+nazar aate hain") is **not** verified — the provider selection and activation
+call are tested, the console is not. Criteria 1 and 2 ARE verified, by
+`bootstrap_offline_test.dart` and by
+`account_merge_test.dart`/`account_merge_repository_test.dart`/
+`account_controller_test.dart` respectively.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

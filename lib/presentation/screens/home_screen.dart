@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
+import '../../application/account_controller.dart';
 import '../../domain/progression/streak.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
@@ -212,11 +213,31 @@ class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
     unawaited(ref.read(uiSettingsStoreProvider).setLoginPromptDismissed(true));
   }
 
-  void _acceptStub(AppLocalizations l10n) {
-    // TODO(P13): replace with the real guest→Google sign-in flow.
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l10n.comingSoon)));
-    _dismiss();
+  /// The real guest→Google flow (P13), replacing P12's placeholder.
+  ///
+  /// Dismisses on SUCCESS only. A player who cancelled the sheet or hit a
+  /// network failure has not decided anything, and hiding the offer would
+  /// take away the retry they are most likely to want next.
+  Future<void> _accept(AppLocalizations l10n) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await ref
+        .read(accountControllerProvider.notifier)
+        .linkWithGoogle();
+    if (!mounted) return;
+
+    final message = switch (result) {
+      AccountLinkResult.linked => l10n.signInSuccessMessage,
+      AccountLinkResult.linkedMergePending => l10n.signInMergePendingMessage,
+      AccountLinkResult.failed => l10n.signInFailedMessage,
+      AccountLinkResult.cancelled => null,
+    };
+    if (message != null) {
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    }
+    if (result == AccountLinkResult.linked ||
+        result == AccountLinkResult.linkedMergePending) {
+      _dismiss();
+    }
   }
 
   @override
@@ -248,7 +269,7 @@ class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => _acceptStub(l10n),
+                  onPressed: () => unawaited(_accept(l10n)),
                   child: Text(l10n.saveProgressPromptAction),
                 ),
                 IconButton(

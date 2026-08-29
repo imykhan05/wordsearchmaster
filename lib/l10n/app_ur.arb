@@ -75,5 +75,22 @@
   "gotItButtonLabel": "سمجھ گیا",
   "saveProgressPromptMessage": "اپنی پیش رفت محفوظ کرنے کے لیے سائن ان کریں",
   "saveProgressPromptAction": "سائن ان",
-  "saveProgressPromptDismiss": "خارج کریں"
+  "saveProgressPromptDismiss": "خارج کریں",
+  "accountSectionTitle": "اکاؤنٹ",
+  "accountGuestLabel": "مہمان کے طور پر کھیل رہے ہیں",
+  "accountSignedInAs": "{name} کے طور پر سائن ان",
+  "@accountSignedInAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSignedIn": "سائن ان ہو چکے ہیں",
+  "signInWithGoogle": "گوگل سے سائن ان کریں",
+  "signOutButton": "سائن آؤٹ",
+  "signOutKeepsProgress": "آپ کی پیش رفت اس ڈیوائس پر محفوظ رہے گی",
+  "signInSuccessMessage": "سائن ان ہو گیا۔ آپ کی پیش رفت محفوظ ہے۔",
+  "signInFailedMessage": "سائن ان نہیں ہو سکا۔ آپ کی پیش رفت محفوظ ہے — دوبارہ کوشش کریں۔",
+  "signInMergePendingMessage": "سائن ان ہو گیا۔ آپ کی محفوظ پیش رفت جلد ظاہر ہوگی۔"
 }

@@ -238,5 +238,58 @@
   "saveProgressPromptDismiss": "Dismiss",
   "@saveProgressPromptDismiss": {
     "description": "Tooltip on the save-progress banner's close button."
+  },
+
+  "accountSectionTitle": "Account",
+  "@accountSectionTitle": {
+    "description": "Heading of the account card on the profile screen."
+  },
+
+  "accountGuestLabel": "Playing as a guest",
+  "@accountGuestLabel": {
+    "description": "Shown on the profile screen when the player has not linked a Google account. Guest play is the normal, supported state (Ch02) — the wording must not read as a warning."
+  },
+
+  "accountSignedInAs": "Signed in as {name}",
+  "@accountSignedInAs": {
+    "description": "Shown on the profile screen once a Google account is linked.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Ayesha" }
+    }
+  },
+
+  "accountSignedIn": "Signed in",
+  "@accountSignedIn": {
+    "description": "Shown instead of accountSignedInAs when the linked Google account exposes neither a display name nor an email — rare, but a Google account with a hidden profile produces it, and 'Signed in as null' is worse than saying less."
+  },
+
+  "signInWithGoogle": "Sign in with Google",
+  "@signInWithGoogle": {
+    "description": "Button that links the current guest account to a Google account."
+  },
+
+  "signOutButton": "Sign out",
+  "@signOutButton": {
+    "description": "Button that returns to a fresh guest session. Local progress is kept."
+  },
+
+  "signOutKeepsProgress": "Your progress stays on this device",
+  "@signOutKeepsProgress": {
+    "description": "Reassurance under the sign-out button — Ch02: signing out returns to an anonymous session and never deletes local data."
+  },
+
+  "signInSuccessMessage": "Signed in. Your progress is saved.",
+  "@signInSuccessMessage": {
+    "description": "Confirmation after a successful Google link and merge."
+  },
+
+  "signInFailedMessage": "Couldn't sign in. Your progress is safe — try again.",
+  "@signInFailedMessage": {
+    "description": "Shown when sign-in failed. Leads with the reassurance because the player's first worry is their progress, not the network."
+  },
+
+  "signInMergePendingMessage": "Signed in. Your saved progress will appear shortly.",
+  "@signInMergePendingMessage": {
+    "description": "Shown when sign-in succeeded but the cloud merge could not be written yet. Deliberately not an error: the player IS signed in and their local progress is untouched."
   }
 }

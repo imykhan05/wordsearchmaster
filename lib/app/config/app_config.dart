@@ -1,6 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'firebase_options.dart';
+
 /// The three build flavors. Each has its own Firebase project, its own
 /// applicationId (via Gradle suffix), and never shares ad units with prod.
 /// See CLAUDE.md → Flavors.
@@ -19,39 +21,61 @@ final class AppConfig {
     required this.firebaseOptions,
     required this.adsTestMode,
     required this.logLevel,
+    this.googleServerClientId,
   });
 
-  factory AppConfig.dev() => const AppConfig(
-    flavor: Flavor.dev,
-    // TODO(P13): wire via `flutterfire configure --project wsm-dev`.
-    firebaseOptions: null,
-    adsTestMode: true,
-    logLevel: AppLogLevel.debug,
+  /// Builds the config for [flavor], reading its Firebase credentials from
+  /// [FlavorFirebaseOptions].
+  ///
+  /// One factory rather than three near-identical ones: the only things that
+  /// actually differ per flavor are the two booleans and the log level, and
+  /// three copies of the Firebase lookup was three places for it to drift.
+  factory AppConfig.of(Flavor flavor) => AppConfig(
+    flavor: flavor,
+    firebaseOptions: FlavorFirebaseOptions.forFlavor(flavor),
+    googleServerClientId: FlavorFirebaseOptions.googleServerClientId(flavor),
+    adsTestMode: flavor != Flavor.prod,
+    logLevel: switch (flavor) {
+      Flavor.dev => AppLogLevel.debug,
+      Flavor.stg => AppLogLevel.info,
+      Flavor.prod => AppLogLevel.warning,
+    },
   );
 
-  factory AppConfig.stg() => const AppConfig(
-    flavor: Flavor.stg,
-    // TODO(P13): wire via `flutterfire configure --project wsm-stg`.
-    firebaseOptions: null,
-    adsTestMode: true,
-    logLevel: AppLogLevel.info,
-  );
+  factory AppConfig.dev() => AppConfig.of(Flavor.dev);
 
-  factory AppConfig.prod() => const AppConfig(
-    flavor: Flavor.prod,
-    // TODO(P13): wire via `flutterfire configure --project wsm-prod`.
-    firebaseOptions: null,
-    adsTestMode: false,
-    logLevel: AppLogLevel.warning,
-  );
+  factory AppConfig.stg() => AppConfig.of(Flavor.stg);
+
+  factory AppConfig.prod() => AppConfig.of(Flavor.prod);
 
   final Flavor flavor;
+
+  /// Null until `flutterfire configure` has been run for this flavor — see
+  /// `firebase_options.dart`. A null here puts the app in local-only mode,
+  /// which is a supported, tested state, not a failure.
   final FirebaseOptions? firebaseOptions;
+
+  /// The OAuth web client id Google Sign-In needs on Android. Null alongside
+  /// [firebaseOptions].
+  final String? googleServerClientId;
 
   /// True on dev/stg. When true, [services/ads] must only ever request MAX
   /// test-mode ad units — never a real one. See CLAUDE.md → Never do.
   final bool adsTestMode;
   final AppLogLevel logLevel;
+
+  /// Where P14's Cloud Functions live. Pinned because the client must call
+  /// the SAME region the functions are deployed to: calling the default
+  /// `us-central1` when they live in `asia-south1` fails at runtime with a
+  /// CORS/404 that looks nothing like a region mismatch.
+  ///
+  /// `asia-south1` (Mumbai) is chosen for latency to the PK/IN audience this
+  /// game targets (Ch01) — a round trip to Iowa is ~250ms of dead time on
+  /// every score submission.
+  static const String functionsRegion = 'asia-south1';
+
+  /// Whether this build has real Firebase credentials.
+  bool get isFirebaseConfigured => firebaseOptions != null;
 
   String get flavorName => flavor.name.toUpperCase();
 }

@@ -75,5 +75,22 @@
   "gotItButtonLabel": "समझ गया",
   "saveProgressPromptMessage": "अपनी प्रगति सहेजने के लिए साइन इन करें",
   "saveProgressPromptAction": "साइन इन",
-  "saveProgressPromptDismiss": "खारिज करें"
+  "saveProgressPromptDismiss": "खारिज करें",
+  "accountSectionTitle": "खाता",
+  "accountGuestLabel": "अतिथि के रूप में खेल रहे हैं",
+  "accountSignedInAs": "{name} के रूप में साइन इन",
+  "@accountSignedInAs": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "accountSignedIn": "साइन इन हैं",
+  "signInWithGoogle": "Google से साइन इन करें",
+  "signOutButton": "साइन आउट",
+  "signOutKeepsProgress": "आपकी प्रगति इस डिवाइस पर सुरक्षित रहेगी",
+  "signInSuccessMessage": "साइन इन हो गया। आपकी प्रगति सहेजी गई है।",
+  "signInFailedMessage": "साइन इन नहीं हो सका। आपकी प्रगति सुरक्षित है — फिर कोशिश करें।",
+  "signInMergePendingMessage": "साइन इन हो गया। आपकी सहेजी प्रगति जल्द दिखेगी।"
 }

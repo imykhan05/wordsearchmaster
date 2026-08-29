@@ -37,8 +37,12 @@ final class ProfileRepository extends LocalRepository {
   Future<void> updateDisplayName(String? displayName) =>
       _update(displayName: Value(displayName), enqueueSync: true);
 
-  /// Links the local guest to a Firebase uid once auth lands (P13).
-  Future<void> linkCloudUser(String cloudUserId) =>
+  /// Links the local guest to a Firebase uid (P13), or clears it on sign-out.
+  ///
+  /// Nullable because signing out must be expressible: Ch02 says sign-out
+  /// returns to a fresh anonymous session WITHOUT deleting local data, so the
+  /// cloud id is the one field that has to go while every other row stays.
+  Future<void> linkCloudUser(String? cloudUserId) =>
       _update(cloudUserId: Value(cloudUserId), enqueueSync: true);
 
   /// Bumps `lastSeenAt`.

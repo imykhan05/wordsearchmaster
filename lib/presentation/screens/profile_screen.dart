@@ -5,6 +5,7 @@ import '../../app/theme/theme.dart';
 import '../../domain/progression/collections.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../account/account_card.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
 
@@ -50,6 +51,20 @@ class _CollectionsGrid extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
+        // Ch02: Google Sign-In is offered after level 8 (the home banner) AND
+        // from the profile screen — this is that second entry point, and the
+        // only place a linked player can sign out again.
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              AppTokens.space24,
+              AppTokens.space24,
+              AppTokens.space24,
+              0,
+            ),
+            child: AccountCard(),
+          ),
+        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.all(AppTokens.space24),

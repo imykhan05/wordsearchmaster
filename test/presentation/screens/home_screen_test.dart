@@ -79,23 +79,41 @@ void main() {
     expect(find.text(l10n.saveProgressPromptMessage), findsNothing);
   });
 
-  testWidgets('accepting the stub offer dismisses it too', (tester) async {
-    final settings = InMemoryUiSettingsStore();
-    final l10n = await pumpHome(
-      tester,
-      highestCompletedLevel: 8,
-      settings: settings,
-    );
+  testWidgets(
+    'accepting when sign-in is unavailable KEEPS the offer — P13 changed '
+    'this from P12',
+    (tester) async {
+      // P12's stub dismissed the banner on any tap. The real flow (P13)
+      // dismisses only on success: a player whose sign-in failed has not
+      // decided anything, and hiding the offer would take away the retry
+      // they are most likely to want next.
+      //
+      // With no Firebase configured, `authServiceProvider` is the Noop, whose
+      // `linkWithGoogle` returns `LinkFailed('auth-unavailable')` — the same
+      // path a player in airplane mode takes.
+      final settings = InMemoryUiSettingsStore();
+      final l10n = await pumpHome(
+        tester,
+        highestCompletedLevel: 8,
+        settings: settings,
+      );
 
-    await tester.tap(find.text(l10n.saveProgressPromptAction));
-    await tester.pump();
+      await tester.tap(find.text(l10n.saveProgressPromptAction));
+      await tester.pumpAndSettle();
 
-    expect(find.text(l10n.saveProgressPromptMessage), findsNothing);
-    expect(settings.loginPromptDismissed, isTrue);
+      expect(
+        find.text(l10n.saveProgressPromptMessage),
+        findsOneWidget,
+        reason: 'the offer stays so the player can try again',
+      );
+      expect(settings.loginPromptDismissed, isFalse);
+      // And the failure is surfaced gently, leading with the reassurance.
+      expect(find.text(l10n.signInFailedMessage), findsOneWidget);
 
-    // Lets the stub's SnackBar finish its own animation/auto-dismiss timer
-    // before the test ends, the same reason `ftue_dda_test.dart` pumps past
-    // the particle burst's delayed Future.
-    await tester.pump(const Duration(seconds: 5));
-  });
+      // Let the SnackBar's own auto-dismiss timer finish before the test
+      // ends, the same reason `ftue_dda_test.dart` pumps past the particle
+      // burst's delayed Future.
+      await tester.pump(const Duration(seconds: 5));
+    },
+  );
 }
