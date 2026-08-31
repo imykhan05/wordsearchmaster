@@ -1,16 +1,22 @@
 {
+  "//": "Two npm projects share this file. `functions/` deploys and runs the Cloud Functions; the repo root runs the security-rules suite (rules_test/). Both drive the emulators through `firebase emulators:exec`, which is why the ports are pinned here rather than passed on each command line.",
   "functions": {
     "source": "functions",
     "codebase": "default",
     "runtime": "nodejs22",
-    "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run lint", "npm --prefix \"$RESOURCE_DIR\" run build"],
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run lint",
+      "npm --prefix \"$RESOURCE_DIR\" run build"
+    ],
     "ignore": ["node_modules", ".git", "test", "*.log"]
   },
   "firestore": {
+    "//": "firestore.rules is the ruleset the rules suite loads verbatim — a test against a copy would be a statement about a file nobody deploys. The collection-group index on entries.uid is what lets deleteAccount find a player's leaderboard entries.",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
   "emulators": {
+    "//": "`npm run test:rules` (root) needs only firestore. `npm run test:emulator` (functions/) also needs auth, for deleteAccount's auth-record deletion. The UI is off because both entry points are non-interactive.",
     "auth": { "port": 9099 },
     "firestore": { "port": 8080 },
     "functions": { "port": 5001 },

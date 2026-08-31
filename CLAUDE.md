@@ -1438,6 +1438,123 @@ client could do too.
   the MAX callback against the real dashboard.
 
 
+## Firestore rules + rules tests (P15)
+
+`firestore.rules` is the deployed ruleset and has never been in test mode.
+`rules_test/firestore_rules.test.ts` exercises it against the emulator with 64
+cases, and `SECURITY.md` records the Ch08 threat model, what is implemented,
+and what is an accepted risk.
+
+### Every rule gets an ALLOW test as well as a DENY test
+
+This is the acceptance criterion, and it is not symmetry for its own sake: a
+rules file that denies everything passes every deny test ever written, and
+ships an app where nothing works. The deny tests say the door is locked; the
+ALLOW tests say it is a door. Where a rule's client answer is always "no"
+(`users` delete, `moderation` read), the allow half is the SERVER path through
+`withSecurityRulesDisabled` — `deleteAccount` really can delete a user
+document, and a suite that only proved the client cannot would not have shown
+that anyone can.
+
+### Three ways a rules test passes for the wrong reason
+
+Each of these was designed around, not discovered afterwards:
+
+- **`updateDoc` on a document that does not exist fails with `not-found`, not
+  `permission-denied`** — so `assertFails` goes green against a rules file that
+  would have allowed the write. Every update and delete case seeds its document
+  first through `withSecurityRulesDisabled`, which is also the only honest way
+  to create the server-authored fields (`totals`, `progress`,
+  `suspiciousCount`) a client must not be able to touch.
+- **`getDoc` on a missing document SUCCEEDS when the rule allows it.** A read
+  test that only checks "no error" is testing the rule; one that checks the
+  DATA needs the document to exist. Both shapes appear, deliberately.
+- **`get` and `list` are different operations.** `list` is evaluated against a
+  QUERY before any document is fetched, so the engine has no `uid` to bind —
+  which means `allow read` on `/users/{uid}` reads as "owner only" and behaves
+  as "nobody can enumerate". Right answer, unguessable reason, so the file
+  spells out `allow get` and `allow list: if false` separately and the suite
+  tests both (including a query narrowed to the caller's own uid, which is
+  still a list).
+
+The suite loads the REAL `firestore.rules` rather than a copy — a test against
+a copy is a statement about a file nobody deploys — and runs under the
+emulator-only project id `demo-wsm-rules`, whose `demo-` prefix tells the
+Firebase tooling it can never reach a real project or need credentials.
+
+### Two rules bugs the suite caught immediately
+
+Both were found by the tests failing, not by reading the file:
+
+- **`updateDoc(ref, {displayName: null})` was denied.** Writing null does not
+  REMOVE the key (that is `deleteField()`), so `displayName is string` refused
+  a player clearing their name — and the refusal would reach them as a silent
+  permission error on a screen that, per Ch10, must never show one. The rule
+  now accepts null or a string; `updateLeaderboards.readProfile` already
+  normalised both to "no name", so nothing downstream changed.
+- **A write including a server field at its CURRENT value was allowed.**
+  `diff().affectedKeys()` is a VALUE diff, not a list of the keys the client
+  mentioned, so `{displayName: 'x', suspiciousCount: 0}` on a document already
+  holding `suspiciousCount: 0` does not "affect" it. That is correct — it
+  changes nothing — but it is not what the rule looks like it says, and there
+  is no v2 primitive for the other reading (`writeFields` was v1 and is gone).
+  The guarantee is therefore "no server-authored value can be MOVED, though one
+  can be restated"; both halves are pinned by tests and the trade-off is
+  written up as SECURITY.md's AR-8, so a future reader meets it as a documented
+  property rather than a suspected hole.
+
+### `displayName` is capped at 24 characters on CREATE as well as UPDATE
+
+Checking length on only one of the two is the classic hole: a client that
+cannot update a 200-character name simply creates the document with one, and
+the leaderboard renders it either way. So `validProfileValues()` is called from
+both rules, and the suite tests 24-vs-25 on both paths.
+
+The cap is a layout constraint on a screen the rule has never seen — a
+`displayName` is published to every other player through
+`leaderboards/*/entries/*`, and 24 characters is what an entry row fits.
+
+### The rules suite is its own CI job
+
+Separate from the `functions` job on purpose: `firestore.rules` protects the
+CLIENT, and it must keep failing the build even if the functions project is
+ever removed, split out or skipped. A rules regression is silent in every other
+check — the app keeps working, it just stops being safe.
+
+The suite lives in a ROOT npm project (`package.json`, `rules_test/`) rather
+than inside `functions/`, because it tests a root artefact and because
+`npm run test:rules` should work from the repo root with no `--prefix`. That is
+also why the emulator ports live in `firebase.json` rather than on each command
+line: two npm projects now drive the emulators, and they must agree.
+
+### SECURITY.md records the accepted risks, not just the wins
+
+Nine of them, each with why it is acceptable and what would close it. The two
+worth knowing before touching this area:
+
+- **AR-9 — the server does not verify that the submitted words were actually in
+  the grid.** It checks the count, the plausible grapheme lengths and the score
+  that follows, so a forger can submit the maximum-scoring PLAUSIBLE replay for
+  a level they did play. The score that buys is bounded near an honest perfect
+  run, so this is leaderboard-shaping rather than score-minting. Closing it
+  means shipping the word packs into the function bundle and porting
+  `GridGenerator`/`WordSelector`/`ScriptNormalizer` to TypeScript — a third
+  language-sensitive port to keep in step with Dart — and should be weighed
+  against simply capping per-level scores at the honest maximum, which is far
+  cheaper and catches most of the value.
+- **AR-4 — display names are length-checked, not moderated.** No profanity
+  filter, no reporting flow. A bad filter is worse than none (they reject real
+  Urdu and Hindi names far more often than they catch abuse), but a public
+  leaderboard still owes a report action and a moderation queue that can blank
+  a name server-side.
+
+A threat model that only records wins is a marketing document, so the file
+opens with the three standing assumptions that shape every row — the client is
+hostile by construction, no defence may require being online at the moment of
+PLAY, and a false positive is invisible and permanent because a flagged player
+is never shown an error.
+
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB
@@ -1524,6 +1641,13 @@ lint`, `npm run typecheck`, `npm test` and `npm run test:emulator`, all from
 fixture (`dart run tool/generate_scoring_fixtures.dart`) and update
 `functions/src/scoring.ts` in the SAME commit — the two are one contract, and
 `Scoring.specVersion` moves with them.
+
+If the change touches `firestore.rules`, add `npm run test:rules` from the repo
+root, and add BOTH an allow test and a deny test for whatever moved — a rule
+with only a deny test is indistinguishable from a rule that denies everything.
+If it changes what the client may do, or what a threat is mitigated by, update
+`SECURITY.md` in the same commit; a gap that is known and unrecorded is the one
+that ships.
 
 Note on `lib/domain/`: it must stay runnable as plain Dart, so it uses
 `GridVector` rather than `dart:ui`'s `Offset`, and knows nothing about

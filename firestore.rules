@@ -3,78 +3,181 @@ rules_version = '2';
 // =============================================================================
 // PRODUCTION RULES FROM DAY ONE (CLAUDE.md → "Never use Firestore test mode").
 //
-// The shape of this file follows one sentence from Ch08: the client never
-// writes anything a score depends on. Every collection below is therefore
-// READ-ONLY to the client, except one narrow update on the player's own
-// profile fields — because those are the only data in the system the player
-// authors rather than earns.
+// The shape of this file follows one sentence from Ch08: THE CLIENT NEVER
+// WRITES ANYTHING A SCORE DEPENDS ON. Every collection below is therefore
+// read-only to the client, except a narrow update on the player's own profile
+// fields — because those are the only data in the system the player authors
+// rather than earns.
 //
 // The Admin SDK bypasses rules entirely, so the Cloud Functions keep working
 // against a file that denies almost everything. That asymmetry IS the design:
 // if a rule here had to be loosened for a function to work, the function would
 // be doing something the client could do too.
+//
+// -----------------------------------------------------------------------------
+// TWO THINGS ABOUT HOW THIS FILE IS READ, BOTH EASY TO GET WRONG
+//
+//  1. RULES ARE UNIONED, NOT LAYERED. A later `allow ... if false` never
+//     revokes an earlier `allow`. The catch-all at the bottom therefore adds no
+//     enforcement — deny is already the default — and exists only to say so out
+//     loud. Security comes from what is ALLOWED being small, never from what is
+//     denied being thorough.
+//  2. `read` IS `get` PLUS `list`, AND THEY ARE NOT THE SAME QUESTION. `get`
+//     asks about one named document, so `uid` is bound and `isSelf(uid)` means
+//     what it looks like. `list` asks about a QUERY, and is evaluated before
+//     any document is fetched — the engine has no `uid` to bind. Writing
+//     `allow read` on `/users/{uid}` therefore reads as "owner only" and
+//     behaves as "nobody can enumerate", which happens to be right but for a
+//     reason nobody would guess from the source. Both are spelled out below.
+//
+// Every rule in this file has an ALLOW test and a DENY test in
+// `rules_test/firestore_rules.test.ts` (P15). The suite runs in CI, so a
+// loosened rule fails the build rather than shipping.
 // =============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSelf(uid) {
-      return request.auth != null && request.auth.uid == uid;
+    function isSignedIn() {
+      // An ANONYMOUS guest counts. Ch02's whole FTUE is built on playing
+      // without an account, so a rule that demanded a linked account would
+      // lock a guest out of the leaderboard they are playing for.
+      return request.auth != null;
     }
 
-    // Only the two fields a player chose to display, and only on their own
-    // document. Everything else on `users/{uid}` — totals, progress, the rate
-    // window, the timing accumulator, suspiciousCount — is server-authored and
-    // is what a cheater would edit first.
-    function onlyProfileFields() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['displayName', 'photoUrl', 'updatedAt'])
-             && (!('displayName' in request.resource.data)
-                 || (request.resource.data.displayName is string
-                     && request.resource.data.displayName.size() <= 40))
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // The only fields a player authors. Everything else on `users/{uid}` —
+    // totals, progress, the rate window, the timing accumulator,
+    // suspiciousCount — is server-authored and is what a cheater edits first.
+    function profileFields() {
+      return ['displayName', 'photoUrl', 'updatedAt'];
+    }
+
+    // Value checks, applied on CREATE as well as UPDATE.
+    //
+    // Applying them to only one of the two is the classic hole: a client that
+    // cannot update a 200-character display name can simply delete nothing and
+    // create the document with one, and the leaderboard renders it either way.
+    // `displayName` is published to every other player through
+    // `leaderboards/*/entries/*`, so its length is a layout constraint on a
+    // screen this rule has never seen — 24 characters is what the entry row
+    // fits.
+    // `null` is allowed alongside a string, and that is not laxity. Clearing a
+    // display name is something players do, and `updateDoc(ref, {displayName:
+    // null})` writes a null rather than removing the key — so `is string`
+    // alone refuses the clear. Refusing it would surface as a silent
+    // permission error on a screen that, per Ch10, must never show the player
+    // one. `updateLeaderboards.readProfile` already normalises null and empty
+    // to "no name", so nothing downstream has to care which shape arrives.
+    function validProfileValues() {
+      return (!('displayName' in request.resource.data)
+              || request.resource.data.displayName == null
+              || (request.resource.data.displayName is string
+                  && request.resource.data.displayName.size() <= 24))
              && (!('photoUrl' in request.resource.data)
+                 || request.resource.data.photoUrl == null
                  || (request.resource.data.photoUrl is string
                      && request.resource.data.photoUrl.size() <= 500));
     }
 
+    // An update may CHANGE only the profile fields.
+    //
+    // `affectedKeys()` covers removals as well as writes, so a full `set()`
+    // that would drop the server's totals is refused for the same reason an
+    // edit of them is.
+    //
+    // IT IS A VALUE DIFF, NOT A LIST OF MENTIONED KEYS. A write that includes
+    // `suspiciousCount` at the value it already holds does not appear in
+    // `affectedKeys()` and is therefore allowed — which is correct, because it
+    // changes nothing, but is not what the rule looks like it says. There is
+    // no v2 primitive for "which fields did the client mention" (`writeFields`
+    // was v1 and is gone), so a value diff is the tool, and this is the shape
+    // of guarantee it gives: no server-authored field can be MOVED, though one
+    // can be restated. `firestore_rules.test.ts` pins both halves so nobody
+    // reads a later no-op-write bug report as a hole here.
+    function touchesOnlyProfileFields() {
+      return request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(profileFields());
+    }
+
     match /users/{uid} {
-      allow get, list: if isSelf(uid);
-      allow update: if isSelf(uid) && onlyProfileFields();
+      // One named document, owner only.
+      allow get: if isSelf(uid);
+
+      // NEVER. There is no query a client has any business running over the
+      // user collection, and enumerating it would expose every player's
+      // display name and photo outside the leaderboard entries that are meant
+      // to publish them. Spelled out rather than left to the `get` rule's
+      // accidental behaviour — see the header.
+      allow list: if false;
+
       allow create: if isSelf(uid)
-                    && request.resource.data.keys().hasOnly(
-                         ['displayName', 'photoUrl', 'updatedAt']);
-      allow delete: if false; // `deleteAccount` only.
+                    && request.resource.data.keys().hasOnly(profileFields())
+                    && validProfileValues();
+
+      allow update: if isSelf(uid)
+                    && touchesOnlyProfileFields()
+                    && validProfileValues();
+
+      // `deleteAccount` only (P14). A client-side delete would leave the
+      // player's leaderboard entries, moderation trail and auth record behind
+      // while looking, to them, like the deletion Play policy promises.
+      allow delete: if false;
 
       // A player may read their own record of what the server decided. They
       // may never write it: the score, the stars and the replay guard are the
-      // outputs of `submitScore`, and a client that could write them would not
-      // need to cheat the pipeline at all — it could skip it.
-      match /scores/{scoreId}   { allow read: if isSelf(uid); allow write: if false; }
-      match /nonces/{nonce}     { allow read: if isSelf(uid); allow write: if false; }
-      match /coinGrants/{grant} { allow read: if isSelf(uid); allow write: if false; }
+      // OUTPUTS of `submitScore`, and a client that could write them would not
+      // need to cheat the pipeline — it could skip it.
+      match /scores/{scoreId} {
+        allow get, list: if isSelf(uid);
+        allow write: if false;
+      }
+      match /nonces/{nonce} {
+        allow get, list: if isSelf(uid);
+        allow write: if false;
+      }
+      match /coinGrants/{grant} {
+        allow get, list: if isSelf(uid);
+        allow write: if false;
+      }
+
+      // Any subcollection a future prompt invents is denied until it is named
+      // here. Without this, `users/{uid}/whatever` would fall through to the
+      // document-level rules above and inherit nothing — which is already a
+      // deny, but silently, and a reader checking "can a client write under
+      // users/" should not have to reason about rule inheritance to find out.
+      match /{subcollection}/{document=**} {
+        allow read, write: if false;
+      }
     }
 
-    // Public, and the only collection in the system that is. Signed-in reads
-    // only — an anonymous guest counts, which is the point of guest-first auth
-    // (Ch02): a player who never links an account can still see the board.
+    // The only publicly readable collection in the system, and therefore the
+    // only place where every stored field is a publication decision.
+    // `updateLeaderboards` writes exactly {uid, displayName, photoUrl, score,
+    // updatedAt} through the Admin SDK; the client only ever reads.
     match /leaderboards/{board} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
       allow write: if false;
 
       match /entries/{uid} {
-        allow read: if request.auth != null;
+        allow read: if isSignedIn();
         allow write: if false;
       }
     }
 
-    // Anti-abuse evidence and an ad network's callback log. No client, not
-    // even the flagged player, has any business reading either — a cheater who
+    // Anti-abuse evidence and an ad network's callback log. No client — not
+    // even the flagged player — has any business reading either: someone who
     // can read `moderation/` learns exactly which check caught them, which is
     // the one thing P14 is explicit about never telling them.
     match /moderation/{document=**}      { allow read, write: if false; }
     match /rewardCallbacks/{document=**} { allow read, write: if false; }
 
-    // Anything a future prompt adds is denied until it says otherwise.
+    // Anything a future prompt adds is denied until it says otherwise. This
+    // changes no behaviour (see the header); it is here so that the answer to
+    // "what happens to a path nobody thought about" is written down.
     match /{document=**} { allow read, write: if false; }
   }
 }

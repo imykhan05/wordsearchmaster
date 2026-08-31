@@ -68,3 +68,6 @@ functions/lib/
 firestore-debug.log
 firebase-debug.log
 ui-debug.log
+
+# Firestore rules test suite (P15) — root npm project
+/node_modules/

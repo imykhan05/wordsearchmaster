@@ -1,0 +1,17 @@
+{
+  "name": "wordsearchmaster-firestore-rules",
+  "version": "1.0.0",
+  "description": "Security-rules test suite for Word Search Master (Ch08 / P15). The Flutter app is the repo; this package exists only to exercise firestore.rules against the emulator.",
+  "private": true,
+  "scripts": {
+    "test:rules": "firebase emulators:exec --only firestore --project demo-wsm-rules \"vitest run --config rules_test/vitest.config.ts\"",
+    "typecheck:rules": "tsc -p rules_test/tsconfig.json"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@types/node": "^22.20.0",
+    "firebase": "^12.6.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
