@@ -1,0 +1,26 @@
+{
+  "indexes": [
+    {
+      "//": "deleteAccount finds a player's board entries with one collection-group query rather than by walking an open-ended board list (weekly_* and daily_* grow forever). Firestore cannot serve that query without this index, and the failure mode without it is a player who asked to be deleted staying visible on a public leaderboard.",
+      "collectionGroup": "entries",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [{ "fieldPath": "uid", "order": "ASCENDING" }]
+    },
+    {
+      "//": "The leaderboard read itself: top N by score within one board.",
+      "collectionGroup": "entries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "score", "order": "DESCENDING" },
+        { "fieldPath": "updatedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Moderation triage: a reviewer opens one player's flags newest first.",
+      "collectionGroup": "flags",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "flaggedAt", "order": "DESCENDING" }]
+    }
+  ],
+  "fieldOverrides": []
+}

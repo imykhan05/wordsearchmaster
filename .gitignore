@@ -60,3 +60,11 @@ l10n_untranslated.json
 android/key.properties
 android/*.jks
 android/*.keystore
+
+# Cloud Functions (P14) — build output, deps and emulator scratch
+functions/node_modules/
+functions/lib/
+.firebase/
+firestore-debug.log
+firebase-debug.log
+ui-debug.log

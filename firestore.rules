@@ -1,0 +1,80 @@
+rules_version = '2';
+
+// =============================================================================
+// PRODUCTION RULES FROM DAY ONE (CLAUDE.md → "Never use Firestore test mode").
+//
+// The shape of this file follows one sentence from Ch08: the client never
+// writes anything a score depends on. Every collection below is therefore
+// READ-ONLY to the client, except one narrow update on the player's own
+// profile fields — because those are the only data in the system the player
+// authors rather than earns.
+//
+// The Admin SDK bypasses rules entirely, so the Cloud Functions keep working
+// against a file that denies almost everything. That asymmetry IS the design:
+// if a rule here had to be loosened for a function to work, the function would
+// be doing something the client could do too.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSelf(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Only the two fields a player chose to display, and only on their own
+    // document. Everything else on `users/{uid}` — totals, progress, the rate
+    // window, the timing accumulator, suspiciousCount — is server-authored and
+    // is what a cheater would edit first.
+    function onlyProfileFields() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['displayName', 'photoUrl', 'updatedAt'])
+             && (!('displayName' in request.resource.data)
+                 || (request.resource.data.displayName is string
+                     && request.resource.data.displayName.size() <= 40))
+             && (!('photoUrl' in request.resource.data)
+                 || (request.resource.data.photoUrl is string
+                     && request.resource.data.photoUrl.size() <= 500));
+    }
+
+    match /users/{uid} {
+      allow get, list: if isSelf(uid);
+      allow update: if isSelf(uid) && onlyProfileFields();
+      allow create: if isSelf(uid)
+                    && request.resource.data.keys().hasOnly(
+                         ['displayName', 'photoUrl', 'updatedAt']);
+      allow delete: if false; // `deleteAccount` only.
+
+      // A player may read their own record of what the server decided. They
+      // may never write it: the score, the stars and the replay guard are the
+      // outputs of `submitScore`, and a client that could write them would not
+      // need to cheat the pipeline at all — it could skip it.
+      match /scores/{scoreId}   { allow read: if isSelf(uid); allow write: if false; }
+      match /nonces/{nonce}     { allow read: if isSelf(uid); allow write: if false; }
+      match /coinGrants/{grant} { allow read: if isSelf(uid); allow write: if false; }
+    }
+
+    // Public, and the only collection in the system that is. Signed-in reads
+    // only — an anonymous guest counts, which is the point of guest-first auth
+    // (Ch02): a player who never links an account can still see the board.
+    match /leaderboards/{board} {
+      allow read: if request.auth != null;
+      allow write: if false;
+
+      match /entries/{uid} {
+        allow read: if request.auth != null;
+        allow write: if false;
+      }
+    }
+
+    // Anti-abuse evidence and an ad network's callback log. No client, not
+    // even the flagged player, has any business reading either — a cheater who
+    // can read `moderation/` learns exactly which check caught them, which is
+    // the one thing P14 is explicit about never telling them.
+    match /moderation/{document=**}      { allow read, write: if false; }
+    match /rewardCallbacks/{document=**} { allow read, write: if false; }
+
+    // Anything a future prompt adds is denied until it says otherwise.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -10,6 +10,7 @@ import '../local/app_database.dart';
 import '../local/integrity_tags.dart';
 import '../local/outbox_kind.dart';
 import '../local/score_event_codec.dart';
+import '../local/submission_nonce.dart';
 import '../local/tables.dart';
 import 'local_repository.dart';
 
@@ -156,6 +157,11 @@ final class DailyRepository extends LocalRepository {
           'stars': stars,
           'completedAt': completedAt,
           'specVersion': Scoring.specVersion,
+          'nonce': SubmissionNonce.forDaily(
+            language: language,
+            date: date,
+            completedAt: completedAt,
+          ),
           // The ordered events, never the total: P14's Cloud Function replays
           // them and writes ITS number (CLAUDE.md → Never write scores
           // directly from client to Firestore).

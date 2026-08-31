@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "wsm-dev",
+    "dev": "wsm-dev",
+    "stg": "wsm-stg",
+    "prod": "wsm-prod"
+  }
+}

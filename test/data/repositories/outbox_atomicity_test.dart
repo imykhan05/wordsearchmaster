@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' show SqliteException;
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/data/local/outbox_kind.dart';
+import 'package:word_search_master/data/local/submission_nonce.dart';
 import 'package:word_search_master/data/local/tables.dart';
 import 'package:word_search_master/data/repositories/coins_repository.dart';
 import 'package:word_search_master/data/repositories/profile_repository.dart';
@@ -97,6 +100,25 @@ void main() {
         );
       },
     );
+
+    test('the queued payload carries a replay nonce (P14)', () async {
+      await completeLevel();
+      final decoded = jsonDecode(
+        (await outboxRows()).single.payload,
+      ) as Map<String, Object?>;
+
+      // Derived, not random, so the SAME row retried after a dropped
+      // connection carries the SAME value and `submitScore` can answer it
+      // idempotently instead of recording the level twice.
+      expect(
+        decoded['nonce'],
+        SubmissionNonce.forLevel(
+          language: Language.english,
+          level: 4,
+          completedAt: decoded['completedAt']! as int,
+        ),
+      );
+    });
   });
 
   group('a failing outbox write rolls the WHOLE transaction back', () {

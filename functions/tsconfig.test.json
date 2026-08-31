@@ -1,0 +1,13 @@
+{
+  // Type-checks the tests too, which `tsc` proper does not: `tsconfig.json` is
+  // the DEPLOY config and must emit only `src` into `lib/`, so its `rootDir`
+  // excludes `test/` by design. This config keeps every strictness flag and
+  // only widens the root and turns emit off.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

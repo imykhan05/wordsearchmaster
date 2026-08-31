@@ -11,6 +11,7 @@ import '../local/app_database.dart';
 import '../local/integrity_tags.dart';
 import '../local/outbox_kind.dart';
 import '../local/score_event_codec.dart';
+import '../local/submission_nonce.dart';
 import '../local/tables.dart';
 import 'local_repository.dart';
 
@@ -155,6 +156,14 @@ final class ProgressRepository extends LocalRepository {
           // Lets the server reject a submission from a client built against
           // older rules instead of silently mis-scoring it.
           'specVersion': Scoring.specVersion,
+          // The replay guard. Derived from this attempt's own fields, so a
+          // retry of THIS row carries the same value and the server can answer
+          // it idempotently instead of recording the level twice (P14).
+          'nonce': SubmissionNonce.forLevel(
+            language: language,
+            level: level,
+            completedAt: completedAt,
+          ),
           'events': ScoreEventCodec.encode(events),
         },
       );

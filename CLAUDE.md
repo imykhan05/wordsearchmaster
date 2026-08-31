@@ -88,6 +88,22 @@ lib/
     └── widgets/
 ```
 
+The server half lives outside `lib/` entirely:
+
+```
+functions/                      ★ TypeScript, region asia-south1 (P14)
+├── src/
+│   ├── scoring.ts              the TS half of the scoring contract
+│   ├── validation.ts           the Ch08 pipeline — PURE, no Firestore
+│   ├── levels.ts               the Ch07 curve, ported; checked against the asset
+│   ├── submissions.ts          submitScore/submitDaily's shared transaction
+│   ├── updateLeaderboards.ts · deleteAccount.ts · grantRewardedReward.ts
+│   └── index.ts                the exported callables and the trigger
+└── test/                       pure suites + an emulator-backed integration suite
+
+firestore.rules · firestore.indexes.json · firebase.json · .firebaserc
+```
+
 ## Flavors — three separate worlds
 
 | Flavor | Firebase project | Ads          | Analytics       |
@@ -1163,6 +1179,265 @@ call are tested, the console is not. Criteria 1 and 2 ARE verified, by
 `account_merge_test.dart`/`account_merge_repository_test.dart`/
 `account_controller_test.dart` respectively.
 
+## Cloud Functions — server-authoritative scoring (P14)
+
+`functions/` is a TypeScript Firebase Functions v2 project in **`asia-south1`**,
+matching `AppConfig.functionsRegion`. Every callable sets
+`enforceAppCheck: true`. Full contracts, payload shapes and error codes are in
+`functions/README.md`; this section is the reasoning.
+
+### The scoring port is a two-way lock, not a copy
+
+`functions/src/scoring.ts` is the TypeScript half of the contract whose
+normative text is `lib/domain/scoring/scoring.dart`'s header — same integer
+`[10, 12, 14, 16, 18, 20]` table, same replay-an-ordered-list shape, same
+`computeStars` with no elapsed-time parameter. Neither side can move alone,
+because a committed fixture sits between them:
+
+1. `tool/generate_scoring_fixtures.dart` computes 210 cases (10 hand-picked
+   edges + 200 seeded random replays) with the REAL `Scoring`, and writes
+   `functions/test/fixtures/scoring_parity.json`.
+2. `test/tool/scoring_fixtures_test.dart` regenerates it in memory and fails on
+   a byte difference — so the fixture cannot go stale relative to the Dart spec.
+3. `functions/test/scoring_parity.test.ts` reads it and asserts the port
+   reproduces every number.
+
+Change the Dart rules and (2) fails until the fixture is regenerated;
+regenerate it and (3) fails until the port is updated. The obvious alternative
+— one test process running both languages — needs a Dart VM inside vitest or a
+Node process inside `flutter test`, which makes the parity claim depend on a
+toolchain being installed rather than on the two implementations agreeing.
+
+The generator is seeded (`Random(20260831)`), so re-running it on an unchanged
+spec is a no-op in `git status` — the same determinism discipline
+`GridGenerator` keeps.
+
+### Two rejection classes, and the line between them is the design
+
+- **MALFORMED → `invalid-argument`.** Payloads an honest client CANNOT produce:
+  a missing field, a level id that is not a number, an unreadable event, an
+  events array past 500 entries. There is no player behaviour to attribute them
+  to and nothing to flag, so answering honestly costs nothing.
+- **SUSPICIOUS → a flag on a SUCCESSFUL response.** Well-formed payloads whose
+  contents do not add up. P14's rule is literal: never return an error to a
+  suspected cheater. The response is byte-identical in shape to an accepted one
+  — no `suspicious` field, no flag list, not even a different key set — because
+  a cheater who learns which check caught them iterates until it does not.
+
+`resource-exhausted` (the rate limit) is the one error that is not a cheat
+signal: it protects the backend, and an honest client wedged in a retry loop
+needs that answer too.
+
+**`server-side recomputation` is the only check that always runs.** The client's
+score is never read because `ScoreEventCodec` never sends one; `stars` and
+`hintsUsed` ARE read, but only as tamper signals — the values written are
+always the replayed ones.
+
+### A replayed nonce is a SUCCESS, not an error
+
+The obvious reading of "nonce replay check" is to refuse the second submission.
+That is wrong here, and the reason is Ch10's outbox: a row whose response was
+lost to a dropped connection is retried, and it is the SAME row. Refusing it
+would strand a level the player really finished. So a repeat returns the stored
+result verbatim and writes nothing — idempotent, which is what an at-least-once
+delivery pipeline actually needs, and which happens to tell a replay attacker
+nothing either.
+
+`SubmissionNonce` (`lib/data/local/submission_nonce.dart`, P14's one client
+change) is therefore DERIVED, not random: `level:{lang}:{level}:{completedAt}`.
+`completedAt` is written once, inside the same transaction as the progress row,
+so every retry of one attempt carries the same value while a genuine replay of
+the level carries a different one. The server derives the identical string for
+rows queued by a pre-P14 build (`validation.ts`'s `parseNonce`), so upgrading a
+device with a full queue does not strand it. Both sides must change together.
+
+### The timing check is cumulative and order-independent, because it has to be
+
+Relaxed mode has NO timer — `Scoring.computeStars` takes no elapsed parameter on
+purpose — so there is no honest per-level duration for a client to send, and
+anything it did send would be client-controlled and worthless as a bound.
+
+What is checkable is the whole account at once: the SPAN of client completion
+times the player has claimed, against the minimum time the work they submitted
+could take. That comparison must be order-independent, because the outbox can
+deliver a retried row behind a newer one; a check written as "this submission
+minus the previous one" would flag honest players every time the queue retried.
+The earliest submission contributes no requirement, since nothing bounds how
+long the first level took.
+
+Two consequences worth stating:
+
+- **A timestamp already known to be nonsense is NOT folded into the
+  accumulator.** One completion stamped in 2099 would stretch the span far
+  enough to make everything after it plausible; the cheapest forgery of a
+  cumulative bound is to inflate the bound.
+- **`clockRewound` is measured against the SERVER clock (400 days), never
+  against the account's creation time.** The tempting check — "a completion
+  cannot predate the account" — flags an entirely normal case: `users/{uid}` is
+  first written by the first SUBMISSION, while the levels in it were played
+  before that, offline, possibly for days. That was found by an emulator test
+  failing, not by reading the code.
+
+`timingIsPlausible`'s header states its limit as plainly as `integrity.dart`
+does: it catches the naive forgery (fifty completions with adjacent
+timestamps), not a forger who spaces fake timestamps plausibly. That ceiling is
+acceptable because of what it is one signal among — a perfectly-paced forgery
+still faces progression continuity and word-count bounds, and still only earns
+what its own events justify.
+
+### The bounds have to allow for P12
+
+`wordCountBounds` is `[wordCount - 1, wordCount]`, not an exact match, because
+the anti-frustration downshift genuinely hands a struggling player one fewer
+word (`DdaDownshift.dropOneWord`). A server insisting on the exact curve value
+would silently flag precisely the players the DDA exists to help — silently,
+because a flagged score shows no error. Two systems written eight prompts apart
+have to agree here, which is why `levels.test.ts` checks the ported Ch07 curve
+against all 900 real rows of `assets/content/levels.json` rather than trusting
+that it was transcribed correctly.
+
+The server derives level shapes from that ported curve instead of shipping
+`levels.json` into the function bundle: every field it needs is a pure function
+of the level id — which is exactly what `tool/validate_content.dart` already
+asserts about all 900 of them on every CI run.
+
+### The leaderboard trigger COPIES, it never accumulates
+
+A Firestore trigger is at-least-once. It fires twice for one write eventually,
+so "add this score to the player's total" silently double-counts — rarely
+enough to be discovered months later on a leaderboard nobody can explain. So the
+totals are accumulated in `recordSubmission`'s single transaction, which is
+exactly-once because the nonce guards it, and `updateLeaderboards` only mirrors
+the already-correct numbers. Running it twice writes the same bytes twice.
+
+Totals move by the IMPROVEMENT over the previous best, never by the raw score,
+so replaying a level cannot pump a board.
+
+Boards: `global`, `ur`, `hi`, `en`, `weekly_{ISO week}`, `daily_{date}`. The
+weekly key is derived from when the level was PLAYED, not when it synced — a
+queued row draining on Monday belongs to the week it was played in. ISO weeks
+pivot on Thursday, which is why `isoWeekKey` does that explicitly rather than
+dividing day-of-year by seven; getting it wrong resets the weekly board three
+days early, once a year.
+
+Entries hold EXACTLY `{uid, displayName, photoUrl, score, updatedAt}`. A
+leaderboard is the only collection other players read, so every field on it is
+a publication decision.
+
+**`daily_{date}` is keyed by the date alone, and that is a flagged trade-off.**
+A date has three daily puzzles (`DailyRepository` keys rows by `(date,
+language)`), and they share one board. Defensible today because `DailyPuzzle`
+fixes an identical shape for all three (10x10, 8 words, diagonal tier) and
+`Scoring` is language-blind — only the word pack differs. The board therefore
+takes the BEST of a player's dailies for that date, in a transaction, so
+whichever language syncs last the entry ends up the same; a plain `set` would
+publish whichever arrived last, which is not a rule anyone could explain. If a
+future prompt establishes the packs are not equally hard, the split is
+`daily_{date}_{lang}` plus a migration.
+
+### A flagged submission never overwrites an honest best score
+
+The score document is only CREATED by a flagged submission. If a clean result is
+already stored for that level, the flagged one leaves it alone and only moves a
+`flaggedSubmissions` counter — otherwise one false positive would quietly
+destroy a score a player earned. Either way the full payload, INCLUDING the raw
+events so a moderator can replay it by hand, lands in
+`moderation/{uid}/flags/{autoId}`.
+
+### `deleteAccount` deletes Firestore first and auth LAST
+
+Deleting the auth record first is a one-way door: the moment it is gone the
+player cannot authenticate, so a Firestore failure afterwards would leave their
+data with nobody able to ask for it again. Auth last makes a partial failure
+RESUMABLE. Calling it twice is safe, and `auth/user-not-found` is treated as
+success because it means a previous call got that far.
+
+Board entries are found with a collection-group query on `entries.uid` rather
+than by walking the board list, because that list is open-ended (`weekly_*` and
+`daily_*` grow forever) and a player missed here stays visible on a PUBLIC board
+after asking to be deleted — the only failure mode of this function that other
+people can see. The index for it is in `firestore.indexes.json` and is not
+optional.
+
+Moderation records are deleted too. They are anti-abuse evidence and deleting
+them lets a cheater launder their history — but they are also unambiguously
+data about a person who asked for their data to be deleted, and Play policy
+carves out no exception for records the developer finds useful. The deterrent
+that remains is the one that was always doing the work: deleting the account
+also deletes every level, coin and streak. Local data is untouched because this
+function cannot reach it — a property, not a promise, exactly like
+`FirebaseAuthService.signOut`.
+
+### `grantRewardedReward` is the only function without App Check, by necessity
+
+It is called by AppLovin's servers, which have no app instance and can never
+hold an App Check token, so attestation comes from a shared secret
+(`defineSecret('MAX_REWARD_SECRET')`) instead. That substitution is the whole
+point: the client could perfectly well claim "I watched an ad" — and a modified
+client would claim it constantly — so THE ONLY PATH THAT MINTS COINS IS ONE THE
+CLIENT CANNOT INVOKE, SIGN OR OBSERVE.
+
+Three defences, each covering the others' gap: HMAC-SHA256 over
+`user_id|event_id|amount|ts` compared with `timingSafeEqual` (a `===` on a hex
+digest leaks the correct prefix through response timing); a 15-minute freshness
+window (a signature is valid forever, a captured URL must not be); and
+idempotency on `event_id` (AppLovin retrying on a non-2xx is documented
+behaviour, not an edge case). An honest 4xx IS right here — the caller is an ad
+network, not a player, and the only thing that reaches one is a misconfigured
+callback URL whose owner needs to know.
+
+Coins are clamped at 500 per callback and written as a GRANT RECORD
+(`users/{uid}/coinGrants/{eventId}`), never a balance: the client's
+`coins_ledger` is append-only and locally HMAC-signed (Ch10), so a server-set
+balance would have nowhere to land.
+
+**P18 must confirm the signature scheme** against the MAX dashboard, which is
+not reachable from this repository; ad networks differ on what they sign and in
+what order. If it differs, change `canonicalString` and nothing else — freshness,
+idempotency, the ceiling and the write path are all independent of that choice.
+
+### Firestore rules are production-grade from day one
+
+`firestore.rules` denies almost everything. The client may read its own
+documents and any leaderboard entry, and may write exactly two fields
+(`displayName`, `photoUrl`) on its own user document — the only data in the
+system the player authors rather than earns. `moderation/` and
+`rewardCallbacks/` are unreachable by any client, including the flagged player:
+someone who can read `moderation/` learns exactly which check caught them.
+
+The Admin SDK bypasses rules, so the functions keep working against a file that
+denies nearly all of it. That asymmetry IS the design — if a rule had to be
+loosened for a function to work, the function would be doing something the
+client could do too.
+
+### Testing shape, and what could not be verified here
+
+- `functions/test/*.test.ts` (106 tests) is pure: scoring, the parity fixture,
+  the ported curve against the real 900-row asset, the whole validation
+  pipeline, ISO week keys, and the reward signature. No emulator, no network.
+- `functions/test/integration/pipeline.test.ts` (21 tests) runs under
+  `firebase emulators:exec --only firestore,auth` against a REAL Firestore —
+  transactions, `FieldValue` increments, `recursiveDelete` and collection-group
+  queries all genuinely exercised. It drives `recordSubmission` /
+  `mirrorScoreToLeaderboards` / `deleteAccountFor` / `creditReward` directly
+  rather than the callable transport: what the wrappers add is an auth check, a
+  parse and an App Check flag, and the first two are already covered without an
+  emulator while the third is a deploy-time property no emulator enforces.
+  Those four inner functions are split out of their wrappers FOR that reason.
+- **Acceptance criteria 1 and 3 are verified on the emulator** (a fake score
+  submission is flagged and kept off every board while still returning success;
+  `deleteAccount` empties the user doc, all subcollections, all board entries,
+  the moderation trail and the auth record). **Criterion 2 is verified** by the
+  fixture pair above.
+- **NOT verified here**: the functions emulator loads all five definitions
+  (`updateLeaderboards, deleteAccount, grantRewardedReward, submitScore,
+  submitDaily`) but cannot register the Firestore trigger in this sandbox — the
+  registration call is blocked by the container's outbound proxy. So the
+  TRIGGER WIRING itself is unexercised; its body is not. Nor is anything that
+  needs a real Firebase project: App Check enforcement, a deployed region, or
+  the MAX callback against the real dashboard.
+
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB
@@ -1240,8 +1515,15 @@ call are tested, the console is not. Criteria 1 and 2 ARE verified, by
 Code + unit tests + `flutter analyze` clean + `dart format` clean + all three
 CI checks clean (`tool/check_domain_purity.dart`,
 `tool/check_no_raw_colors.dart`, `tool/check_localized_strings.dart`) +
-updated CLAUDE.md if architecture changed + acceptance criteria for the
-prompt met + committed.
+`dart run tool/validate_content.dart` clean + updated CLAUDE.md if
+architecture changed + acceptance criteria for the prompt met + committed.
+
+If the change touches `functions/`, add: `npm run format:check`, `npm run
+lint`, `npm run typecheck`, `npm test` and `npm run test:emulator`, all from
+`functions/`. If it touches `lib/domain/scoring/`, regenerate the parity
+fixture (`dart run tool/generate_scoring_fixtures.dart`) and update
+`functions/src/scoring.ts` in the SAME commit — the two are one contract, and
+`Scoring.specVersion` moves with them.
 
 Note on `lib/domain/`: it must stay runnable as plain Dart, so it uses
 `GridVector` rather than `dart:ui`'s `Offset`, and knows nothing about
