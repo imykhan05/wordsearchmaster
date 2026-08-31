@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../application/sync_controller.dart';
 import '../services/audio/audio_service.dart';
 import '../services/haptics/haptics_service.dart';
 import 'language/language_x.dart';
@@ -26,6 +27,11 @@ class WordSearchMasterApp extends ConsumerWidget {
     // comments), so this just has to keep them alive for the app's life.
     ref.watch(audioMuteSyncProvider);
     ref.watch(hapticsEnabledSyncProvider);
+    // Ch10's outbox drain triggers: coming online, and returning to the
+    // foreground. Watched HERE, once, for the same reason the two above are —
+    // a provider that installs listeners must be kept alive by something with
+    // the app's lifetime, and the app root is the only widget that has one.
+    ref.watch(syncTriggersProvider);
 
     return MaterialApp.router(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,

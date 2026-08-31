@@ -109,3 +109,19 @@ final class StyleGalleryRoute extends AppRoute {
   @override
   String get location => '/dev/style-gallery';
 }
+
+/// DEV FLAVOR ONLY — the outbox queue, its backoff state, and a force-drain
+/// (Ch10 / P16). Registered only on dev, exactly like [StyleGalleryRoute].
+///
+/// The sync engine shows a player nothing by design, so this screen is the
+/// only place its state is observable at all. That is precisely why it must
+/// never ship: a queue inspector is a list of everything the game knows and
+/// has not yet told the server.
+final class SyncInspectorRoute extends AppRoute {
+  const SyncInspectorRoute();
+
+  static const name = 'syncInspector';
+
+  @override
+  String get location => '/dev/sync-inspector';
+}

@@ -8,10 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/content/content_repository.dart';
 import '../data/local/app_database.dart';
 import '../data/remote/cloud_account_repository.dart';
+import '../data/remote/sync_api.dart';
 import '../data/repositories/streak_repository.dart';
 import '../services/analytics/analytics_service.dart';
 import '../services/app_check/app_check_gateway.dart';
 import '../services/audio/audio_service.dart';
+import '../services/connectivity/connectivity_service.dart';
 import '../services/auth/auth_service.dart';
 import '../services/diagnostics/error_reporter.dart';
 import '../services/firebase/firebase_gateway.dart';
@@ -37,6 +39,8 @@ final class BootstrapServices {
     required this.cloudAccount,
     required this.firebaseAvailable,
     required this.remoteConfigFetched,
+    required this.connectivity,
+    required this.syncApi,
     this.database,
     this.content,
     this.clock,
@@ -49,6 +53,18 @@ final class BootstrapServices {
   final AnalyticsService analytics;
   final RemoteConfig remoteConfig;
   final CloudAccountRepository cloudAccount;
+
+  /// Whether there is a network right now (Ch10 / P16). The plugin-backed
+  /// binding when the platform channel answered, the assume-online fallback
+  /// otherwise — never a binding that reports permanently offline, because a
+  /// queue that never drains is the one failure mode worth avoiding.
+  final ConnectivityService connectivity;
+
+  /// The outbox's courier. `NoopSyncApi` whenever Firebase is unavailable,
+  /// which answers every submission as a TRANSIENT failure — so an
+  /// unconfigured checkout and airplane mode hold the queue identically
+  /// rather than silently discarding it.
+  final SyncApi syncApi;
 
   /// False in airplane mode, on an unconfigured checkout, and whenever
   /// `Firebase.initializeApp` failed. The game is fully playable either way —
@@ -227,6 +243,27 @@ Future<BootstrapServices> initializeServices(
     audio = await (loadAudio?.call() ?? _preloadAudio());
   });
 
+  // 7c. The sync courier and its connectivity signal (Ch10 / P16).
+  //
+  // Placed here, AFTER the database and content, and deliberately: the drain
+  // reads the outbox, so wiring it before there is a database to read would
+  // only create a worker with nothing to work on. It is also why neither of
+  // these can fail the boot — both have fallbacks that hold the queue rather
+  // than dropping it.
+  var connectivity =
+      const AssumeOnlineConnectivityService() as ConnectivityService;
+  await _step(config, 'connectivity.bind', () async {
+    connectivity = PluginConnectivityService();
+    // Touch it once here rather than on the first drain: a plugin that is
+    // going to throw should do it inside a `_step`, where it degrades to the
+    // assume-online fallback, not inside a background worker.
+    await connectivity.isOnline();
+  }, onError: () => connectivity = const AssumeOnlineConnectivityService());
+
+  final syncApi = services == null
+      ? const NoopSyncApi() as SyncApi
+      : FunctionsSyncApi(functionsForRegion());
+
   // ---- 8. Ads init — deferred, must never block the first frame ----
   unawaited(
     _step(config, 'ads.init', () async {
@@ -244,6 +281,8 @@ Future<BootstrapServices> initializeServices(
     cloudAccount: services?.cloudAccount ?? const NoopCloudAccountRepository(),
     firebaseAvailable: services != null,
     remoteConfigFetched: remoteConfigFetched,
+    connectivity: connectivity,
+    syncApi: syncApi,
     database: database,
     content: content,
     clock: clock,
@@ -282,6 +321,10 @@ Future<void> bootstrap(
             cloudAccountRepositoryProvider.overrideWithValue(
               services.cloudAccount,
             ),
+            connectivityServiceProvider.overrideWithValue(
+              services.connectivity,
+            ),
+            syncApiProvider.overrideWithValue(services.syncApi),
             // Each of the four below is absent only if its step threw. The
             // matching provider then falls back to its own default — see each
             // one's doc for what that means; none of them is fatal.
@@ -311,13 +354,19 @@ Future<void> bootstrap(
 Future<void> _step(
   AppConfig config,
   String name,
-  Future<void> Function() run,
-) async {
+  Future<void> Function() run, {
+
+  /// Runs when [run] threw, so a step that left a half-assigned local can put
+  /// it back. Most steps need nothing here — their local simply stays null and
+  /// the matching provider falls back on its own.
+  void Function()? onError,
+}) async {
   final stopwatch = Stopwatch()..start();
   try {
     await run();
     _log(config, 'bootstrap: $name ok (${stopwatch.elapsedMilliseconds}ms)');
   } catch (error) {
+    onError?.call();
     // A background/init step failing must never crash startup or surface to
     // the player — log and continue with defaults (CLAUDE.md → Never do).
     _log(config, 'bootstrap: $name failed, continuing with defaults: $error');

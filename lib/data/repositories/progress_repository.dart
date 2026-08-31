@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../domain/scoring/score_event.dart';
 import '../../domain/scoring/scoring.dart';
+import '../../domain/sync/conflict_resolver.dart';
 import '../../domain/text/language.dart';
 import '../../services/diagnostics/error_reporter.dart';
 import '../local/app_database.dart';
@@ -169,6 +170,100 @@ final class ProgressRepository extends LocalRepository {
       );
     });
   }
+
+  /// Applies the server's recomputation of [level] back onto the local row
+  /// (Ch10 conflict rule 1 / P16).
+  ///
+  /// THE SERVER'S NUMBER WINS, INCLUDING DOWNWARD. Everything else in this
+  /// codebase resolves a conflict towards the player — `bestScore` takes a
+  /// max, the account merge takes the better row — and this deliberately does
+  /// not, because the server's replay is not a second opinion to be compared
+  /// against the local one. It is the only number that was ever authoritative
+  /// (Ch08), and "keep whichever is bigger" would turn a tampered client into
+  /// a working exploit.
+  ///
+  /// In practice it almost never changes anything: the optimistic score shown
+  /// during play comes from the same `Scoring` code the Cloud Function
+  /// re-implements, over the same events, and P14's parity fixture exists to
+  /// keep the two identical. The case where it DOES change something is
+  /// exactly the case it was written for.
+  ///
+  /// NEVER ENQUEUES. This is the tail of a submission, not a new one — a
+  /// reconcile that queued its own outbox row would sync forever in a loop.
+  ///
+  /// A local row that is missing or fails its tag is REBUILT from the server's
+  /// values rather than skipped, which quietly repairs a tampered or corrupted
+  /// row on the next sync. `hintsUsed` is recovered from the star count, which
+  /// is exact rather than a guess: `Scoring.computeStars` maps 0/1/2+ hints
+  /// onto 3/2/1 stars and nothing else feeds it.
+  ///
+  /// Returns true when the row actually moved, so the caller can skip a write
+  /// that would wake every stream watching this table for nothing.
+  Future<bool> reconcileFromServer({
+    required Language language,
+    required int level,
+    required int stars,
+    required int bestScore,
+  }) async {
+    return database.transaction(() async {
+      final existing =
+          await (database.select(database.levelProgress)..where(
+                (row) =>
+                    row.languageCode.equals(language.code) &
+                    row.level.equals(level),
+              ))
+              .getSingleOrNull();
+      final previous = existing != null && _isIntact(existing)
+          ? existing
+          : null;
+
+      final resolution = ConflictResolver.resolveSubmittedLevel(
+        localStars: previous?.stars ?? -1,
+        localBestScore: previous?.bestScore ?? -1,
+        ack: ServerScoreAck(
+          score: bestScore,
+          stars: stars,
+          bestScore: bestScore,
+          bestStars: stars,
+        ),
+      );
+      if (!resolution.changed) return false;
+
+      final hintsUsed = previous?.hintsUsed ?? _hintsForStars(resolution.stars);
+      final completedAt = previous?.completedAt ?? nowMillis;
+
+      await database
+          .into(database.levelProgress)
+          .insertOnConflictUpdate(
+            LevelProgressCompanion.insert(
+              languageCode: language.code,
+              level: level,
+              stars: resolution.stars,
+              bestScore: resolution.bestScore,
+              hintsUsed: hintsUsed,
+              completedAt: completedAt,
+              integrityTag: RowTags.levelProgress(
+                integrity,
+                languageCode: language.code,
+                level: level,
+                stars: resolution.stars,
+                bestScore: resolution.bestScore,
+                hintsUsed: hintsUsed,
+                completedAt: completedAt,
+              ),
+            ),
+          );
+      return true;
+    });
+  }
+
+  /// The inverse of `Scoring.computeStars`, for a row being rebuilt from a
+  /// server response that carries stars but not hints.
+  static int _hintsForStars(int stars) => switch (stars) {
+    >= 3 => 0,
+    2 => 1,
+    _ => 2,
+  };
 
   bool _isIntact(LevelProgressRow row) => guard.accepts(
     table: LocalTables.levelProgress,

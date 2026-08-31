@@ -10,6 +10,7 @@ import '../presentation/screens/leaderboard_screen.dart';
 import '../presentation/screens/profile_screen.dart';
 import '../presentation/screens/settings_screen.dart';
 import '../presentation/screens/style_gallery_screen.dart';
+import '../presentation/screens/sync_inspector_screen.dart';
 import 'app_route.dart';
 import 'config/app_config.dart';
 
@@ -77,12 +78,18 @@ GoRouter router(Ref ref) {
       // Dev-only tooling. Absent from the route table entirely on stg/prod,
       // rather than gated inside the screen — there is no build in which a
       // player can reach it.
-      if (isDev)
+      if (isDev) ...[
         GoRoute(
           path: const StyleGalleryRoute().location,
           name: StyleGalleryRoute.name,
           builder: (context, state) => const StyleGalleryScreen(),
         ),
+        GoRoute(
+          path: const SyncInspectorRoute().location,
+          name: SyncInspectorRoute.name,
+          builder: (context, state) => const SyncInspectorScreen(),
+        ),
+      ],
     ],
   );
 }

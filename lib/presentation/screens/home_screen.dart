@@ -10,6 +10,7 @@ import '../../application/account_controller.dart';
 import '../../domain/progression/streak.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../widgets/sync_status.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
 import '../../services/settings/ui_settings_store.dart';
@@ -32,7 +33,18 @@ class HomeScreen extends ConsumerWidget {
     final tokens = AppTokens.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.navHome)),
+      appBar: AppBar(
+        title: Text(l10n.navHome),
+        actions: const [
+          // Ch10's ONE permitted network surface: a small static icon. Never a
+          // dialog, never a banner, never a retry button — see
+          // `SyncStatusIndicator`'s own header.
+          Padding(
+            padding: EdgeInsets.only(right: AppTokens.space16),
+            child: Center(child: SyncStatusIndicator()),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(AppTokens.space24),

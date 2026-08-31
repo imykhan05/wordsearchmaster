@@ -1,7 +1,6 @@
 {
   "@@locale": "ur",
   "@@x-review-status": "REQUIRES NATIVE SPEAKER REVIEW BEFORE RELEASE. Machine-drafted Urdu. A native reader spots a wrong register or a mis-shaped letter instantly, and 'spelling ghalat hai' reviews are very hard to undo once they land (Ch07).",
-
   "appTitle": "ورڈ سرچ ماسٹر",
   "chooseLanguage": "اپنی زبان منتخب کریں",
   "navHome": "ہوم",
@@ -19,7 +18,6 @@
     }
   },
   "comingSoon": "جلد آ رہا ہے",
-
   "pauseButtonLabel": "روکیں",
   "hintButtonLabel": "اشارہ",
   "levelCompleteTitle": "لیول مکمل!",
@@ -31,12 +29,13 @@
   "resumeButton": "جاری رکھیں",
   "restartButton": "دوبارہ شروع کریں",
   "soundLabel": "آواز",
-
   "streakLabel": "دن کی لڑی",
   "streakFreezesLabel": "{count, plural, =1{1 فریز} other{{count} فریز}}",
   "@streakFreezesLabel": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "streakFrozenMessage": "ایک فریز نے آپ کا چھوٹا ہوا دن پورا کر دیا",
@@ -45,7 +44,9 @@
   "regionTitle": "علاقہ {number}",
   "@regionTitle": {
     "placeholders": {
-      "number": { "type": "int" }
+      "number": {
+        "type": "int"
+      }
     }
   },
   "levelLocked": "بند",
@@ -56,8 +57,12 @@
   "collectionsProgress": "{total} میں سے {done}",
   "@collectionsProgress": {
     "placeholders": {
-      "done": { "type": "int" },
-      "total": { "type": "int" }
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "chestOpenTitle": "صندوق!",
@@ -65,7 +70,9 @@
   "hintCost": "{cost} سکے",
   "@hintCost": {
     "placeholders": {
-      "cost": { "type": "int" }
+      "cost": {
+        "type": "int"
+      }
     }
   },
   "ddaHintOfferMessage": "اشارہ چاہیے؟",
@@ -92,5 +99,50 @@
   "signOutKeepsProgress": "آپ کی پیش رفت اس ڈیوائس پر محفوظ رہے گی",
   "signInSuccessMessage": "سائن ان ہو گیا۔ آپ کی پیش رفت محفوظ ہے۔",
   "signInFailedMessage": "سائن ان نہیں ہو سکا۔ آپ کی پیش رفت محفوظ ہے — دوبارہ کوشش کریں۔",
-  "signInMergePendingMessage": "سائن ان ہو گیا۔ آپ کی محفوظ پیش رفت جلد ظاہر ہوگی۔"
+  "signInMergePendingMessage": "سائن ان ہو گیا۔ آپ کی محفوظ پیش رفت جلد ظاہر ہوگی۔",
+  "offlineIndicatorLabel": "آف لائن",
+  "syncPendingLabel": "{count, plural, =1{1 چیز محفوظ ہونا باقی} other{{count} چیزیں محفوظ ہونا باقی}}",
+  "@syncPendingLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncUpToDateLabel": "سب کچھ محفوظ ہے",
+  "lastUpdatedLabel": "{when} اپ ڈیٹ ہوا",
+  "@lastUpdatedLabel": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "relativeJustNow": "ابھی ابھی",
+  "relativeMinutesAgo": "{count, plural, =1{1 منٹ پہلے} other{{count} منٹ پہلے}}",
+  "@relativeMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeHoursAgo": "{count, plural, =1{1 گھنٹہ پہلے} other{{count} گھنٹے پہلے}}",
+  "@relativeHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeDaysAgo": "{count, plural, =1{1 دن پہلے} other{{count} دن پہلے}}",
+  "@relativeDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "leaderboardEmpty": "ابھی کوئی اسکور نہیں",
+  "leaderboardOfflineNote": "آپ کی آخری محفوظ کاپی دکھائی جا رہی ہے"
 }

@@ -17,7 +17,7 @@ import 'dart:io';
 const _defaultPath = 'lib/presentation';
 
 /// Dev-only surfaces that never reach a player, so their English labels are
-/// not user-facing strings. Both are replaced by their owning prompts.
+/// not user-facing strings. Each is replaced or removed by its owning prompt.
 const _allowlist = {
   // Dev tooling, registered only on the dev flavor (P02).
   'lib/presentation/screens/style_gallery_screen.dart',
@@ -30,6 +30,12 @@ const _allowlist = {
   // Dev-flavor level/phase jumper (P07). Never registered outside the dev
   // flavor's widget tree, same as the Style Gallery route.
   'lib/presentation/game/game_debug_panel.dart',
+  // Dev-flavor outbox queue inspector (P16), registered only on dev. Its
+  // labels are engineering terms — "attempts", "next retry", "PERMANENTLY
+  // FAILED" — and translating them would spend the native-speaker review
+  // budget the ARB files are already waiting on (Ch07) on text no player can
+  // reach.
+  'lib/presentation/screens/sync_inspector_screen.dart',
 };
 
 void main(List<String> args) {

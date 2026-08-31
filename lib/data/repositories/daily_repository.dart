@@ -172,6 +172,71 @@ final class DailyRepository extends LocalRepository {
     });
   }
 
+  /// Applies the server's stored daily result back onto the local row
+  /// (Ch10 conflict rule 3 / P16).
+  ///
+  /// The server keeps the FIRST attempt and answers a later one with what it
+  /// already holds (`submitDaily`), so what comes back is not "the better
+  /// result" — it is the result that actually counted on the board. Local has
+  /// to match it, including downward, for the same reason a level does:
+  /// showing a player a daily score that the leaderboard disagrees with is a
+  /// bug they can see.
+  ///
+  /// NEVER ENQUEUES, for the same loop-avoidance reason as
+  /// `ProgressRepository.reconcileFromServer`.
+  ///
+  /// Returns true when the row moved.
+  Future<bool> reconcileFromServer({
+    required DayKey day,
+    required Language language,
+    required int score,
+    required int stars,
+  }) async {
+    final date = day.toString();
+
+    return database.transaction(() async {
+      final existing =
+          await (database.select(database.dailyResults)..where(
+                (row) =>
+                    row.date.equals(date) &
+                    row.languageCode.equals(language.code),
+              ))
+              .getSingleOrNull();
+      final previous = existing != null && _isIntact(existing)
+          ? existing
+          : null;
+
+      if (previous != null &&
+          previous.score == score &&
+          previous.stars == stars) {
+        return false;
+      }
+
+      final completedAt = previous?.completedAt ?? nowMillis;
+
+      await database
+          .into(database.dailyResults)
+          .insertOnConflictUpdate(
+            DailyResultsCompanion.insert(
+              date: date,
+              languageCode: language.code,
+              score: score,
+              stars: stars,
+              completedAt: completedAt,
+              integrityTag: RowTags.dailyResult(
+                integrity,
+                date: date,
+                languageCode: language.code,
+                score: score,
+                stars: stars,
+                completedAt: completedAt,
+              ),
+            ),
+          );
+      return true;
+    });
+  }
+
   bool _isIntact(DailyResultRow row) => guard.accepts(
     table: LocalTables.dailyResults,
     rowKey: '${row.date}/${row.languageCode}',

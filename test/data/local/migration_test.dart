@@ -5,6 +5,8 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:word_search_master/data/local/integrity.dart';
 import 'package:word_search_master/data/local/integrity_tags.dart';
 import 'package:word_search_master/data/local/tables.dart';
+import 'package:word_search_master/domain/sync/outbox_status.dart';
+import 'package:word_search_master/data/repositories/outbox_repository.dart';
 import 'package:word_search_master/data/repositories/coins_repository.dart';
 import 'package:word_search_master/data/repositories/profile_repository.dart';
 
@@ -178,13 +180,26 @@ CREATE TABLE kv_settings (
       addTearDown(opened.database.close);
     });
 
-    test('arrives at schema version 2', () async {
+    test('arrives at the CURRENT schema version, not just at v2', () async {
+      // A v1 database opened by a P16 build runs v1->v2 AND v2->v3 in one
+      // pass. Pinning the literal 2 here would have passed while leaving the
+      // outbox without its scheduling columns — the migration would look done
+      // and every queued submission would fail on the next read.
       final row = await opened.database
           .customSelect('PRAGMA user_version')
           .getSingle();
 
-      expect(row.read<int>('user_version'), 2);
-      expect(opened.database.schemaVersion, 2);
+      expect(row.read<int>('user_version'), 3);
+      expect(opened.database.schemaVersion, 3);
+    });
+
+    test('the outbox gains its v3 scheduling columns', () async {
+      final columns = await opened.database
+          .customSelect('PRAGMA table_info(${LocalTables.outbox})')
+          .get();
+      final names = columns.map((row) => row.read<String>('name')).toSet();
+
+      expect(names, containsAll(['status', 'next_retry_at']));
     });
 
     test('the stored balance becomes ONE opening ledger row', () async {
@@ -320,7 +335,7 @@ CREATE TABLE kv_settings (
   });
 
   test(
-    'a fresh install creates v2 directly, with no migration to run',
+    'a fresh install creates the current schema directly, with no migration',
     () async {
       final opened = await openFileDatabase(file);
       addTearDown(opened.database.close);
@@ -328,7 +343,7 @@ CREATE TABLE kv_settings (
       final version = await opened.database
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(version.read<int>('user_version'), 2);
+      expect(version.read<int>('user_version'), 3);
 
       final ledger = await opened.database
           .select(opened.database.coinsLedger)
@@ -336,4 +351,80 @@ CREATE TABLE kv_settings (
       expect(ledger, isEmpty, reason: 'no opening balance to carry over');
     },
   );
+
+  group('v2 -> v3: the outbox learns to schedule itself (P16)', () {
+    /// A v2 database: everything v3 has, minus the two scheduling columns.
+    ///
+    /// Built by opening the real schema and DROPPING them, rather than by
+    /// hand-writing a v2 DDL that would drift from the real one the moment a
+    /// table changes.
+    Future<void> writeV2Database() async {
+      final opened = await openFileDatabase(file);
+      await opened.database.customStatement(
+        'ALTER TABLE ${LocalTables.outbox} DROP COLUMN status',
+      );
+      await opened.database.customStatement(
+        'ALTER TABLE ${LocalTables.outbox} DROP COLUMN next_retry_at',
+      );
+      await opened.database.customStatement('PRAGMA user_version = 2');
+      await opened.database.close();
+    }
+
+    test('an existing queued row survives and is eligible immediately', () async {
+      await writeV2Database();
+
+      // A row queued by the older build, tagged the way that build tagged it.
+      final seed = await openFileDatabase(file);
+      final tags = seed.integrity;
+      const payload = '{"language":"en","level":7}';
+      await seed.database.customStatement(
+        'INSERT INTO ${LocalTables.outbox} '
+        '(id, kind, payload, created_at, attempts, integrity_tag) '
+        'VALUES (1, ?, ?, 1000, 0, ?)',
+        [
+          'levelComplete',
+          payload,
+          tags.tagFor(
+            table: LocalTables.outbox,
+            rowKey: '1',
+            fields: ['levelComplete', payload, 1000],
+          ),
+        ],
+      );
+      await seed.database.close();
+
+      final opened = await openFileDatabase(file);
+      addTearDown(opened.database.close);
+
+      final row =
+          (await opened.database.select(opened.database.outbox).get()).single;
+
+      // The MIGRATION MUST NOT HAVE RE-TAGGED ANYTHING. `RowTags.outbox` signs
+      // the submission (kind, payload, createdAt) and has never signed the
+      // delivery bookkeeping, which is exactly why adding two columns is a
+      // pure `ADD COLUMN` with no row rewrite.
+      final outbox = OutboxRepository(
+        database: opened.database,
+        integrity: opened.integrity,
+        reporter: opened.reporter,
+      );
+      expect(outbox.isIntact(row), isTrue);
+
+      // And it is eligible right now, which is what it already was.
+      expect(outboxStatusOf(row), OutboxStatus.pending);
+      expect(row.nextRetryAt, isNull);
+      expect(await outbox.due(), hasLength(1));
+    });
+
+    test('the database reports v3 afterwards', () async {
+      await writeV2Database();
+      final opened = await openFileDatabase(file);
+      addTearDown(opened.database.close);
+
+      final version = await opened.database
+          .customSelect('PRAGMA user_version')
+          .getSingle();
+      expect(version.read<int>('user_version'), 3);
+    });
+  });
 }

@@ -214,6 +214,21 @@ class Outbox extends Table {
   IntColumn get attempts => integer().withDefault(const Constant(0))();
   IntColumn get lastAttemptAt => integer().nullable()();
 
+  /// An `OutboxStatus` name (P16). Parsed back on read, like [kind].
+  ///
+  /// Defaulted rather than required so the v2→v3 migration can add the column
+  /// without touching a single existing row: every queued submission written
+  /// before P16 existed is `pending`, which is exactly what it was.
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+
+  /// When this row becomes eligible again, in millis (P16).
+  ///
+  /// NULL means "now" — a fresh row, or one whose backoff has been cleared by
+  /// a force-drain. Stored as an absolute instant rather than a delay because
+  /// the queue is rescanned on every connectivity change, and a delay would
+  /// have to be re-derived against a clock on each of those scans.
+  IntColumn get nextRetryAt => integer().nullable()();
+
   TextColumn get integrityTag => text()();
 
   @override
@@ -261,6 +276,13 @@ abstract final class KvKeys {
 
   /// Last time a full cloud sync completed, millis since epoch.
   static const String lastSyncAt = 'last_sync_at';
+
+  /// Prefix for one cached leaderboard per board id (P16).
+  ///
+  /// A PREFIX rather than a single key, because the board list is open-ended
+  /// — `weekly_*` and `daily_*` grow forever (P14) — and one blob holding all
+  /// of them would be rewritten in full every time any one board refreshed.
+  static const String leaderboardCachePrefix = 'leaderboard_cache:';
 
   /// The streak and its freezes (P11), as the JSON `StreakState` encodes to.
   ///

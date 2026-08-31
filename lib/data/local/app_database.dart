@@ -48,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
   /// implies, so it is worth having proven before a v3 needs the same
   /// machinery under load.
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   /// `coins_ledger` is append-only, and that is enforced HERE rather than by
   /// the repository simply declining to write an UPDATE.
@@ -79,6 +79,9 @@ BEGIN SELECT RAISE(ABORT, 'coins_ledger is append-only'); END
     onUpgrade: (migrator, from, to) async {
       if (from < 2) {
         await _migrateV1ToV2(migrator);
+      }
+      if (from < 3) {
+        await _migrateV2ToV3(migrator);
       }
     },
     beforeOpen: (details) async {
@@ -221,6 +224,32 @@ BEGIN SELECT RAISE(ABORT, 'coins_ledger is append-only'); END
   /// reset to defaults instead — the Ch10 rule for any failed check, and the
   /// reason this reads the OLD tag shape rather than just re-signing whatever
   /// it finds.
+  /// v2 → v3: the outbox learns to schedule itself (Ch10 / P16).
+  ///
+  /// Two ADDED COLUMNS AND NOTHING ELSE — no re-tagging, no row rewrite.
+  /// That is possible because `RowTags.outbox` signs the SUBMISSION
+  /// (`kind`, `payload`, `createdAt`, bound to the id) and has never signed
+  /// the DELIVERY BOOKKEEPING (`attempts`, `lastAttemptAt`, and now `status`
+  /// and `nextRetryAt`). The line is deliberate and worth stating, because
+  /// CLAUDE.md's own rule is that a repository and a migration disagreeing by
+  /// one field silently fails every row on the next read:
+  ///
+  ///   * Forging the PAYLOAD is the attack — it submits a level that was
+  ///     never played — and it is signed.
+  ///   * Forging the SCHEDULE is self-harm. Marking your own row
+  ///     `failedPermanent` stops your own score from ever counting; resetting
+  ///     `attempts` to zero buys nothing the server's rate limit does not
+  ///     already cap. There is no version of tampering with these four columns
+  ///     that ends with the player better off, so signing them would cost a
+  ///     migration and buy nothing.
+  ///
+  /// Every row queued before P16 therefore arrives as `pending` with a null
+  /// `next_retry_at`, which is exactly what it already was: eligible now.
+  Future<void> _migrateV2ToV3(Migrator migrator) async {
+    await migrator.addColumn(outbox, outbox.status);
+    await migrator.addColumn(outbox, outbox.nextRetryAt);
+  }
+
   Future<void> _migrateV1ToV2(Migrator migrator) async {
     await migrator.createTable(coinsLedger);
 

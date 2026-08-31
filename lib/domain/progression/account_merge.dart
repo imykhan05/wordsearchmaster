@@ -358,16 +358,25 @@ abstract final class AccountMerge {
         merged[entry.key] = entry.value;
         continue;
       }
-      merged[entry.key] = AchievementSnapshot(
-        id: entry.key,
-        progress: incumbent.progress > entry.value.progress
-            ? incumbent.progress
-            : entry.value.progress,
-        unlockedAt: _earliest(incumbent.unlockedAt, entry.value.unlockedAt),
-      );
+      merged[entry.key] = mergeAchievement(incumbent, entry.value);
     }
     return merged;
   }
+
+  /// One achievement's two sides: max progress, EARLIEST unlock (decision 3).
+  ///
+  /// Public for the same reason [mergeStreaks] is, plus one more: P16's
+  /// `ConflictResolver` implements the same row of Ch10's conflict table and
+  /// delegates here, so the account-link path and the sync path cannot pick
+  /// different winners for the same pair.
+  static AchievementSnapshot mergeAchievement(
+    AchievementSnapshot a,
+    AchievementSnapshot b,
+  ) => AchievementSnapshot(
+    id: a.id,
+    progress: _max(a.progress, b.progress),
+    unlockedAt: _earliest(a.unlockedAt, b.unlockedAt),
+  );
 
   /// Per-field max, with the LATER day winning each stamp (decision 4).
   ///

@@ -1,7 +1,6 @@
 {
   "@@locale": "hi",
   "@@x-review-status": "REQUIRES NATIVE SPEAKER REVIEW BEFORE RELEASE. Machine-drafted Hindi. Same rule as the Urdu file — a native reader catches register and spelling problems that no test will (Ch07).",
-
   "appTitle": "वर्ड सर्च मास्टर",
   "chooseLanguage": "अपनी भाषा चुनें",
   "navHome": "होम",
@@ -19,7 +18,6 @@
     }
   },
   "comingSoon": "जल्द आ रहा है",
-
   "pauseButtonLabel": "रोकें",
   "hintButtonLabel": "संकेत",
   "levelCompleteTitle": "लेवल पूरा!",
@@ -31,12 +29,13 @@
   "resumeButton": "जारी रखें",
   "restartButton": "फिर से शुरू करें",
   "soundLabel": "आवाज़",
-
   "streakLabel": "दिनों की लड़ी",
   "streakFreezesLabel": "{count, plural, =1{1 फ़्रीज़} other{{count} फ़्रीज़}}",
   "@streakFreezesLabel": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "streakFrozenMessage": "एक फ़्रीज़ ने आपका छूटा हुआ दिन पूरा कर दिया",
@@ -45,7 +44,9 @@
   "regionTitle": "क्षेत्र {number}",
   "@regionTitle": {
     "placeholders": {
-      "number": { "type": "int" }
+      "number": {
+        "type": "int"
+      }
     }
   },
   "levelLocked": "बंद",
@@ -56,8 +57,12 @@
   "collectionsProgress": "{total} में से {done}",
   "@collectionsProgress": {
     "placeholders": {
-      "done": { "type": "int" },
-      "total": { "type": "int" }
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "chestOpenTitle": "संदूक!",
@@ -65,7 +70,9 @@
   "hintCost": "{cost} सिक्के",
   "@hintCost": {
     "placeholders": {
-      "cost": { "type": "int" }
+      "cost": {
+        "type": "int"
+      }
     }
   },
   "ddaHintOfferMessage": "संकेत चाहिए?",
@@ -92,5 +99,50 @@
   "signOutKeepsProgress": "आपकी प्रगति इस डिवाइस पर सुरक्षित रहेगी",
   "signInSuccessMessage": "साइन इन हो गया। आपकी प्रगति सहेजी गई है।",
   "signInFailedMessage": "साइन इन नहीं हो सका। आपकी प्रगति सुरक्षित है — फिर कोशिश करें।",
-  "signInMergePendingMessage": "साइन इन हो गया। आपकी सहेजी प्रगति जल्द दिखेगी।"
+  "signInMergePendingMessage": "साइन इन हो गया। आपकी सहेजी प्रगति जल्द दिखेगी।",
+  "offlineIndicatorLabel": "ऑफ़लाइन",
+  "syncPendingLabel": "{count, plural, =1{1 चीज़ सहेजी जानी बाकी} other{{count} चीज़ें सहेजी जानी बाकी}}",
+  "@syncPendingLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncUpToDateLabel": "सब कुछ सहेजा गया है",
+  "lastUpdatedLabel": "{when} अपडेट हुआ",
+  "@lastUpdatedLabel": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "relativeJustNow": "अभी अभी",
+  "relativeMinutesAgo": "{count, plural, =1{1 मिनट पहले} other{{count} मिनट पहले}}",
+  "@relativeMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeHoursAgo": "{count, plural, =1{1 घंटा पहले} other{{count} घंटे पहले}}",
+  "@relativeHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeDaysAgo": "{count, plural, =1{1 दिन पहले} other{{count} दिन पहले}}",
+  "@relativeDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "leaderboardEmpty": "अभी कोई स्कोर नहीं",
+  "leaderboardOfflineNote": "आपकी आखिरी सहेजी कॉपी दिखाई जा रही है"
 }

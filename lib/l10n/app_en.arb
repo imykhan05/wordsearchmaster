@@ -1,46 +1,37 @@
 {
   "@@locale": "en",
-
   "appTitle": "Word Search Master",
   "@appTitle": {
     "description": "The app name, shown in the task switcher and on the title bar."
   },
-
   "chooseLanguage": "Choose your language",
   "@chooseLanguage": {
     "description": "Heading on the first screen of the FTUE (Ch02: splash goes straight here — no login, no permission prompt, no ad)."
   },
-
   "navHome": "Home",
   "@navHome": {
     "description": "Title of the home screen."
   },
-
   "navJourney": "Journey",
   "@navJourney": {
     "description": "Title of the journey map — the themed path that replaces a flat level list."
   },
-
   "navDaily": "Daily Challenge",
   "@navDaily": {
     "description": "Title of the once-a-day puzzle that is the same for every player."
   },
-
   "navLeaderboard": "Leaderboard",
   "@navLeaderboard": {
     "description": "Title of the leaderboard screen."
   },
-
   "navProfile": "Profile",
   "@navProfile": {
     "description": "Title of the player's profile screen."
   },
-
   "navSettings": "Settings",
   "@navSettings": {
     "description": "Title of the settings screen."
   },
-
   "gameLevel": "Level {level}",
   "@gameLevel": {
     "description": "Title of the game screen, naming which level is being played.",
@@ -51,245 +42,263 @@
       }
     }
   },
-
   "comingSoon": "Coming soon",
   "@comingSoon": {
     "description": "Placeholder shown on screens whose real implementation lands in a later build step."
   },
-
   "pauseButtonLabel": "Pause",
   "@pauseButtonLabel": {
     "description": "Tooltip on the game screen's pause icon button."
   },
-
   "hintButtonLabel": "Hint",
   "@hintButtonLabel": {
     "description": "Tooltip on the game screen's hint icon button."
   },
-
   "levelCompleteTitle": "Level Complete!",
   "@levelCompleteTitle": {
     "description": "Heading on the full-screen result card shown when a level is won."
   },
-
   "scoreLabel": "Score",
   "@scoreLabel": {
     "description": "Label next to the score number on the level-complete card."
   },
-
   "coinsEarnedLabel": "Coins Earned",
   "@coinsEarnedLabel": {
     "description": "Label next to the coins number on the level-complete card."
   },
-
   "continueButton": "Continue",
   "@continueButton": {
     "description": "Primary button on the level-complete card; dismisses it and moves to the already-loaded next level."
   },
-
   "doubleRewardPlaceholder": "Double Reward — coming soon",
   "@doubleRewardPlaceholder": {
     "description": "Disabled placeholder button for the rewarded-ad double-reward action, wired in P18."
   },
-
   "adPlaceholderLabel": "Ad space — coming soon",
   "@adPlaceholderLabel": {
     "description": "Label inside the reserved MREC ad slot on the level-complete card, wired in P18."
   },
-
   "resumeButton": "Resume",
   "@resumeButton": {
     "description": "Button in the pause sheet that returns to gameplay."
   },
-
   "restartButton": "Restart",
   "@restartButton": {
     "description": "Button in the pause sheet that reloads the current level from scratch."
   },
-
   "soundLabel": "Sound",
   "@soundLabel": {
     "description": "Label next to the sound on/off switch in the pause sheet."
   },
-
   "streakLabel": "Day streak",
   "@streakLabel": {
     "description": "Label under the streak counter on the home screen — days in a row with at least one completed level."
   },
-
   "streakFreezesLabel": "{count, plural, =1{1 freeze} other{{count} freezes}}",
   "@streakFreezesLabel": {
     "description": "How many unused streak freezes the player holds. A freeze is auto-spent to cover a missed day.",
     "placeholders": {
-      "count": { "type": "int", "example": "2" }
+      "count": {
+        "type": "int",
+        "example": "2"
+      }
     }
   },
-
   "streakFrozenMessage": "A freeze covered your missed day",
   "@streakFrozenMessage": {
     "description": "Shown when a streak freeze was automatically consumed to keep the streak alive after a missed day."
   },
-
   "coinsLabel": "Coins",
   "@coinsLabel": {
     "description": "Label next to the player's coin balance."
   },
-
   "playButton": "Play",
   "@playButton": {
     "description": "Primary button on the home screen; opens the journey map at the current level."
   },
-
   "regionTitle": "Region {number}",
   "@regionTitle": {
     "description": "Header above each ten-level stretch of the journey map.",
     "placeholders": {
-      "number": { "type": "int", "example": "3" }
+      "number": {
+        "type": "int",
+        "example": "3"
+      }
     }
   },
-
   "levelLocked": "Locked",
   "@levelLocked": {
     "description": "Accessibility label for a journey node the player has not unlocked yet. Locked nodes stay visible but dimmed."
   },
-
   "dailyAlreadyPlayed": "You've played today's puzzle",
   "@dailyAlreadyPlayed": {
     "description": "Shown on the Daily Challenge screen when today's one attempt has already been used."
   },
-
   "dailyPlayButton": "Play today's puzzle",
   "@dailyPlayButton": {
     "description": "Button that starts the Daily Challenge."
   },
-
   "dailyOneAttempt": "One attempt per day",
   "@dailyOneAttempt": {
     "description": "Explains the Daily Challenge rule, shown under the play button."
   },
-
   "collectionsTitle": "Collections",
   "@collectionsTitle": {
     "description": "Heading of the badge grid — one badge per completed word category, per language."
   },
-
   "collectionsProgress": "{done} of {total}",
   "@collectionsProgress": {
     "description": "Progress inside an unearned collection badge, e.g. '7 of 25' levels of that category finished.",
     "placeholders": {
-      "done": { "type": "int", "example": "7" },
-      "total": { "type": "int", "example": "25" }
+      "done": {
+        "type": "int",
+        "example": "7"
+      },
+      "total": {
+        "type": "int",
+        "example": "25"
+      }
     }
   },
-
   "chestOpenTitle": "Chest!",
   "@chestOpenTitle": {
     "description": "Heading on the chest-opening celebration shown every 5th level."
   },
-
   "notEnoughCoins": "Not enough coins",
   "@notEnoughCoins": {
     "description": "Shown on the hint button when the player's balance cannot cover a hint."
   },
-
   "hintCost": "{cost} coins",
   "@hintCost": {
     "description": "What a hint costs, shown next to the hint button.",
     "placeholders": {
-      "cost": { "type": "int", "example": "50" }
+      "cost": {
+        "type": "int",
+        "example": "50"
+      }
     }
   },
-
   "ddaHintOfferMessage": "Want a hint?",
   "@ddaHintOfferMessage": {
     "description": "Ch02/P12 DDA: neutral copy on the soft inline banner offered after 60s of idle. Deliberately says nothing about being stuck or about difficulty — CLAUDE.md forbids implying the game was made easier."
   },
-
   "ddaHintOfferAccept": "Show hint",
   "@ddaHintOfferAccept": {
     "description": "Button on the DDA hint-offer banner. Accepting reveals a FREE hint — never a rewarded ad."
   },
-
   "ddaHintOfferDismiss": "Not now",
   "@ddaHintOfferDismiss": {
     "description": "Tooltip on the DDA hint-offer banner's close button."
   },
-
   "urduLetterFormIntro": "In the grid, each letter stands alone",
   "@urduLetterFormIntro": {
     "description": "Ch02 FTUE: caption on the one-time, Urdu-only, level-1-only illustration mapping the connected word form to its isolated grid letters."
   },
-
   "gotItButtonLabel": "Got it",
   "@gotItButtonLabel": {
     "description": "Dismiss button on the one-time Urdu connected-form illustration."
   },
-
   "saveProgressPromptMessage": "Sign in to save your progress",
   "@saveProgressPromptMessage": {
     "description": "Ch02: the post-level-8 login offer, framed as saving progress rather than as an account requirement."
   },
-
   "saveProgressPromptAction": "Sign in",
   "@saveProgressPromptAction": {
     "description": "Accept button on the save-progress banner. A stub until P13's real auth flow lands."
   },
-
   "saveProgressPromptDismiss": "Dismiss",
   "@saveProgressPromptDismiss": {
     "description": "Tooltip on the save-progress banner's close button."
   },
-
   "accountSectionTitle": "Account",
   "@accountSectionTitle": {
     "description": "Heading of the account card on the profile screen."
   },
-
   "accountGuestLabel": "Playing as a guest",
   "@accountGuestLabel": {
     "description": "Shown on the profile screen when the player has not linked a Google account. Guest play is the normal, supported state (Ch02) — the wording must not read as a warning."
   },
-
   "accountSignedInAs": "Signed in as {name}",
   "@accountSignedInAs": {
     "description": "Shown on the profile screen once a Google account is linked.",
     "placeholders": {
-      "name": { "type": "String", "example": "Ayesha" }
+      "name": {
+        "type": "String",
+        "example": "Ayesha"
+      }
     }
   },
-
   "accountSignedIn": "Signed in",
   "@accountSignedIn": {
     "description": "Shown instead of accountSignedInAs when the linked Google account exposes neither a display name nor an email — rare, but a Google account with a hidden profile produces it, and 'Signed in as null' is worse than saying less."
   },
-
   "signInWithGoogle": "Sign in with Google",
   "@signInWithGoogle": {
     "description": "Button that links the current guest account to a Google account."
   },
-
   "signOutButton": "Sign out",
   "@signOutButton": {
     "description": "Button that returns to a fresh guest session. Local progress is kept."
   },
-
   "signOutKeepsProgress": "Your progress stays on this device",
   "@signOutKeepsProgress": {
     "description": "Reassurance under the sign-out button — Ch02: signing out returns to an anonymous session and never deletes local data."
   },
-
   "signInSuccessMessage": "Signed in. Your progress is saved.",
   "@signInSuccessMessage": {
     "description": "Confirmation after a successful Google link and merge."
   },
-
   "signInFailedMessage": "Couldn't sign in. Your progress is safe — try again.",
   "@signInFailedMessage": {
     "description": "Shown when sign-in failed. Leads with the reassurance because the player's first worry is their progress, not the network."
   },
-
   "signInMergePendingMessage": "Signed in. Your saved progress will appear shortly.",
   "@signInMergePendingMessage": {
     "description": "Shown when sign-in succeeded but the cloud merge could not be written yet. Deliberately not an error: the player IS signed in and their local progress is untouched."
-  }
+  },
+  "offlineIndicatorLabel": "Offline",
+  "syncPendingLabel": "{count, plural, =1{1 item waiting to sync} other{{count} items waiting to sync}}",
+  "@syncPendingLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "syncUpToDateLabel": "Everything is saved",
+  "lastUpdatedLabel": "Updated {when}",
+  "@lastUpdatedLabel": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "relativeJustNow": "just now",
+  "relativeMinutesAgo": "{count, plural, =1{1 minute ago} other{{count} minutes ago}}",
+  "@relativeMinutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeHoursAgo": "{count, plural, =1{1 hour ago} other{{count} hours ago}}",
+  "@relativeHoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "relativeDaysAgo": "{count, plural, =1{1 day ago} other{{count} days ago}}",
+  "@relativeDaysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "leaderboardEmpty": "No scores yet",
+  "leaderboardOfflineNote": "Showing your last saved copy"
 }

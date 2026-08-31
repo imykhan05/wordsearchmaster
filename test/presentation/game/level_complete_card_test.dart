@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/app/theme/app_theme.dart';
 import 'package:word_search_master/application/game_controller.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/level_complete_card.dart';
+import 'package:word_search_master/services/connectivity/connectivity_service.dart';
 
 /// Ch03's LEVEL COMPLETE choreography: confetti, staggered stars and the
 /// score/coin roll are already covered for the stars/score piece by P07 —
@@ -23,17 +25,28 @@ void main() {
   );
 
   Widget wrap({required bool reduceMotion}) {
-    return MediaQuery(
-      data: MediaQueryData(disableAnimations: reduceMotion),
-      child: MaterialApp(
-        theme: AppTheme.dark(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: Scaffold(
-          body: LevelCompleteCard(
-            summary: summary,
-            coinsEarned: 20,
-            onContinue: () {},
+    // A `ProviderScope` since P16: the card's rewarded-ad action is now a
+    // `RewardedActionButton`, which reads connectivity so it can disable IN
+    // PLACE rather than disappear (Ch10). The card is part of a Riverpod app,
+    // so needing a scope to pump it is honest rather than incidental.
+    return ProviderScope(
+      overrides: [
+        connectivityServiceProvider.overrideWithValue(
+          const AssumeOnlineConnectivityService(),
+        ),
+      ],
+      child: MediaQuery(
+        data: MediaQueryData(disableAnimations: reduceMotion),
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: LevelCompleteCard(
+              summary: summary,
+              coinsEarned: 20,
+              onContinue: () {},
+            ),
           ),
         ),
       ),

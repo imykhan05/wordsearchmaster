@@ -6,6 +6,7 @@ import '../../app/theme/theme.dart';
 import '../../application/game_controller.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../widgets/sync_status.dart';
 
 /// Full-screen result card shown while `GameState.phase` is
 /// `GamePhase.levelComplete`.
@@ -154,12 +155,17 @@ class LevelCompleteCard extends StatelessWidget {
                           child: Text(l10n.continueButton),
                         ),
                         const SizedBox(height: AppTokens.space24),
-                        // TODO(P18): rewarded-ad double-reward action.
-                        // Disabled rather than hidden, so the layout it will
-                        // occupy is already correct.
-                        OutlinedButton(
-                          onPressed: null,
-                          child: Text(l10n.doubleRewardPlaceholder),
+                        // TODO(P18): pass a real `onPressed` once the
+                        // rewarded ad unit is wired.
+                        //
+                        // Already routed through `RewardedActionButton`, which
+                        // owns Ch10's "disable in place" rule: the button
+                        // keeps its exact rectangle whether the player is
+                        // online or not, so a finger already travelling
+                        // towards it never lands on whatever would have
+                        // reflowed into its place.
+                        RewardedActionButton(
+                          label: l10n.doubleRewardPlaceholder,
                         ),
                         const SizedBox(height: AppTokens.space16),
                         // TODO(P18): MREC (300x250) ad slot.

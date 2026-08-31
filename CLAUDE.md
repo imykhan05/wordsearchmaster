@@ -66,7 +66,7 @@ lib/
 ├── application/                 Riverpod notifiers (use cases)
 │   ├── game_controller.dart
 │   ├── progression_controller.dart
-│   ├── sync_controller.dart
+│   ├── sync_controller.dart     the outbox drain (P16)
 │   └── ad_controller.dart
 │
 ├── services/
@@ -324,7 +324,10 @@ Drift is the SOURCE OF TRUTH. Every read path in the app resolves against
   stream re-emits on every write, and one bad row would otherwise file
   thousands of identical reports. Tampered rows are excluded but NOT deleted:
   deleting inside a stream's map is re-entrant, and a forged row is evidence.
-- **`schemaVersion` is 2.** v1 stored coins as a column on `profile`; the
+- **`schemaVersion` is 3.** v2→v3 adds the outbox's `status`/`next_retry_at`
+  (P16) as a pure `ADD COLUMN` pair — the row tag signs the submission, never
+  the delivery bookkeeping, so nothing is re-tagged.
+- **v1→v2:** v1 stored coins as a column on `profile`; the
   migration converts that balance into an opening ledger row. It verifies the
   v1 tag under the v1 field shape FIRST — migrating without checking would
   re-sign a forged balance into a valid v2 ledger entry, a free amnesty for
@@ -1555,6 +1558,199 @@ PLAY, and a false positive is invisible and permanent because a flagged player
 is never shown an error.
 
 
+## Sync engine — outbox, backoff, conflicts (P16)
+
+Ch10's offline-first courier. Everything below runs BEHIND the game: by the
+time any of it executes, the player's progress is already safe, because every
+mutation writes its game-state row and its outbox row in one transaction (P08).
+That is what lets the drain be as lazy, as jittered and as silent as it is —
+nothing is waiting on it.
+
+### The three ordering rules, and why each exists
+
+`SyncController.drain` processes rows OLDEST FIRST, ONE KIND AT A TIME, at most
+`syncConcurrency` (2) in flight — and a third rule the prompt does not name:
+
+**At most one row per CONFLICT KEY in flight.** With a concurrency of 2, two
+submissions of the same level could otherwise be in flight together, each
+returning a `bestScore` computed before the other landed, and the reply that
+arrived last would win with the staler number. Serialising by key
+(`level:{lang}:{level}`, `daily:{lang}:{date}`) costs nothing — two rows for one
+puzzle are rare — and closes it completely. Oldest-first is load-bearing for the
+same reason: `ConflictResolver` rule 1 is only correct once every earlier
+submission for that level has landed.
+
+Two is the concurrency limit because a third request on a 2G link buys almost no
+wall-clock time and costs a third socket, handshake and slice of a small radio
+budget. Two is enough to hide one request's latency behind another's, which is
+all concurrency is here to do.
+
+### `summary = summary + await _send(...)` was a real bug, caught by a test
+
+Dart evaluates the LEFT operand before awaiting the right, so with two rows in
+flight both captured the same `summary` and the second write discarded the first
+row's result — the 16-row drain reported 9. Fixed by reading `summary` after the
+await; Dart being single-threaded is what makes the read-then-write safe once
+there is no `await` between them. The three-days-offline test found it, which is
+the argument for testing the drain against a real database rather than a mock.
+
+### Backoff: the ladder never gives up, and the jitter matters more than the delays
+
+`BackoffSchedule` is Ch10's table verbatim — immediate, 5s, 30s, 5m, 30m, 6h —
+clamped at the top rather than expiring. A 5xx or an offline device is transient
+BY DEFINITION and the row it stranded is a level the player really finished;
+Ch01's audience goes weeks without a usable connection, so a queue that expired
+its rows would lose real progress from exactly the players this game is for.
+Rows leave the queue only by succeeding or by being refused permanently.
+
+Every device that lost connectivity in one outage regains it at roughly the same
+moment and then walks the same fixed ladder, so without jitter the retries stay
+in lockstep and arrive as synchronised spikes on a backend still recovering from
+the outage that caused them. +/-20% is wide enough to flatten that and narrow
+enough that a 6h step still means six hours. The jitter is a `nextDouble()`
+transform rather than an integer percentage, because 41 buckets is a smaller herd
+but still a herd.
+
+### "4xx means permanent" is the right instinct and the wrong rule
+
+Two 4xx codes this system produces on purpose must be RETRIED:
+`resource-exhausted` is P14's rate limit and literally means "later" — treating
+it as permanent would discard levels from the player whose backlog is largest,
+who is the offline player this subsystem exists for. `unauthenticated` is an
+expired ID token or an App Check token that has not minted yet; the next attempt
+carries a fresh one. So `FunctionsSyncApi.outcomeForCode` maps by MEANING, is a
+pure function, and has its own test. An unrecognised code retries: the cheap
+mistake is retrying something unretryable, not giving up on something that would
+have worked.
+
+`SyncDeferred` is a fourth outcome, not a failure. P14 shipped `submitScore` and
+`submitDaily`; the server halves of the coin ledger and achievements are owed by
+a later prompt, and those rows are HELD — no attempt counted, no backoff burned,
+nothing reported. Permanent would discard a record the player earned; transient
+would walk the ladder to six hours on a call that was never going to be made.
+
+### `OutboxStatus` has three states, and the absent fourth is the point
+
+There is no `inFlight`. An in-flight marker has to be written before the request
+leaves and cleared after it returns, so a process that dies in between strands
+the row forever with nothing to clear it — a level the player finished and will
+never see credited, the exact failure the queue exists to prevent. The claim is
+held in memory for one drain, and the durable guard against a genuine double-send
+is the SERVER's replay nonce (P14), which is the side of the system that can
+actually keep one.
+
+### Schema v3 adds two columns and re-tags nothing
+
+`RowTags.outbox` signs the SUBMISSION (`kind`, `payload`, `createdAt`, bound to
+the id) and has never signed the DELIVERY BOOKKEEPING (`attempts`,
+`lastAttemptAt`, now `status` and `nextRetryAt`). The line is deliberate:
+forging the payload is the attack and is signed; forging the schedule is
+self-harm — marking your own row `failedPermanent` stops your own score from
+counting, and resetting `attempts` buys nothing the server's rate limit does not
+already cap. So v2→v3 is a pure `ADD COLUMN` pair, every pre-P16 row arrives as
+`pending` with a null retry (which is what it already was), and
+`migration_test.dart` proves an existing queued row still verifies afterwards.
+
+### `ConflictResolver` — Ch10's table, one function per row, coverage asserted
+
+Nine rules in `lib/domain/sync/conflict_resolver.dart`, each a `ConflictRule`
+enum value. `conflict_resolver_test.dart` registers the rule each group covers
+and its final test asserts the registered set equals `ConflictRule.values` — so
+a row added without a test fails the build rather than shipping untested.
+
+Rules 2, 5 and 6 DELEGATE to `AccountMerge`, so a level, an achievement or a
+streak resolved at sync time and the same pair resolved at account-link time
+cannot pick different winners (`AccountMerge.mergeAchievement` was made public
+for this). Rule 3 deliberately DISAGREES with `AccountMerge` and the test says
+so: linking joins two separate histories where neither played "first", so taking
+the better daily is the never-lose-progress rule; syncing reconciles against a
+server that already decided which attempt counted, and local must match the
+board. Pinned in both directions so neither gets "fixed" into the other.
+
+**Rule 1 is the only rule in the codebase that resolves AGAINST the player.**
+Everything else takes the max, sums, or unions; a recomputed score comes back as
+the truth even when the truth is smaller, because the server's number is not a
+second opinion — it is the only one that was ever authoritative (Ch08), and
+"keep the bigger" would make a tampered client a working exploit. It reconciles
+to `bestScore`, never to this attempt's `score`, so replaying a level for fun and
+doing worse cannot cost a player their best. In practice it changes nothing:
+client and server run the same rules over the same events, and P14's parity
+fixture keeps them identical. The case where it does change something is the
+case it was written for.
+
+`reconcileFromServer` NEVER ENQUEUES — a reconcile that queued its own row would
+sync in a loop forever — and rebuilds a missing or tamper-dropped row from the
+server's values, recovering `hintsUsed` exactly from the star count.
+
+### The UX rules are enforced structurally, not by convention
+
+- **No network dialog, ever.** Nothing in the sync subsystem holds a
+  `BuildContext`, so there is no code path from a failed drain to a dialog.
+  `no_network_dialog_test.dart` proves it from the other end: a whole offline
+  session across every screen, asserting that no `AlertDialog`, `Dialog`,
+  `SnackBar`, `MaterialBanner` or `BottomSheet` is ever built — a broader list
+  than "dialog", because the rule is about interruption rather than a class
+  name. Reconnecting is checked too: a "you are back online" toast would be
+  just as unwanted.
+- **A small static indicator.** `SyncStatusIndicator` reserves the SAME
+  footprint online and offline, so nothing beside it reflows, and it is not a
+  button — tapping it would imply the player can do something about it.
+  An earlier version also showed the queue depth, which opened a LIVE DRIFT
+  QUERY from a widget in every app bar; every widget test that visited any
+  screen then died on "a Timer is still pending after the widget tree was
+  disposed" — the same trap CLAUDE.md already records from P11. It was also
+  more than Ch10 asks for, and the Sync Inspector answers that question
+  properly.
+- **Cached leaderboard.** `LeaderboardScreen` reads `LeaderboardCache` in BOTH
+  states rather than switching data sources when offline — one path, so the
+  offline case is correct by construction instead of being an untested branch
+  that only fires on the connection this audience mostly has. The relative
+  "Updated 5 minutes ago" shows in both states too, since a label that appeared
+  only when the connection dropped would itself be an offline notification.
+  P17 owns filling the cache.
+- **Rewarded buttons disable in place.** `RewardedActionButton` renders the
+  same subtree at the same size in both states; only `onPressed` and the
+  colours change. `sync_ux_test.dart` MEASURES the rect online and offline and
+  asserts equality, because "looks about the same" is not a property a refactor
+  preserves. The reason is a finger already moving: a player reaches for
+  "double your coins" the instant the card settles, and a button that vanishes
+  lets that tap land on whatever reflowed into its place.
+
+### The Sync Inspector is why the engine can afford to say nothing
+
+Dev-flavor only, registered in the route table rather than gated inside the
+widget (the Style Gallery's treatment), and asserted for all three flavors
+through the real router. It lists every row with its attempt count and next
+retry, shows the ladder itself so a tester can tell whether a delay is on the
+curve, requeues a permanently-failed row, and force-drains past BOTH gates —
+clearing every backoff and skipping the connectivity check, because a force
+button that still respected the ladder would be useless six hours in.
+
+Its strings are hardcoded English and it is allowlisted from
+`check_localized_strings.dart`, for the reason `GameDebugPanel` already is:
+translating "next retry" would spend the native-speaker review budget the ARB
+files are already waiting on (Ch07) on text no player can reach.
+
+### Testing notes that will bite again
+
+- **A widget test cannot `await` Drift directly.** `testWidgets` installs a
+  `FakeAsync`; Drift schedules real timers that only fire when fake time
+  advances, and an `await` does not advance it. `sync_inspector_test.dart`
+  routes every database call through `tester.runAsync`, and replaces
+  `pumpAndSettle` with an alternating pump/real-delay `settle` — the screen
+  shows a `CircularProgressIndicator` until its stream delivers, and an
+  indeterminate spinner schedules a frame forever, so `pumpAndSettle` times out
+  by construction rather than by accident.
+- **The force-drain and flavor-registration cases are plain `test`s**, not
+  widget tests: driving them through a tap opens a second live Drift stream
+  inside the handler, and cancelling one schedules a cleanup timer that
+  outlives the tree. The button's handler is two calls, and both are asserted
+  where they actually live.
+- `level_complete_card_test.dart` now needs a `ProviderScope`, because the
+  card's rewarded action reads connectivity. That is honest rather than
+  incidental — the card is part of a Riverpod app.
+
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB
@@ -1641,6 +1837,11 @@ lint`, `npm run typecheck`, `npm test` and `npm run test:emulator`, all from
 fixture (`dart run tool/generate_scoring_fixtures.dart`) and update
 `functions/src/scoring.ts` in the SAME commit — the two are one contract, and
 `Scoring.specVersion` moves with them.
+
+If the change touches the Drift schema, bump `schemaVersion`, add the
+`onUpgrade` branch, and add a migration test that opens a database at the
+PREVIOUS version and asserts an existing row still verifies — a migration that
+silently invalidates tags looks to the player like lost progress.
 
 If the change touches `firestore.rules`, add `npm run test:rules` from the repo
 root, and add BOTH an allow test and a deny test for whatever moved — a rule
