@@ -34,11 +34,11 @@ use, ready to fill in, or something only you can do and why.
 
 ## Needs one fill-in before it's usable
 
-- Every `docs/*.html` file has a `[SUPPORT_EMAIL]` placeholder (search for
-  it) — deliberately not pre-filled with a personal address. Decide what
-  inbox should receive privacy/deletion requests (a dedicated alias is
-  better than a personal one for something public and permanent) and
-  replace the placeholder in both files.
+- ~~Every `docs/*.html` file has a `[SUPPORT_EMAIL]` placeholder~~ — filled
+  in with `mohammaddeveloper38400@gmail.com` at the user's request. Worth
+  revisiting later: a dedicated support alias is generally better than a
+  personal inbox for something public and permanent, but that's a swap for
+  whenever it's convenient, not a blocker.
 - `descriptions_ur.md` / `descriptions_hi.md` are machine-drafted and
   flagged `@@x-review-status` — same status as the word packs and ARB
   files. Get a native speaker to read them before they go on the live
