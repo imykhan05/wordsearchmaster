@@ -12,6 +12,25 @@ That is the same code path as airplane mode, and it is covered by
 `test/app/bootstrap_offline_test.dart` — so the unconfigured state is
 exercised, not merely tolerated.
 
+**Status: done.** All three projects now exist and `lib/app/config/` is
+populated. The short, plain `wsm-dev`/`wsm-stg`/`wsm-prod` ids below are what
+you'd try first if redoing this from scratch — Firebase project ids are
+globally unique across every Google account on Earth, so a short common name
+is often already taken and Firebase suggests a random-suffixed alternative
+instead, which is exactly what happened this time. The ids actually in use
+(also recorded in `.firebaserc`) are:
+
+| Flavor | Real project id     |
+| ------ | -------------------- |
+| dev    | `wsm-dev-45b7c`       |
+| stg    | `wsm-stg-b1d5f`       |
+| prod   | `wsm-prod-a750e`      |
+
+Google Sign-In is not wired up yet on any of the three — each project's
+`google-services.json` came back with an empty `oauth_client` list, which
+means §3 below (SHA-1 fingerprint → web client id) still needs doing before
+"Sign in with Google" works. Guest play is unaffected.
+
 ## 1. Create the three projects
 
 Three separate Firebase projects, one per flavor (CLAUDE.md → Flavors). They

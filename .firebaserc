@@ -1,8 +1,8 @@
 {
   "projects": {
-    "default": "wsm-dev",
-    "dev": "wsm-dev",
-    "stg": "wsm-stg",
-    "prod": "wsm-prod"
+    "default": "wsm-dev-45b7c",
+    "dev": "wsm-dev-45b7c",
+    "stg": "wsm-stg-b1d5f",
+    "prod": "wsm-prod-a750e"
   }
 }
