@@ -300,5 +300,51 @@
     }
   },
   "leaderboardEmpty": "No scores yet",
-  "leaderboardOfflineNote": "Showing your last saved copy"
+  "leaderboardOfflineNote": "Showing your last saved copy",
+  "leaderboardTabGlobal": "Global",
+  "leaderboardTabWeekly": "Weekly",
+  "leaderboardTabDaily": "Daily",
+  "leaderboardTabFriends": "Friends",
+  "leaderboardYourRank": "Your rank: {rank}",
+  "@leaderboardYourRank": {
+    "description": "Pinned row at the bottom of the leaderboard when the player is outside the visible top 100.",
+    "placeholders": {
+      "rank": {
+        "type": "int"
+      }
+    }
+  },
+  "leaderboardRankUnknown": "Your rank isn't ready yet",
+  "@leaderboardRankUnknown": {
+    "description": "Shown in the pinned row when the player has no computed rank on this board yet — no score, or the periodic rank job has not reached it."
+  },
+  "friendsEmpty": "No friends yet — share your code to add one",
+  "friendsInviteCodeLabel": "Your invite code",
+  "friendsShareButton": "Share",
+  "@friendsShareButton": {
+    "description": "Opens the native share sheet with the player's invite code."
+  },
+  "friendsRedeemFieldLabel": "Enter a friend's code",
+  "friendsRedeemButton": "Add friend",
+  "friendsRedeemSuccess": "You're now friends!",
+  "friendsRedeemAlreadyFriends": "You're already friends",
+  "friendsRedeemOwnCode": "That's your own code",
+  "friendsRedeemNotFound": "That code doesn't match anyone",
+  "friendsRedeemLimitReached": "Friend list is full",
+  "friendsRedeemFailed": "Couldn't add that friend — try again",
+  "achievementUnlockedHeader": "Achievement unlocked!",
+  "achievementFirstWordTitle": "First Word",
+  "achievementFirstWordDescription": "Found your first word",
+  "achievementWordMasterTitle": "Word Master",
+  "achievementWordMasterDescription": "Found 500 words",
+  "achievementTrilingualTitle": "Trilingual",
+  "achievementTrilingualDescription": "Played in Urdu, Hindi and English",
+  "achievementOnFireTitle": "On Fire",
+  "achievementOnFireDescription": "Finished 5 levels in a row with no hints",
+  "achievementStreakKeeperTitle": "Streak Keeper",
+  "achievementStreakKeeperDescription": "Played 7 days in a row",
+  "achievementDailyDevoteeTitle": "Daily Devotee",
+  "achievementDailyDevoteeDescription": "Completed 10 Daily Challenges",
+  "achievementCollectorTitle": "Collector",
+  "achievementCollectorDescription": "Completed a full category"
 }

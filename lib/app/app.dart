@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../application/achievements_controller.dart';
 import '../application/sync_controller.dart';
+import '../presentation/meta/achievement_unlock_card.dart';
 import '../services/audio/audio_service.dart';
 import '../services/haptics/haptics_service.dart';
 import 'language/language_x.dart';
@@ -32,6 +34,9 @@ class WordSearchMasterApp extends ConsumerWidget {
     // a provider that installs listeners must be kept alive by something with
     // the app's lifetime, and the app root is the only widget that has one.
     ref.watch(syncTriggersProvider);
+    // P17: diffs the live server achievement stream into the popup queue.
+    // Same shape and same reason as the two triggers above.
+    ref.watch(achievementPopupSyncProvider);
 
     return MaterialApp.router(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
@@ -58,7 +63,10 @@ class WordSearchMasterApp extends ConsumerWidget {
       // under a Flutter upgrade.
       builder: (context, child) => Directionality(
         textDirection: language.textDirection,
-        child: child ?? const SizedBox.shrink(),
+        // Above every routed screen: an achievement can unlock while the
+        // player is anywhere, and the overlay's own queue already guarantees
+        // only one card shows at once.
+        child: AchievementPopupOverlay(child: child ?? const SizedBox.shrink()),
       ),
     );
   }

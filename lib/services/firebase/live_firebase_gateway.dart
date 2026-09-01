@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
@@ -9,6 +10,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../app/config/app_config.dart';
 import '../../data/remote/firestore_account_repository.dart';
+import '../../data/remote/firestore_friends_api.dart';
+import '../../data/remote/firestore_leaderboard_api.dart';
+import '../../data/remote/firestore_user_stats_api.dart';
 import '../analytics/firebase_analytics_service.dart';
 import '../app_check/firebase_app_check_gateway.dart';
 import '../auth/firebase_auth_service.dart';
@@ -50,6 +54,10 @@ final class LiveFirebaseGateway implements FirebaseGateway {
       final crashlytics = FirebaseCrashlytics.instance;
       final reporter = CrashlyticsErrorReporter(crashlytics);
       final remoteConfig = rc.FirebaseRemoteConfig.instance;
+      final firestore = FirebaseFirestore.instance;
+      final functions = FirebaseFunctions.instanceFor(
+        region: AppConfig.functionsRegion,
+      );
 
       return FirebaseServices(
         reporter: reporter,
@@ -68,7 +76,7 @@ final class LiveFirebaseGateway implements FirebaseGateway {
         ),
         remoteConfig: FirebaseRemoteConfigAdapter(remoteConfig),
         cloudAccount: FirestoreAccountRepository(
-          firestore: FirebaseFirestore.instance,
+          firestore: firestore,
           reporter: reporter,
         ),
         fetchRemoteConfig: () =>
@@ -76,6 +84,19 @@ final class LiveFirebaseGateway implements FirebaseGateway {
               remoteConfig,
               reporter: reporter,
             ),
+        userStats: FirestoreUserStatsApi(
+          firestore: firestore,
+          reporter: reporter,
+        ),
+        leaderboard: FirestoreLeaderboardApi(
+          firestore: firestore,
+          reporter: reporter,
+        ),
+        friends: FirestoreFriendsApi(
+          firestore: firestore,
+          functions: functions,
+          reporter: reporter,
+        ),
       );
     } catch (_) {
       // `.instance` on any of these can throw if the platform channel is not

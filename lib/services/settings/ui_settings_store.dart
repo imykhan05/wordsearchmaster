@@ -41,6 +41,19 @@ abstract interface class UiSettingsStore {
   /// toggle as the two above.
   bool get loginPromptDismissed;
   Future<void> setLoginPromptDismissed(bool value);
+
+  /// Achievement ids a POPUP has already been shown for (P17).
+  ///
+  /// The unlocks themselves live server-side (`users/{uid}.stats.achievements`
+  /// — see `AchievementsController`), reached through a live Firestore
+  /// listener. That listener replays the FULL current set on every cold
+  /// start, and without this, a player who unlocked "First Word" last week
+  /// would see its popup again the next time they open the app. This is
+  /// exactly the same "have I shown this" carve-out as
+  /// [urduConnectedFormIntroShown]: UI bookkeeping, not game data — the
+  /// achievement itself is never at risk of being un-shown by clearing it.
+  Set<String> get seenAchievementPopupIds;
+  Future<void> markAchievementPopupSeen(String id);
 }
 
 /// Defaults only, forgotten on restart. The binding in tests.
@@ -51,7 +64,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.selectedLanguage,
     this.urduConnectedFormIntroShown = false,
     this.loginPromptDismissed = false,
-  });
+    Set<String>? seenAchievementPopupIds,
+  }) : seenAchievementPopupIds = seenAchievementPopupIds ?? {};
 
   @override
   bool soundEnabled;
@@ -63,6 +77,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool urduConnectedFormIntroShown;
   @override
   bool loginPromptDismissed;
+  @override
+  Set<String> seenAchievementPopupIds;
 
   @override
   Future<void> setSoundEnabled(bool value) async => soundEnabled = value;
@@ -77,6 +93,9 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setLoginPromptDismissed(bool value) async =>
       loginPromptDismissed = value;
+  @override
+  Future<void> markAchievementPopupSeen(String id) async =>
+      seenAchievementPopupIds = {...seenAchievementPopupIds, id};
 }
 
 /// The real one. Values are read once at startup and cached in memory, so
@@ -89,6 +108,8 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _languageKey = 'ui.selected_language';
   static const String _urduIntroKey = 'ui.urdu_connected_form_intro_shown';
   static const String _loginPromptKey = 'ui.login_prompt_dismissed';
+  static const String _seenAchievementPopupsKey =
+      'ui.seen_achievement_popup_ids';
 
   final SharedPreferences _prefs;
 
@@ -138,6 +159,16 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setLoginPromptDismissed(bool value) =>
       _prefs.setBool(_loginPromptKey, value);
+
+  @override
+  Set<String> get seenAchievementPopupIds =>
+      (_prefs.getStringList(_seenAchievementPopupsKey) ?? const []).toSet();
+
+  @override
+  Future<void> markAchievementPopupSeen(String id) => _prefs.setStringList(
+    _seenAchievementPopupsKey,
+    {...seenAchievementPopupIds, id}.toList(),
+  );
 }
 
 /// Overridden in `bootstrap.dart` with the prefs-backed store.

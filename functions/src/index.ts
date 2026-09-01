@@ -1,10 +1,12 @@
 /**
- * Word Search Master — Cloud Functions (Ch08 / P14).
+ * Word Search Master — Cloud Functions (Ch08 / P14, extended by P17's
+ * leaderboards, achievements and friends).
  *
  * Every callable here sets `enforceAppCheck: true` and lives in
  * `asia-south1`, matching `AppConfig.functionsRegion`. The one HTTPS endpoint
  * (`grantRewardedReward`) cannot use App Check and explains why in its own
- * header.
+ * header. `recomputeLeaderboardRanks` is neither — it is a SCHEDULED function
+ * with no caller at all, see `ranks.ts`.
  *
  * The contracts and error codes are documented in `functions/README.md`.
  */
@@ -31,6 +33,9 @@ setGlobalOptions({
 export { updateLeaderboards } from './updateLeaderboards';
 export { deleteAccount } from './deleteAccount';
 export { grantRewardedReward } from './grantRewardedReward';
+export { recomputeLeaderboardRanks } from './ranks';
+export { submitAchievement } from './submitAchievement';
+export { createInviteCode, redeemInviteCode } from './friends';
 
 /**
  * `submitScore` — a finished journey level.

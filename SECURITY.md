@@ -56,6 +56,13 @@ Three things shape every row below.
 | T18 | **Incomplete account deletion** (Play policy) | One callable removes the user doc, every subcollection, every board entry, the moderation trail and the auth record; Firestore first, auth last, so a partial failure stays resumable | `functions/src/deleteAccount.ts` | **Implemented** — see AR-7 |
 | T19 | **Secrets committed to the repository** | No Firebase credentials in the repo at all (`FlavorFirebaseOptions` returns null and `docs/firebase-setup.md` is the runbook); the MAX shared secret is a Secret Manager secret; the keystore is gitignored | `lib/app/config/firebase_options.dart`, `.gitignore` | **Implemented** |
 | T20 | **Real ad units served from dev/stg** — the usual cause of a permanent ad-network ban | Ads only behind `AdGateway`; dev/stg use MAX test mode and an `applicationIdSuffix` | CLAUDE.md § Flavors | **Planned (P18)** |
+| T21 | **Forged Collector claim** — a client asserting it finished a category it never played | Bounded plausibility check (known category, known language, meaningful `progress`); a failing claim is flagged to `moderation/`, never granted, never an error | `functions/src/submitAchievement.ts` | **Partial** — see AR-9 (the same content-porting gap) |
+| T22 | **Cheap achievements minted directly by the client** | The six counter-backed achievements are written ONLY inside `recordSubmission`'s own transaction, never by a client write; `firestore.rules` denies every client write to `users/{uid}` outside the two profile fields | `functions/src/stats.ts`, `firestore.rules` | **Implemented** |
+| T23 | **Invite-code enumeration** — a client brute-forcing codes to find real accounts | `inviteCodes/{code}` is unreadable by any client (server-only, via `redeemInviteCode`); a dedicated, tighter rate limit on redemption attempts, separate from the submission rate window | `functions/src/friends.ts`, `firestore.rules` | **Implemented** |
+| T24 | **A forged one-directional "friendship"** | Both sides of `users/*/friends/*` are written in ONE server transaction; the client cannot write either side directly | `functions/src/friends.ts`, `firestore.rules` | **Implemented** |
+| T25 | **Rank data staleness or spoofing** | Ranks are computed and written ONLY by the periodic `recomputeLeaderboardRanks` job (Admin SDK); the client cannot write `stats.ranks.*` or an entry's `rank` field | `functions/src/ranks.ts`, `firestore.rules` | **Implemented** — see AR-10 (freshness) |
+| T26 | **Surprise Firestore bill from an abandoned snapshot listener** | The leaderboard screen holds a live snapshot ONLY on the currently visible tab; switching tabs or leaving the screen unmounts the subtree that watches it, which Riverpod's `autoDispose` turns into an automatic unsubscribe | `lib/presentation/screens/leaderboard_screen.dart` | **Implemented** |
+| T27 | **Contact-book harvesting** to find friends | No contact permission is ever requested; the only path to a friend is a code the OWNER chose to share through the native share sheet | `lib/services/friends/friends_service.dart` | **Implemented** |
 
 ---
 
@@ -189,6 +196,38 @@ keep in step with Dart, on top of the scoring one. Deliberately not attempted
 here; it is a prompt of its own, and it should be weighed against just capping
 per-level scores at the honest maximum, which is far cheaper and catches most of
 the value.
+
+**The same gap reappears in P17's Collector achievement**, for the identical
+reason: the server cannot check that a claimed category was actually completed
+without the same word-pack port. `submitAchievement.ts` accepts what it can
+check — a real category name, a real language, meaningful `progress` — and
+flags the rest to `moderation/` without granting it. The stakes are lower here
+by design: a forged Collector claim costs a cosmetic badge, never a
+leaderboard position or a coin, so this file makes the same
+cheap-mitigation-over-expensive-completeness call AR-9 already makes for
+scoring, on purpose.
+
+### AR-10 — A leaderboard rank is never more current than the last periodic run
+
+Ranks (P17) are written by `recomputeLeaderboardRanks`, a scheduled function
+that reads a whole board and writes every entry's position, on a fixed
+interval (`RUN_INTERVAL_MINUTES` in `functions/src/ranks.ts`'s header — 15
+minutes at the time of writing). Between runs, a player who climbs past
+several rivals sees their OLD rank until the next run lands.
+
+**Why this is acceptable:** the alternative is computing a rank on every
+`submitScore` call by reading the whole board first, which is precisely the
+"download 100k docs to count" cost this design exists to avoid — paid on every
+level completion instead of amortised across every leaderboard view between
+runs. A rank fifteen minutes stale answers the question a player is actually
+asking ("roughly where do I stand") without that cost.
+
+**What is NOT covered:** the rank-writing job itself could not be exercised
+under the scheduler in this sandbox, for the same outbound-proxy restriction
+that already prevented registering the P14 Firestore trigger — see
+`functions/README.md`. The function BODY (`recomputeRanksForBoard`) is
+exercised directly against the Firestore emulator; the schedule wiring that
+calls it every 15 minutes is not.
 
 ---
 

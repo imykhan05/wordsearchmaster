@@ -1751,6 +1751,249 @@ files are already waiting on (Ch07) on text no player can reach.
   incidental — the card is part of a Riverpod app.
 
 
+## Leaderboards, achievements, friends (P17)
+
+The social layer on top of P14's server-authoritative data. Every write in
+this prompt is server-only — the client never mints a rank, an achievement or
+a friendship, only reads what the server already decided, exactly the Ch08
+posture P14 established.
+
+### Server: ranks are a periodic batch job, never per-submission
+
+`functions/src/ranks.ts`'s `recomputeRanksForBoard` is the ONE place in this
+codebase allowed to read a leaderboard beyond `.limit(100)` — a full,
+`orderBy('score', 'desc')` scan of one board, run on a schedule
+(`recomputeLeaderboardRanks`, every 15 minutes) rather than inside
+`submitScore`. Computing a rank live, on every submission, would mean reading
+the WHOLE board just to place one row — the exact "download 100k docs to
+count" the prompt forbids, except paid for on every level completion instead
+of every leaderboard view. A rank is therefore never real-time; it is as
+fresh as the last run, and `SECURITY.md`'s AR-10 records that trade
+explicitly. Two writes per entry: `leaderboards/{board}/entries/{uid}.rank`
+(the public row already carries public data) and `users/{uid}.stats.ranks.
+{board}` (the one the prompt names, and the one the client's PINNED row
+actually reads — a player outside the top 100 never appears in the query
+above, so their rank has to come from somewhere that does not require being
+in it). `liveBoardsFor` is `global`/`ur`/`hi`/`en`/the current
+`weekly_*`/the current `daily_*` — the six live tabs. Like P14's Firestore
+trigger, the scheduler's WIRING cannot be registered inside this sandbox's
+outbound-proxy-restricted emulator run; the body (`recomputeRanksForBoard`)
+is fully exercised on the emulator instead, split from its `onSchedule`
+wrapper for exactly that reason.
+
+### Server: six achievements are computed inside `recordSubmission`, one is a claim
+
+`functions/src/stats.ts`'s `advanceStats` is a pure function threaded into
+`submissions.ts`'s existing non-suspicious write branch — First Word, Word
+Master (500 words), Trilingual (all three languages), On Fire (5 hint-free
+levels), Streak Keeper (7-day `advanceEngagementStreak`) and Daily Devotee
+(10 dailies) all fall out of counters already being maintained on
+`users/{uid}.stats`, at ZERO new transactions: the same write that already
+updates `progress` now also computes and writes `stats`. Speed Runner is
+defined in the shared `ACHIEVEMENTS` map but never granted anywhere in this
+build — it needs Blitz mode (v1.2), which does not exist, and its slot is
+flagged `TODO(v1.2)` rather than half-wired.
+
+**`advanceEngagementStreak` has to be order-aware, the same problem
+`timingIsPlausible` (P14) already solved.** The outbox is at-least-once and
+can deliver rows out of order, so "extend the streak if this completion is
+the day after the last one" cannot trust the arrival order of submissions —
+it has to reason from `completedAtMillis` alone, tolerating a late-arriving
+row from yesterday without corrupting a streak already advanced past it.
+
+**Collector has no fixed id and is CLIENT-CLAIMED, not server-computed.** It
+is one of 36 (12 categories x 3 languages) sub-badges P11's `Collections`
+already derives locally from `level_progress` — the server has no cheap way
+to know a category just filled without shipping the whole content pack and
+re-deriving `Collections` itself (the AR-9 gap this section's own header
+warns about). So the client submits a CLAIM (`submitAchievement.ts`), and the
+server applies BOUNDED PLAUSIBILITY rather than full verification: the
+category must be real, the language must be real, and `highestLevel` for that
+language must be at least `MIN_PLAUSIBLE_LEVEL` (5) — enough to catch a
+claim an honest client could never produce, not enough to re-derive the
+truth. An implausible claim is logged to `moderation/` and still returns
+`{recorded: true}` — Ch08's "never error a suspected cheater" rule, unchanged
+from P14. `achievementIdFor` produces `collection:{language}:{category}`,
+matching `CategoryBadge.achievementIdFor` — a format the CLIENT chose back in
+P11, six prompts before this one; the server was written to match the
+pre-existing client convention rather than the reverse, once the mismatch was
+caught by inspection before anything shipped.
+
+### Server: friends are an immediate, mutual, code-based graph
+
+`functions/src/friends.ts` is built to the audit's explicit ordering
+(Chapter audit #11): the graph has to exist and be queryable BEFORE any
+friend notification is safe to send, because a notification about an empty
+graph is a promise this build cannot keep. That is also why redemption is an
+IMMEDIATE, SYMMETRIC friendship rather than a request/accept flow — a
+pending request nobody can be told about (no notification channel yet) would
+just sit forever. Possessing the code is treated as consent, because the code
+only ever travels through a channel the OWNER chose (the native share sheet
+— see the client section below), never a contact-book scrape.
+
+A code is ONE STABLE STRING PER PLAYER (`getOrCreateInviteCode`,
+idempotent), not single-use — single-use would turn "share your code" into
+"generate, share, invalidate, repeat" for a player inviting several people
+from one group chat. Redemption (`redeemCode`) is one transaction: look up
+the code's owner, refuse a self-redemption and a full friend list on EITHER
+side (`LIMITS.maxFriends`, 200, via a `.count()` aggregation query inside the
+transaction), then write BOTH sides of `users/*/friends/*` so neither account
+can ever hold a one-directional "friendship" the other side does not see.
+`redeemCodeRateLimited` wraps it with its OWN rate window
+(`friendRedeemRate`), deliberately separate from `submissions.ts`'s
+submission rate limit — redeeming a friend code must never eat into the
+budget an offline backlog drain needs, or vice versa.
+
+### Firestore rules: `friends` and `inviteCodes` are unreachable by any client write
+
+`firestore.rules` adds `users/{uid}/friends`: owner `get`/`list`, `allow
+write: if false` — a mutual friendship can only be written by the two-sided
+transaction above, never by one side unilaterally. `inviteCodes/{document=**}`
+is denied outright to every client, the same treatment `moderation/` and
+`rewardCallbacks/` already get: a client that could read its own invite-code
+document would learn nothing dangerous, but a client that could WRITE one
+could mint an unlimited supply, bypassing `inviteCodeMaxAttempts`'s collision
+handling and the whole point of a server-issued code. Both rules carry an
+ALLOW half through `withSecurityRulesDisabled` (the server path really can
+write `users/{uid}/friends/{friendUid}`) and a DENY half from the client SDK,
+the same two-sided discipline P15 established.
+
+### Client: the achievement popup queue is fed by two sources, one FIFO
+
+`lib/application/achievements_controller.dart`'s `AchievementPopupQueue` is
+the single queue "two unlocks never overlap" (the prompt's own words) is
+built against. It has two feeds, because the six named achievements and
+Collector become known to the client in genuinely different ways:
+
+- The six named ones arrive on a LIVE Firestore listener
+  (`UserStatsApi.watchAchievementIds`, diffed by `achievementPopupSyncProvider`)
+  — the outbox decouples playing from syncing, so the moment one crosses its
+  threshold is a SERVER event, potentially minutes after the level that
+  earned it.
+- Collector is known LOCALLY, synchronously, the instant
+  `ProgressionController.recordCompletion` returns its `newBadges` —
+  `game_screen.dart`'s existing `.then((reward) => ...)` callback (the same
+  one that already sets `_reward.value`) is where it gets pushed into the
+  SAME queue. No server round trip needed to know a category shelf just
+  filled.
+
+Both paths check `UiSettingsStore.seenAchievementPopupIds` BEFORE enqueueing,
+not before dequeuing — a duplicate stream event for an id already sitting in
+the queue is filtered too, so a re-emitted Firestore snapshot (which replays
+the FULL current set on every listener attach, including a cold start) can
+never queue the same popup twice in one session.
+
+**`watchedAchievementIdsProvider` reads `currentAccountProvider`'s
+`AsyncValue`, never its `.future`.** The first version awaited `.future`, and
+every widget test that reached the app root — which now watches
+`achievementPopupSyncProvider` — started throwing `StateError: disposed
+during loading state, yet no value could be emitted` on teardown.
+`NoopAuthService.watchAccount()` returns `Stream.empty()`, which never emits
+and never resolves `currentAccountProvider`'s `.future`; Riverpod throws
+rather than silently swallowing a provider that gets disposed mid-await.
+Watching the synchronous `AsyncValue` — the same "watch inside a Stream
+provider" shape `currentAccountProvider` itself already uses — degrades to
+"no uid yet" instead of hanging, and is the fix.
+
+The popup card (`AchievementUnlockCard`) follows `ChestOpenCard`'s P11 shape
+exactly: one `TweenAnimationBuilder`, no ticker of its own.
+`AchievementPopupOverlay` sits in `app.dart`'s `MaterialApp.router.builder`,
+ABOVE every routed screen and above the RTL `Directionality` wrapper — an
+achievement can unlock while the player is browsing ANY screen, not just the
+game screen.
+
+### Client: the leaderboard screen is deliberately not a `TabBarView`
+
+"Real-time snapshots ONLY on the currently visible tab, detached on navigate
+away" is one of the three literal acceptance criteria, and `TabBarView`'s
+`PageView` keeps neighbouring pages BUILT for swipe smoothness — the exact
+opposite of what a per-tab Firestore listener needs. So `LeaderboardScreen`
+has no `TabController`/`TabBarView` anywhere: the selected tab is plain local
+`State`, and the body is a `switch` that constructs ONLY the selected tab's
+subtree, keyed per tab so Flutter cannot reuse the old element across a
+board-id change. Switching tabs unmounts the previous one outright.
+
+`leaderboardTopProvider(board)` (`lib/application/leaderboard_controller.dart`)
+is a PLAIN `@riverpod` family — no `keepAlive`, unlike almost every other
+provider in this codebase — for exactly the reason the prompt gives:
+"snapshot listeners left running are the main cause of surprise Firestore
+bills." The moment nothing watches a given board id, Riverpod tears the
+provider down, cancelling the `StreamSubscription` and closing the Firestore
+listener with it — `FirestoreLeaderboardApi.watchTop` is a bare `snapshots()`
+map with nothing else holding a reference. `leaderboard_screen_test.dart`
+proves this directly with a fake `LeaderboardApi` that counts active
+subscriptions per board: switching from Global to Urdu drives Global's count
+to zero.
+
+**A player's own rank is a ONE-SHOT read, never live** —
+`LeaderboardApi.fetchOwnEntry`, backing `ownLeaderboardEntryProvider`. A rank
+is only ever as fresh as `recomputeLeaderboardRanks`'s own 15-minute cadence
+(the server section above), so a live listener on it would hold a connection
+open for a number that moves at most every 15 minutes. The pinned row renders
+only when the signed-in uid is NOT already present in the live top-100 list
+— `leaderboard_screen_test.dart` seeds exactly that shape (100 entries, none
+of them "me") and asserts the pinned row shows the fetched rank.
+
+Every live snapshot `leaderboardTopProvider` receives writes through to
+`LeaderboardCache` (P16) — best-effort, fire-and-forget, the same "nothing
+waits on it" shape the outbox drain uses — which is what makes
+`cachedLeaderboardProvider(board)` (P16's single `cachedGlobalLeaderboard`
+generalised to a family, one cache slot per board) a genuinely LAST-SEEN
+copy for the offline fallback rather than permanently empty on a build that
+never had a writer for it.
+
+Weekly and Daily tabs resolve their board id through
+`lib/domain/leaderboard/leaderboard_keys.dart`, a byte-for-byte Dart port of
+`functions/src/leaderboardKeys.ts` — `isoWeekKey`'s Thursday-pivot logic
+included, because a naive day-of-year/7 division gets the ISO year wrong
+once a year at exactly the boundary the server's own test fixture catches.
+The client's `leaderboard_keys_test.dart` reuses those same fixture dates
+(`2027-01-01` → `2026-W53`) by inspection rather than a generated file — the
+stakes here are "wrong tab shows the wrong board," not a rejected
+submission, so this did not earn P14's fixture-generator machinery.
+`dailyBoardId`/`currentDailyBoardId` reuse `DayKey.toString()` directly
+rather than re-deriving `yyyy-MM-dd` formatting a second time.
+
+### Client: friends — no contact-book access, ever
+
+`lib/presentation/meta/friends_tab.dart` and its two backing providers
+(`ownInviteCodeProvider`, `friendsListProvider`,
+`lib/application/friends_controller.dart`) go through a share CODE and the
+platform's native share sheet (`share_plus`, wrapped exactly like every other
+vendor SDK this codebase keeps behind an interface — `FriendsApi` is
+interface + Noop + `FirestoreFriendsApi`, the same triad `CloudAccountRepository`
+established in P13) — never a contacts picker, per the prompt's own
+reasoning: that permission scares this audience and hurts install-to-open
+rate. `createInviteCode` is idempotent server-side, so `ownInviteCodeProvider`
+re-minting nothing on every tab revisit is a property of the SERVER, not a
+client-side cache the widget has to maintain.
+
+`friendsListProvider` follows `leaderboardTopProvider`'s identical shape —
+plain `@riverpod`, no `keepAlive`, torn down the instant the Friends tab is
+no longer the selected one. `FriendsApi.watchFriends` reads
+`users/{uid}/friends` directly (the rules above allow owner `get`/`list`);
+nothing in this file ever writes there, matching the "friends is server-only"
+rule the rules section states.
+
+`_RedeemCodeCard`'s redeem flow switches on every `RedeemOutcome` the server
+can return — `friended`, `alreadyFriends`, `notFound`, `ownCode`,
+`friendLimitReached` — into its own localized message, plus a client-only
+`RedeemFailed` for anything that never reached the server at all (offline, a
+thrown `FirebaseFunctionsException`). `friends_tab_test.dart` drives every
+branch through a fake `FriendsApi`, which is what actually proves the third
+acceptance criterion ("friends invite code se kaam karta hai") end to end
+from the UI, rather than only server-side.
+
+### What could not be verified here
+
+Same standing limitation as P14's Firestore trigger: `recomputeLeaderboardRanks`'s
+`onSchedule` WIRING cannot be registered inside this sandbox's
+outbound-proxy-restricted emulator run. Its body, `recomputeRanksForBoard`,
+is fully exercised against the real Firestore emulator instead — including
+the literal acceptance-criterion shape (130 accounts, a scan, a pinned rank
+read back correctly for an account outside the top 100).
+
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB

@@ -78,6 +78,23 @@ export function languageBoardId(language: LanguageCode): string {
   return language;
 }
 
+/**
+ * `YYYY-MM-DD` for [date], at UTC. The plain formatter `isoWeekKey` computes
+ * internally but never exported — the rank job (P17) needs "today's date, as
+ * a board key" directly, without going through an ISO week first.
+ */
+export function utcDateKey(date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** `daily_{today}`, where "today" is [now]'s UTC calendar day. */
+export function currentDailyBoardId(now: Date): string {
+  return dailyBoardId(utcDateKey(now));
+}
+
 /** `YYYY-MM-DD`, the shape `DayKey.toString()` produces. */
 export function isDayKey(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);

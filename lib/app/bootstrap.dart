@@ -8,7 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/content/content_repository.dart';
 import '../data/local/app_database.dart';
 import '../data/remote/cloud_account_repository.dart';
+import '../data/remote/friends_api.dart';
+import '../data/remote/leaderboard_api.dart';
 import '../data/remote/sync_api.dart';
+import '../data/remote/user_stats_api.dart';
 import '../data/repositories/streak_repository.dart';
 import '../services/analytics/analytics_service.dart';
 import '../services/app_check/app_check_gateway.dart';
@@ -41,6 +44,9 @@ final class BootstrapServices {
     required this.remoteConfigFetched,
     required this.connectivity,
     required this.syncApi,
+    required this.userStats,
+    required this.leaderboard,
+    required this.friends,
     this.database,
     this.content,
     this.clock,
@@ -53,6 +59,12 @@ final class BootstrapServices {
   final AnalyticsService analytics;
   final RemoteConfig remoteConfig;
   final CloudAccountRepository cloudAccount;
+
+  /// P17. Noop whenever Firebase is unavailable — the same degradation as
+  /// [cloudAccount].
+  final UserStatsApi userStats;
+  final LeaderboardApi leaderboard;
+  final FriendsApi friends;
 
   /// Whether there is a network right now (Ch10 / P16). The plugin-backed
   /// binding when the platform channel answered, the assume-online fallback
@@ -283,6 +295,9 @@ Future<BootstrapServices> initializeServices(
     remoteConfigFetched: remoteConfigFetched,
     connectivity: connectivity,
     syncApi: syncApi,
+    userStats: services?.userStats ?? const NoopUserStatsApi(),
+    leaderboard: services?.leaderboard ?? const NoopLeaderboardApi(),
+    friends: services?.friends ?? const NoopFriendsApi(),
     database: database,
     content: content,
     clock: clock,
@@ -325,6 +340,9 @@ Future<void> bootstrap(
               services.connectivity,
             ),
             syncApiProvider.overrideWithValue(services.syncApi),
+            userStatsApiProvider.overrideWithValue(services.userStats),
+            leaderboardApiProvider.overrideWithValue(services.leaderboard),
+            friendsApiProvider.overrideWithValue(services.friends),
             // Each of the four below is absent only if its step threw. The
             // matching provider then falls back to its own default — see each
             // one's doc for what that means; none of them is fatal.

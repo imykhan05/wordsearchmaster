@@ -136,24 +136,34 @@ final class LeaderboardEntry {
     required this.uid,
     required this.score,
     this.displayName,
+    this.rank,
   });
 
   final String uid;
   final String? displayName;
   final int score;
 
+  /// The 1-based rank `recomputeLeaderboardRanks` (P17) last wrote onto this
+  /// entry's document — null on a row read before the periodic job has ever
+  /// reached it, and always null on a row read from [LeaderboardCache], which
+  /// only ever stores the top-100 QUERY order and never round-trips this
+  /// field (see that class's `encode`/`tryDecode`).
+  final int? rank;
+
   @override
   bool operator ==(Object other) =>
       other is LeaderboardEntry &&
       other.uid == uid &&
       other.displayName == displayName &&
-      other.score == score;
+      other.score == score &&
+      other.rank == rank;
 
   @override
-  int get hashCode => Object.hash(uid, displayName, score);
+  int get hashCode => Object.hash(uid, displayName, score, rank);
 
   @override
-  String toString() => 'LeaderboardEntry($uid, $displayName, $score)';
+  String toString() =>
+      'LeaderboardEntry($uid, $displayName, $score, rank: $rank)';
 }
 
 @Riverpod(keepAlive: true)
@@ -163,9 +173,9 @@ Future<LeaderboardCache> leaderboardCache(Ref ref) async => LeaderboardCache(
   reporter: ref.watch(errorReporterProvider),
 );
 
-/// The global board's cached copy, for the leaderboard screen.
+/// [board]'s cached copy, for the leaderboard screen — one per tab (P17).
 @riverpod
-Future<CachedLeaderboard?> cachedGlobalLeaderboard(Ref ref) async {
+Future<CachedLeaderboard?> cachedLeaderboard(Ref ref, String board) async {
   final cache = await ref.watch(leaderboardCacheProvider.future);
-  return cache.read('global');
+  return cache.read(board);
 }

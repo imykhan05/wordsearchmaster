@@ -23,6 +23,9 @@
 library;
 
 import '../../data/remote/cloud_account_repository.dart';
+import '../../data/remote/friends_api.dart';
+import '../../data/remote/leaderboard_api.dart';
+import '../../data/remote/user_stats_api.dart';
 import '../analytics/analytics_service.dart';
 import '../app_check/app_check_gateway.dart';
 import '../auth/auth_service.dart';
@@ -42,6 +45,9 @@ final class FirebaseServices {
     required this.remoteConfig,
     required this.cloudAccount,
     required this.fetchRemoteConfig,
+    required this.userStats,
+    required this.leaderboard,
+    required this.friends,
   });
 
   /// Crashlytics-backed once Firebase is up. Replaces the Noop that steps 1–2
@@ -63,6 +69,15 @@ final class FirebaseServices {
   /// Step 5, as a callable: fetch + activate, bounded by its own timeout.
   /// Returns whether a fetch actually landed. Never throws.
   final Future<bool> Function() fetchRemoteConfig;
+
+  /// P17: achievements + ranks, the leaderboard's live top-N + one-shot own
+  /// rank, and the friend graph. Each is a thin Firestore/Functions reader —
+  /// see their own files for why none of them needs a step of its own in the
+  /// init sequence (all three are read on demand, from whichever screen the
+  /// player opens, never during bootstrap).
+  final UserStatsApi userStats;
+  final LeaderboardApi leaderboard;
+  final FriendsApi friends;
 }
 
 /// Brings Firebase up, or reports that it could not.

@@ -144,6 +144,16 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // A player's ACCEPTED friends (P17). Owner-read only — a friend list is
+      // as personal as a contact book, and nothing here is a public board.
+      // Written by `redeemInviteCode` alone, symmetrically on both sides in
+      // one transaction: a client that could write its own side could invent
+      // a one-directional "friendship" the other account never agreed to.
+      match /friends/{friendUid} {
+        allow get, list: if isSelf(uid);
+        allow write: if false;
+      }
+
       // Any subcollection a future prompt invents is denied until it is named
       // here. Without this, `users/{uid}/whatever` would fall through to the
       // document-level rules above and inherit nothing — which is already a
@@ -174,6 +184,14 @@ service cloud.firestore {
     // the one thing P14 is explicit about never telling them.
     match /moderation/{document=**}      { allow read, write: if false; }
     match /rewardCallbacks/{document=**} { allow read, write: if false; }
+
+    // The code -> owner-uid map (P17). Deny-all is what makes a code a
+    // capability rather than a lookup: reading this collection would let a
+    // client enumerate every player's invite code without ever being handed
+    // one, defeating the whole point of a share-only code. Redemption goes
+    // through `redeemInviteCode` exclusively, which is the only path that
+    // ever needs to resolve a code to a uid.
+    match /inviteCodes/{document=**} { allow read, write: if false; }
 
     // Anything a future prompt adds is denied until it says otherwise. This
     // changes no behaviour (see the header); it is here so that the answer to

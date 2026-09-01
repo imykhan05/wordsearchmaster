@@ -4,8 +4,12 @@ import '../../domain/progression/account_merge.dart';
 import '../../services/diagnostics/error_reporter.dart';
 import 'cloud_account_repository.dart';
 
-/// The real [CloudAccountRepository]. The only file allowed to import
-/// `cloud_firestore`.
+/// The real [CloudAccountRepository]. One of a small, deliberate set of files
+/// allowed to import `cloud_firestore` directly — alongside
+/// `firestore_user_stats_api.dart`, `firestore_leaderboard_api.dart` and
+/// `firestore_friends_api.dart` (P17) — each reading a narrow, named slice of
+/// `users/{uid}` or `leaderboards/*` rather than a general-purpose client
+/// anything else in the app reaches for.
 ///
 /// One document read per merge — see `cloud_account_repository.dart`'s header
 /// for why the shape is flat rather than a per-level subcollection, and for

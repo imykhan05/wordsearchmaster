@@ -89,7 +89,7 @@ void main() {
   });
 
   group('which kinds this build can deliver', () {
-    test('levels and dailies have P14 callables', () {
+    test('levels, dailies and category-claim achievements have callables', () {
       expect(
         FunctionsSyncApi.callableFor(OutboxKind.levelComplete),
         'submitScore',
@@ -97,6 +97,11 @@ void main() {
       expect(
         FunctionsSyncApi.callableFor(OutboxKind.dailyResult),
         'submitDaily',
+      );
+      // P17: the one achievement the server cannot derive on its own.
+      expect(
+        FunctionsSyncApi.callableFor(OutboxKind.achievementUnlocked),
+        'submitAchievement',
       );
     });
 
@@ -106,7 +111,6 @@ void main() {
       // on a call that was never going to be made.
       for (final kind in const [
         OutboxKind.coinsDelta,
-        OutboxKind.achievementUnlocked,
         OutboxKind.profileUpdate,
       ]) {
         expect(FunctionsSyncApi.callableFor(kind), isNull);

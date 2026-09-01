@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/app_route.dart';
 import '../../app/config/app_config.dart';
 import '../../app/theme/theme.dart';
+import '../../application/achievements_controller.dart';
 import '../../application/game_controller.dart';
 import '../../application/progression_controller.dart';
 import '../../data/repositories/dda_repository.dart';
@@ -496,6 +497,20 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
           .then((reward) {
             if (!mounted) return;
             _reward.value = reward;
+            // P17: Collector is known LOCALLY the instant a level completes
+            // — no server round trip needed, unlike the six named
+            // achievements the popup sync provider diffs off a Firestore
+            // listener. Same queue either way, so two unlocks never overlap.
+            for (final badge in reward.newBadges) {
+              ref
+                  .read(achievementPopupQueueProvider.notifier)
+                  .enqueueIfUnseen(
+                    CollectorAchievementUnlock(
+                      category: badge.category,
+                      language: badge.language,
+                    ),
+                  );
+            }
           });
     });
 

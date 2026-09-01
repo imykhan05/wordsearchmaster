@@ -43,6 +43,7 @@ import {
 import { weeklyBoardId } from './leaderboardKeys';
 import { DAILY_SHAPE, isKnownLevel, levelShape, type LevelShape } from './levels';
 import { SPEC_VERSION } from './scoring';
+import { advanceStats, readUserStats, statsUpdatePayload } from './stats';
 import {
   EMPTY_TIMING,
   evaluateSubmission,
@@ -303,6 +304,19 @@ export async function recordSubmission(
           },
         };
       }
+
+      // Achievements only ever advance on an ACCEPTED submission — a
+      // suspicious one earns nothing, which is what keeps "unlock every
+      // achievement in one forged call" off the table the same way a
+      // suspicious score never reaches a leaderboard.
+      const statsAdvance = advanceStats(readUserStats(userData), {
+        kind: submission.kind,
+        language: submission.language,
+        wordsFound: evaluated.wordsFound,
+        hintsUsed: evaluated.hintsUsed,
+        completedAtMillis: submission.completedAt,
+      });
+      userUpdate['stats'] = statsUpdatePayload(statsAdvance);
     }
 
     tx.set(user, userUpdate, { merge: true });

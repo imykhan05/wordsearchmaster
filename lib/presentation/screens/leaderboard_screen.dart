@@ -2,46 +2,50 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/theme.dart';
+import '../../application/leaderboard_controller.dart';
 import '../../data/repositories/leaderboard_cache.dart';
+import '../../domain/leaderboard/leaderboard_keys.dart' as leaderboard_keys;
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/auth/auth_service.dart';
 import '../../services/connectivity/connectivity_service.dart';
+import '../../services/time/trusted_clock.dart';
+import '../meta/friends_tab.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/flavor_badge.dart';
 import '../widgets/sync_status.dart';
 
-/// The leaderboard, rendered from the LAST SAVED COPY (Ch10 / P16).
+/// The leaderboard: Global / Urdu / Hindi / English / Weekly / Daily / Friends
+/// (P17), rebuilt on top of P16's cache-first foundation.
 ///
 /// ---------------------------------------------------------------------------
-/// CACHE FIRST, NOT NETWORK FIRST
+/// WHY THIS IS NOT A `TabBarView`
 ///
-/// Ch10's rule for this screen is cached data plus a "last updated" relative
-/// timestamp when offline — never a spinner that never resolves, never an
-/// error, and never a "no internet" dialog. So the cache is what this widget
-/// reads, always, in both states: online simply means a fresher copy will be
-/// written under it, not that the screen switches to a different data source.
-///
-/// One data path rather than two is also what makes the offline case correct
-/// by construction. A screen that read the network when online and the cache
-/// when offline would have an untested branch that only fires on a bad
-/// connection — which is the connection this game's audience mostly has.
-///
-/// ---------------------------------------------------------------------------
-/// P17 OWNS THE FETCH
-///
-/// Nothing here refreshes the cache. `LeaderboardCache` is the store and P17's
-/// prompt owns filling it from Firestore, so on this build the screen shows
-/// whatever the cache holds — empty until then. That split is deliberate:
-/// P16's job is that the OFFLINE path exists, renders honestly, and cannot
-/// interrupt the player.
-class LeaderboardScreen extends ConsumerWidget {
+/// "Real-time snapshots ONLY on the currently visible tab, detached on
+/// navigate away" is one of P17's three acceptance criteria, and
+/// `TabBarView`'s `PageView` keeps neighbouring pages BUILT for swipe
+/// smoothness — exactly the opposite of what a per-tab Firestore listener
+/// needs. So there is no `TabController`/`TabBarView` anywhere here: [_tab]
+/// is plain local state, and the body is a `switch` that constructs ONLY the
+/// selected tab's subtree. Switching tabs unmounts the old one outright,
+/// which is what lets `leaderboardTopProvider` (an `autoDispose` family — see
+/// its own file header) actually tear its stream down rather than merely
+/// stop being the active page.
+class LeaderboardScreen extends ConsumerStatefulWidget {
   const LeaderboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LeaderboardScreen> createState() => _LeaderboardScreenState();
+}
+
+enum _BoardTab { global, ur, hi, en, weekly, daily, friends }
+
+class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
+  _BoardTab _tab = _BoardTab.global;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final cached = ref.watch(cachedGlobalLeaderboardProvider);
-    final online = ref.watch(isOnlineProvider).value ?? true;
 
     return Scaffold(
       appBar: AppBar(
@@ -56,15 +60,6 @@ class LeaderboardScreen extends ConsumerWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppTokens.space24),
-          // The badge travels with the screen, not with `StubScreen` — P01's
-          // rule is that dev and stg are unmistakable on EVERY screen, and a
-          // real screen replacing a stub must not quietly drop it.
-          // `cached` is an AsyncValue over a LOCAL read, so its loading state
-          // lasts a frame or two — never the open-ended wait a network read
-          // would produce. An error degrades to the empty copy rather than to
-          // an error screen: a board nobody could read is the same experience
-          // as a board with nothing in it, and only one of those needs a
-          // player to understand it.
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -73,12 +68,22 @@ class LeaderboardScreen extends ConsumerWidget {
                 child: FlavorBadge(),
               ),
               const SizedBox(height: AppTokens.space16),
+              _TabStrip(
+                selected: _tab,
+                onSelect: (tab) => setState(() => _tab = tab),
+              ),
+              const SizedBox(height: AppTokens.space16),
               Expanded(
-                child: switch (cached) {
-                  AsyncData(:final value)
-                      when value != null && value.entries.isNotEmpty =>
-                    _Board(snapshot: value, online: online),
-                  _ => const _EmptyBoard(),
+                // KeyedSubtree per tab: a new key forces a fresh element (and a
+                // fresh provider watch) rather than Flutter reusing the old
+                // `_BoardBody`'s state across a board-id change — belt and
+                // braces alongside the `switch` itself never re-showing the
+                // previous tab's tree.
+                child: switch (_tab) {
+                  _BoardTab.friends => const FriendsTab(
+                    key: ValueKey(_BoardTab.friends),
+                  ),
+                  final tab => _BoardBody(tab: tab, key: ValueKey(tab)),
                 },
               ),
             ],
@@ -89,83 +94,255 @@ class LeaderboardScreen extends ConsumerWidget {
   }
 }
 
-class _Board extends StatelessWidget {
-  const _Board({required this.snapshot, required this.online});
+class _TabStrip extends StatelessWidget {
+  const _TabStrip({required this.selected, required this.onSelect});
 
-  final CachedLeaderboard snapshot;
-  final bool online;
+  final _BoardTab selected;
+  final ValueChanged<_BoardTab> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    // Language endonyms, not localized labels — CLAUDE.md's own rule for
+    // `Language.endonym`: a player who reads only Urdu has to find the Urdu
+    // tab by its own script, not by whatever language the UI happens to be in.
+    final labels = <_BoardTab, String>{
+      _BoardTab.global: l10n.leaderboardTabGlobal,
+      _BoardTab.ur: Language.urdu.endonym,
+      _BoardTab.hi: Language.hindi.endonym,
+      _BoardTab.en: Language.english.endonym,
+      _BoardTab.weekly: l10n.leaderboardTabWeekly,
+      _BoardTab.daily: l10n.leaderboardTabDaily,
+      _BoardTab.friends: l10n.leaderboardTabFriends,
+    };
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final tab in _BoardTab.values)
+            Padding(
+              padding: const EdgeInsets.only(right: AppTokens.space8),
+              child: ChoiceChip(
+                label: Text(labels[tab]!),
+                selected: tab == selected,
+                onSelected: (_) => onSelect(tab),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Resolves [tab] to a board id — synchronous for the four evergreen boards,
+/// waiting on [currentDayProvider] for Weekly/Daily, whose ids are date-keyed
+/// (`domain/leaderboard/leaderboard_keys.dart`, a byte-for-byte port of the
+/// server's own `leaderboardKeys.ts`).
+class _BoardBody extends ConsumerWidget {
+  const _BoardBody({required this.tab, super.key});
+
+  final _BoardTab tab;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (tab == _BoardTab.weekly || tab == _BoardTab.daily) {
+      final day = ref.watch(currentDayProvider);
+      return switch (day) {
+        AsyncData(:final value) => _Board(
+          board: tab == _BoardTab.weekly
+              ? leaderboard_keys.weeklyBoardId(value.utcMidnight)
+              : leaderboard_keys.dailyBoardId(value),
+        ),
+        _ => const Center(child: CircularProgressIndicator()),
+      };
+    }
+
+    final board = switch (tab) {
+      _BoardTab.global => leaderboard_keys.globalBoard,
+      _BoardTab.ur => leaderboard_keys.languageBoardId(Language.urdu.code),
+      _BoardTab.hi => leaderboard_keys.languageBoardId(Language.hindi.code),
+      _BoardTab.en => leaderboard_keys.languageBoardId(Language.english.code),
+      _BoardTab.weekly ||
+      _BoardTab.daily ||
+      _BoardTab.friends => throw StateError('unreachable'),
+    };
+    return _Board(board: board);
+  }
+}
+
+class _Board extends ConsumerWidget {
+  const _Board({required this.board});
+
+  final String board;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
+    final live = ref.watch(leaderboardTopProvider(board));
+    final cached = ref.watch(cachedLeaderboardProvider(board));
+    final online = ref.watch(isOnlineProvider).value ?? true;
+    final uid = ref.watch(currentAccountProvider).value?.uid;
+    final ownEntry = ref.watch(ownLeaderboardEntryProvider(board));
+
+    final entries = live.value ?? cached.value?.entries ?? const [];
+    final fetchedAtMillis = live.hasValue
+        ? DateTime.now().millisecondsSinceEpoch
+        : cached.value?.fetchedAtMillis;
+
+    if (entries.isEmpty) {
+      final stillLoading = live.isLoading && !live.hasValue && !cached.hasValue;
+      return stillLoading
+          ? const Center(child: CircularProgressIndicator())
+          : const _EmptyBoard();
+    }
+
+    final showsSelf = uid != null && entries.any((e) => e.uid == uid);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (fetchedAtMillis != null) ...[
+          LastUpdatedLabel(timestampMillis: fetchedAtMillis),
+          if (!online) ...[
+            const SizedBox(height: AppTokens.space4),
+            Text(
+              l10n.leaderboardOfflineNote,
+              style: AppTypography.uiTextStyle(
+                Language.english,
+                UiRole.caption,
+                color: tokens.colors.onSurfaceFaint,
+              ),
+            ),
+          ],
+          const SizedBox(height: AppTokens.space16),
+        ],
+        Expanded(
+          child: ListView.separated(
+            itemCount: entries.length,
+            separatorBuilder: (_, _) =>
+                const SizedBox(height: AppTokens.space8),
+            itemBuilder: (context, index) =>
+                _EntryRow(rank: index + 1, entry: entries[index]),
+          ),
+        ),
+        // PINNED ROW: only when the signed-in player is outside [entries] —
+        // P17's own acceptance wording. `ownEntry` is a ONE-SHOT read
+        // (`LeaderboardApi.fetchOwnEntry`'s header explains why a rank is
+        // never live), so this row can lag the live list by up to
+        // `recomputeLeaderboardRanks`'s own 15-minute cadence; that is the
+        // documented trade in `SECURITY.md`'s AR-10, not a bug here.
+        if (uid != null && !showsSelf) ...[
+          const SizedBox(height: AppTokens.space8),
+          _PinnedSelfRow(entry: ownEntry.value),
+        ],
+      ],
+    );
+  }
+}
+
+class _EntryRow extends StatelessWidget {
+  const _EntryRow({required this.rank, required this.entry});
+
+  final int rank;
+  final LeaderboardEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+    final name = entry.displayName ?? entry.uid;
+
+    return MetaCard(
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$rank',
+              style: AppTypography.uiTextStyle(
+                Language.english,
+                UiRole.body,
+                color: tokens.colors.onSurfaceMuted,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.space8),
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: tokens.colors.primaryDim,
+            child: Text(
+              name.isEmpty ? '?' : name.characters.first.toUpperCase(),
+              style: AppTypography.uiTextStyle(
+                Language.english,
+                UiRole.caption,
+                color: tokens.colors.onPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.space16),
+          Expanded(
+            child: Text(
+              name,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.uiTextStyle(
+                Language.english,
+                UiRole.body,
+                color: tokens.colors.onSurface,
+              ),
+            ),
+          ),
+          Text(
+            '${entry.score}',
+            style: AppTypography.uiTextStyle(
+              Language.english,
+              UiRole.body,
+              color: tokens.colors.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PinnedSelfRow extends StatelessWidget {
+  const _PinnedSelfRow({required this.entry});
+
+  final LeaderboardEntry? entry;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final tokens = AppTokens.of(context);
+    final rank = entry?.rank;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // The staleness stamp is shown in BOTH states, not only offline. A
-        // label that appeared when the connection dropped would itself be a
-        // "you are offline" notification, which is the thing Ch10 forbids —
-        // and a player online with a four-hour-old copy deserves the same
-        // information as one who is offline with it.
-        LastUpdatedLabel(timestampMillis: snapshot.fetchedAtMillis),
-        if (!online) ...[
-          const SizedBox(height: AppTokens.space4),
-          Text(
-            l10n.leaderboardOfflineNote,
-            style: AppTypography.uiTextStyle(
-              Language.english,
-              UiRole.caption,
-              color: tokens.colors.onSurfaceFaint,
+    return MetaCard(
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              rank != null
+                  ? l10n.leaderboardYourRank(rank)
+                  : l10n.leaderboardRankUnknown,
+              style: AppTypography.uiTextStyle(
+                Language.english,
+                UiRole.body,
+                color: tokens.colors.primary,
+              ),
             ),
           ),
+          if (entry != null)
+            Text(
+              '${entry!.score}',
+              style: AppTypography.uiTextStyle(
+                Language.english,
+                UiRole.body,
+                color: tokens.colors.primary,
+              ),
+            ),
         ],
-        const SizedBox(height: AppTokens.space16),
-        Expanded(
-          child: ListView.separated(
-            itemCount: snapshot.entries.length,
-            separatorBuilder: (_, _) =>
-                const SizedBox(height: AppTokens.space8),
-            itemBuilder: (context, index) {
-              final entry = snapshot.entries[index];
-              return MetaCard(
-                child: Row(
-                  children: [
-                    Text(
-                      '${index + 1}',
-                      style: AppTypography.uiTextStyle(
-                        Language.english,
-                        UiRole.body,
-                        color: tokens.colors.onSurfaceMuted,
-                      ),
-                    ),
-                    const SizedBox(width: AppTokens.space16),
-                    Expanded(
-                      child: Text(
-                        entry.displayName ?? entry.uid,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.uiTextStyle(
-                          Language.english,
-                          UiRole.body,
-                          color: tokens.colors.onSurface,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${entry.score}',
-                      style: AppTypography.uiTextStyle(
-                        Language.english,
-                        UiRole.body,
-                        color: tokens.colors.onSurface,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -178,9 +355,6 @@ class _EmptyBoard extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     final tokens = AppTokens.of(context);
 
-    // Plain text, centred. Not an error, not a retry button: there is nothing
-    // for the player to retry, and offering one would imply the empty board is
-    // their problem to solve.
     return Center(
       child: Text(
         l10n.leaderboardEmpty,

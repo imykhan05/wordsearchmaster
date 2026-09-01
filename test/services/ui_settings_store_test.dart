@@ -137,7 +137,7 @@ void main() {
     });
   });
 
-  test('ONLY the five UI toggles are stored here — no game data', () async {
+  test('ONLY the six UI toggles are stored here — no game data', () async {
     // The boundary, pinned. Coins, progress and scores belong in Drift with
     // an HMAC tag; a plain preferences file is a one-line cheat.
     SharedPreferences.setMockInitialValues({});
@@ -147,6 +147,7 @@ void main() {
     await store.setSelectedLanguage(Language.urdu);
     await store.setUrduConnectedFormIntroShown(true);
     await store.setLoginPromptDismissed(true);
+    await store.markAchievementPopupSeen('first_word');
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys(), <String>{
@@ -155,6 +156,33 @@ void main() {
       'ui.selected_language',
       'ui.urdu_connected_form_intro_shown',
       'ui.login_prompt_dismissed',
+      'ui.seen_achievement_popup_ids',
     });
+  });
+
+  test('seenAchievementPopupIds accumulates rather than overwriting', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await PrefsUiSettingsStore.open();
+
+    await store.markAchievementPopupSeen('first_word');
+    await store.markAchievementPopupSeen('word_master');
+
+    expect(store.seenAchievementPopupIds, {'first_word', 'word_master'});
+  });
+
+  test('marking the same id seen twice is a no-op, not a duplicate', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await PrefsUiSettingsStore.open();
+
+    await store.markAchievementPopupSeen('first_word');
+    await store.markAchievementPopupSeen('first_word');
+
+    expect(store.seenAchievementPopupIds, {'first_word'});
+  });
+
+  test('starts empty on a fresh install', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await PrefsUiSettingsStore.open();
+    expect(store.seenAchievementPopupIds, isEmpty);
   });
 }

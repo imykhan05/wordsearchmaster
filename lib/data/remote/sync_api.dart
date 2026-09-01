@@ -80,11 +80,11 @@ final class SyncPermanentFailure extends SyncOutcome {
 ///
 /// NOT a failure, and deliberately not one: the row is held, no attempt is
 /// counted, no backoff is scheduled and nothing is reported. P14 shipped
-/// `submitScore` and `submitDaily`; the server halves of the coin ledger and
-/// the achievements list are owed by a later prompt. Treating those rows as
-/// permanently failed would throw away a record the player earned, and
-/// treating them as transient would burn the ladder up to six hours on a call
-/// that was never going to be made.
+/// `submitScore` and `submitDaily`; P17 shipped `submitAchievement`. The
+/// server half of the coin ledger (`OutboxKind.coinsDelta`) is still owed by
+/// a later prompt. Treating those rows as permanently failed would throw away
+/// a record the player earned, and treating them as transient would burn the
+/// ladder up to six hours on a call that was never going to be made.
 final class SyncDeferred extends SyncOutcome {
   const SyncDeferred(this.reason);
   final String reason;
@@ -139,7 +139,15 @@ final class FunctionsSyncApi implements SyncApi {
     // already let through.
     OutboxKind.profileUpdate => null,
     OutboxKind.coinsDelta => null,
-    OutboxKind.achievementUnlocked => null,
+    // The Collector claim (P17) — the one achievement the server cannot
+    // derive on its own, so the client submits it as a claim rather than
+    // having the server compute it. `submitAchievement` reads only
+    // `category`/`language` off the payload; the extra fields
+    // `CollectionsRepository.recordEarned` already queues (`id`, `progress`,
+    // `unlockedAt`) are simply ignored, so no payload reshaping is needed
+    // here — the same outbox row P11 was always going to write is now
+    // deliverable as-is.
+    OutboxKind.achievementUnlocked => 'submitAchievement',
   };
 
   @override

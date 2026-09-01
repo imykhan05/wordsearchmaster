@@ -40,6 +40,10 @@ export const COLLECTIONS = {
   flags: 'flags',
   /** `rewardCallbacks/{eventId}` — AppLovin MAX S2S idempotency. */
   rewardCallbacks: 'rewardCallbacks',
+  /** `users/{uid}/friends/{friendUid}` — accepted friendships only (P17). */
+  friends: 'friends',
+  /** `inviteCodes/{code}` — the code -> owner uid map, server-only (P17). */
+  inviteCodes: 'inviteCodes',
 } as const;
 
 /** The three language codes, matching `Language.code`. */
@@ -126,6 +130,22 @@ export const LIMITS = {
 
   /** How stale a MAX callback's timestamp may be before it is refused. */
   rewardCallbackMaxAgeMillis: 15 * 60 * 1000,
+
+  /**
+   * Length of a generated invite code, in characters.
+   *
+   * 8 characters from a 32-symbol alphabet is 2^40 of keyspace — far beyond
+   * brute-forcing by a client that can only ATTEMPT a redemption through the
+   * rate-limited callable, while still being the kind of string a player can
+   * read aloud or type by hand if the share sheet is not available.
+   */
+  inviteCodeLength: 8,
+
+  /** Attempts to find an unused code before giving up — see `friends.ts`. */
+  inviteCodeMaxAttempts: 5,
+
+  /** A player cannot exceed this many accepted friends. */
+  maxFriends: 200,
 } as const;
 
 /**

@@ -720,3 +720,115 @@ describe('paths the rules never named', () => {
     );
   });
 });
+
+// ===========================================================================
+// users/{uid}/friends — accepted friendships only (P17)
+// ===========================================================================
+
+describe('users/{uid}/friends', () => {
+  beforeEach(async () => {
+    await seedUser();
+    await asServer((db) =>
+      setDoc(doc(db, 'users', ALICE, 'friends', MALLORY), {
+        uid: MALLORY,
+        displayName: 'Mallory',
+        photoUrl: null,
+        since: 1,
+      }),
+    );
+  });
+
+  it('ALLOW: the owner reads their own friend list', async () => {
+    const snapshot = await assertSucceeds(
+      getDocs(collection(asAlice(), 'users', ALICE, 'friends')),
+    );
+    expect(snapshot.size).toBe(1);
+  });
+
+  it('ALLOW: the owner reads one friend by uid', async () => {
+    const snapshot = await assertSucceeds(
+      getDoc(doc(asAlice(), 'users', ALICE, 'friends', MALLORY)),
+    );
+    expect(snapshot.data()?.['displayName']).toBe('Mallory');
+  });
+
+  it("DENY: another player reads Ayesha's friend list", async () => {
+    // A friend list is as personal as a contact book — not even a mutual
+    // friend gets to read the OTHER side's collection through this path.
+    await assertFails(getDocs(collection(asMallory(), 'users', ALICE, 'friends')));
+  });
+
+  it('DENY: an unauthenticated read', async () => {
+    await assertFails(getDoc(doc(asStranger(), 'users', ALICE, 'friends', MALLORY)));
+  });
+
+  it('DENY: the owner adds a friend directly, bypassing redeemInviteCode', async () => {
+    // A client that could write its own side could invent a one-directional
+    // "friendship" the other account never agreed to — the whole reason
+    // redemption writes both sides in one server transaction.
+    await assertFails(
+      setDoc(doc(asAlice(), 'users', ALICE, 'friends', 'stranger-uid'), {
+        uid: 'stranger-uid',
+        displayName: 'Nobody',
+        photoUrl: null,
+        since: 2,
+      }),
+    );
+  });
+
+  it('DENY: the owner removes a friend directly', async () => {
+    await assertFails(deleteDoc(doc(asAlice(), 'users', ALICE, 'friends', MALLORY)));
+  });
+
+  it('ALLOW: the server path redeemInviteCode uses still works', async () => {
+    await asServer(async (db) => {
+      await setDoc(doc(db, 'users', ALICE, 'friends', 'new-friend'), {
+        uid: 'new-friend',
+        displayName: 'New',
+        photoUrl: null,
+        since: 3,
+      });
+      const snapshot = await getDoc(doc(db, 'users', ALICE, 'friends', 'new-friend'));
+      expect(snapshot.exists()).toBe(true);
+    });
+  });
+});
+
+// ===========================================================================
+// inviteCodes/{code} — the code -> owner map, invisible to every client (P17)
+// ===========================================================================
+
+describe('inviteCodes', () => {
+  beforeEach(async () => {
+    await asServer((db) => setDoc(doc(db, 'inviteCodes', 'ABCD1234'), { uid: ALICE }));
+  });
+
+  it("DENY: the code's OWNER reads it", async () => {
+    // Reading it back would let a client enumerate the collection instead of
+    // ever being handed a code the intended way — through the callable.
+    await assertFails(getDoc(doc(asAlice(), 'inviteCodes', 'ABCD1234')));
+  });
+
+  it('DENY: a stranger reads it', async () => {
+    await assertFails(getDoc(doc(asMallory(), 'inviteCodes', 'ABCD1234')));
+  });
+
+  it('DENY: a client mints their own code, bypassing rate limits and collision checks', async () => {
+    await assertFails(
+      setDoc(doc(asAlice(), 'inviteCodes', 'FORGED01'), { uid: ALICE }),
+    );
+  });
+
+  it('DENY: a client overwrites an existing code to steal it', async () => {
+    await assertFails(
+      setDoc(doc(asMallory(), 'inviteCodes', 'ABCD1234'), { uid: MALLORY }),
+    );
+  });
+
+  it('ALLOW: the server path createInviteCode/redeemInviteCode use still works', async () => {
+    await asServer(async (db) => {
+      const snapshot = await getDoc(doc(db, 'inviteCodes', 'ABCD1234'));
+      expect(snapshot.data()?.['uid']).toBe(ALICE);
+    });
+  });
+});
