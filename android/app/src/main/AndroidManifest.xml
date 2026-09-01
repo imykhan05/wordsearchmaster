@@ -1,4 +1,14 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- firebase_analytics' own library manifest merges in AD_ID by
+         default (advertising-conversion features this app does not use
+         — no ad SDK exists yet, see CLAUDE.md's ads section, P18).
+         Removing it here keeps the Play Console "does your app use
+         advertising ID" declaration honestly "No" until P18 actually
+         adds one. -->
+    <uses-permission
+        android:name="com.google.android.gms.permission.AD_ID"
+        tools:node="remove" />
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
