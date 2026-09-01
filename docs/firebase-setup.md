@@ -20,9 +20,15 @@ Firestore and a staging test can move a real leaderboard.
 
 | Flavor | Project ID | Android package name        |
 | ------ | ---------- | --------------------------- |
-| dev    | `wsm-dev`  | `com.wordsearchmaster.app.dev` |
-| stg    | `wsm-stg`  | `com.wordsearchmaster.app.stg` |
-| prod   | `wsm-prod` | `com.wordsearchmaster.app`     |
+| dev    | `wsm-dev`  | `com.educativz.wordsearchmaster.dev` |
+| stg    | `wsm-stg`  | `com.educativz.wordsearchmaster.stg` |
+| prod   | `wsm-prod` | `com.educativz.wordsearchmaster`     |
+
+(These are the real `applicationId` + `applicationIdSuffix` values from
+`android/app/build.gradle.kts` — use them verbatim in step 2's
+`--android-package-name` flags below. A mismatch here means Firebase issues
+credentials for a package name the app was never built with, which fails
+silently as "Firebase not configured" rather than with a clear error.)
 
 The package names come from the `applicationIdSuffix` values already set in
 `android/app/build.gradle.kts`, which is what lets all three be installed on
@@ -42,19 +48,19 @@ dart pub global activate flutterfire_cli
 flutterfire configure \
   --project=wsm-dev \
   --out=lib/app/config/firebase_options_dev.dart \
-  --android-package-name=com.wordsearchmaster.app.dev \
+  --android-package-name=com.educativz.wordsearchmaster.dev \
   --platforms=android
 
 flutterfire configure \
   --project=wsm-stg \
   --out=lib/app/config/firebase_options_stg.dart \
-  --android-package-name=com.wordsearchmaster.app.stg \
+  --android-package-name=com.educativz.wordsearchmaster.stg \
   --platforms=android
 
 flutterfire configure \
   --project=wsm-prod \
   --out=lib/app/config/firebase_options_prod.dart \
-  --android-package-name=com.wordsearchmaster.app \
+  --android-package-name=com.educativz.wordsearchmaster \
   --platforms=android
 ```
 

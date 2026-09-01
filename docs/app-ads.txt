@@ -1,0 +1,13 @@
+# app-ads.txt for Word Search Master
+#
+# NOT YET ACTIVE — placeholder until P18 (AppLovin MAX rewarded ads) ships
+# and a real MAX publisher account exists. Do not treat this file as
+# ready to deploy; see docs/store-listing/README.md, section "app-ads.txt",
+# for the root-domain hosting requirement this file must satisfy once it is
+# real, and for why a GitHub Pages *project* site is the wrong place to
+# serve it from.
+#
+# Format: <ad system domain>, <publisher ID>, <relationship>, <TAG ID (optional)>
+# https://iabtechlab.com/ads-txt/
+
+applovin.com, [APPLOVIN_MAX_PUBLISHER_ID], DIRECT, ecdc36edd6bfd214
