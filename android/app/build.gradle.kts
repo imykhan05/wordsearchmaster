@@ -1,7 +1,25 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// android/key.properties is gitignored — it holds the path to a real,
+// private upload keystore (never committed) plus its passwords. Play
+// Console rejects a debug-signed release outright: the default debug
+// keystore is byte-for-byte identical on every Android SDK install (same
+// fixed password, same fixed alias), so it carries no developer identity
+// at all. Falling back to debug signing when this file is absent keeps
+// `flutter build`/`flutter run --release` working for a fresh checkout
+// with no keystore configured yet — that build is real and runnable, it
+// is just not one Play Console will accept.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+val keystoreProperties = Properties().apply {
+    if (hasReleaseKeystore) load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -58,12 +76,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO(P24): switch to the upload keystore signing config once
-            // android/key.properties exists. Debug-signed for now so every
-            // flavor is runnable before release engineering (Wave 5).
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(
+                if (hasReleaseKeystore) "release" else "debug"
+            )
         }
     }
 }
