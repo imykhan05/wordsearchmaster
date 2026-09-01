@@ -18,6 +18,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Newer Android Gradle Plugin versions default this off; the three
+    // flavors below each set app_name via resValue(), which AGP now
+    // refuses to configure without this explicit opt-in ("Product Flavor
+    // X contains custom resource values, but the feature is disabled").
+    buildFeatures {
+        resValues = true
+    }
+
     defaultConfig {
         applicationId = "com.educativz.wordsearchmaster"
         minSdk = 24
