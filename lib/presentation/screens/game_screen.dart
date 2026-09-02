@@ -33,6 +33,7 @@ import '../game/particles.dart';
 import '../game/pause_sheet.dart';
 import '../meta/chest_open.dart';
 import '../widgets/rolling_counter.dart';
+import '../widgets/system_back_handler.dart';
 
 /// The core gameplay screen. Assembled entirely from [GameController] — see
 /// its file header for the state-machine decisions this screen relies on
@@ -514,59 +515,75 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
           });
     });
 
-    return Scaffold(
-      // No banner ad on this screen, ever (CLAUDE.md → Never do).
-      appBar: state == null ? null : _buildAppBar(context, state),
-      body: SafeArea(
-        child: asyncState.when(
-          // A language switch re-runs GameController.build; the previous
-          // grid stays on screen instead of flashing a spinner underneath it.
-          skipLoadingOnReload: true,
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stackTrace) => Center(child: Text('$error')),
-          data: (state) => _GameContent(
-            state: state,
-            rewardListenable: _reward,
-            chestDismissed: _chestDismissed,
-            particles: _particles,
-            foundWordReveal: _reveal,
-            pulseController: _pulse,
-            ddaState: _ddaState,
-            onAcceptFreeHint: _acceptFreeHint,
-            onDismissHintOffer: _dismissHintOffer,
-            urduIntroDismissed: _urduIntroDismissed,
-            onDismissUrduIntro: _dismissUrduIntro,
-            onDebugForceDda: _debugForceDda,
-            onSelectionReleased: _onSelectionReleased,
-            onLevelComplete: () {
-              _tapFeedback();
-              _reward.value = null;
-              _chestDismissed.value = false;
-              ref
-                  .read(gameControllerProvider(_session).notifier)
-                  .dismissLevelComplete();
-              _resetIdleClock();
-            },
+    return SystemBackHandler(
+      onBack: _leaveGame,
+      child: Scaffold(
+        // No banner ad on this screen, ever (CLAUDE.md → Never do).
+        appBar: state == null ? null : _buildAppBar(context, state),
+        body: SafeArea(
+          child: asyncState.when(
+            // A language switch re-runs GameController.build; the previous
+            // grid stays on screen instead of flashing a spinner underneath it.
+            skipLoadingOnReload: true,
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, stackTrace) => Center(child: Text('$error')),
+            data: (state) => _GameContent(
+              state: state,
+              rewardListenable: _reward,
+              chestDismissed: _chestDismissed,
+              particles: _particles,
+              foundWordReveal: _reveal,
+              pulseController: _pulse,
+              ddaState: _ddaState,
+              onAcceptFreeHint: _acceptFreeHint,
+              onDismissHintOffer: _dismissHintOffer,
+              urduIntroDismissed: _urduIntroDismissed,
+              onDismissUrduIntro: _dismissUrduIntro,
+              onDebugForceDda: _debugForceDda,
+              onSelectionReleased: _onSelectionReleased,
+              onLevelComplete: () {
+                _tapFeedback();
+                _reward.value = null;
+                _chestDismissed.value = false;
+                ref
+                    .read(gameControllerProvider(_session).notifier)
+                    .dismissLevelComplete();
+                _resetIdleClock();
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
+  /// Leaves the game the way both back affordances do — the AppBar's arrow
+  /// and the Android system back alike, so the two cannot drift apart.
+  ///
+  /// Goes to the LEVEL MAP rather than Home: a player leaving a level is
+  /// usually picking a different one, and the map is where every unlocked
+  /// level (including ones already finished, which stay replayable) can be
+  /// chosen. Home is one further tap from there. The daily has no map, so it
+  /// returns to its own screen instead.
+  void _leaveGame() {
+    _recordAbandonIfNeeded();
+    context.go(
+      _session is DailySession
+          ? const DailyRoute().location
+          : const JourneyRoute().location,
+    );
+  }
+
   /// Placed at the Scaffold level rather than built inline: a plain
   /// `BackButton` pops the Navigator, but this route is reached with
   /// go_router's `.go()`, which leaves nothing to pop — so `leading` here
-  /// always sends the player home explicitly instead.
+  /// navigates explicitly instead. The system back is handled by the
+  /// [SystemBackHandler] wrapping the Scaffold, through the same callback.
   AppBar _buildAppBar(BuildContext context, GameState state) {
     final l10n = AppLocalizations.of(context);
 
     return AppBar(
-      leading: BackButton(
-        onPressed: () {
-          _recordAbandonIfNeeded();
-          context.go(const HomeRoute().location);
-        },
-      ),
+      leading: BackButton(onPressed: _leaveGame),
       title: Text(
         state.isDaily ? l10n.navDaily : l10n.gameLevel('${state.level}'),
       ),

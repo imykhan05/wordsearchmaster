@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/progression/collections.dart';
 import '../../domain/text/language.dart';
@@ -8,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../account/account_card.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
+import '../widgets/system_back_handler.dart';
 
 /// Profile, which for P11 is the COLLECTIONS grid (Ch02): one slot per word
 /// category in the selected language, filled when every level of that category
@@ -25,13 +28,23 @@ class ProfileScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final collectionsAsync = ref.watch(collectionsProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(l10n.navProfile)),
-      body: SafeArea(
-        child: collectionsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(child: Text('$error')),
-          data: (state) => _CollectionsGrid(state: state),
+    // Reached with `.go()`, so there is nothing to pop: both the arrow and
+    // the Android system back have to navigate explicitly, or the app closes.
+    void goHome() => context.go(const HomeRoute().location);
+
+    return SystemBackHandler(
+      onBack: goHome,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: goHome),
+          title: Text(l10n.navProfile),
+        ),
+        body: SafeArea(
+          child: collectionsAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Center(child: Text('$error')),
+            data: (state) => _CollectionsGrid(state: state),
+          ),
         ),
       ),
     );

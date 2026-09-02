@@ -13,6 +13,7 @@ import '../presentation/screens/style_gallery_screen.dart';
 import '../presentation/screens/sync_inspector_screen.dart';
 import 'app_route.dart';
 import 'config/app_config.dart';
+import 'language/selected_language.dart';
 
 part 'router.g.dart';
 
@@ -22,8 +23,24 @@ part 'router.g.dart';
 GoRouter router(Ref ref) {
   final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
 
+  // `read`, deliberately NOT `watch`. This decides where the app OPENS, and
+  // nothing more. Watching it would rebuild the entire GoRouter the moment
+  // the FTUE player taps a language card — flipping the provider false→true
+  // mid-session and throwing the player out of the level that tap just
+  // started. Read once, at construction, which is the only moment an
+  // initial location means anything.
+  final returning = ref.read(hasChosenLanguageProvider);
+
   return GoRouter(
-    initialLocation: const LanguageRoute().location,
+    // Ch02's FTUE opens on the language picker; a player who has already
+    // chosen lands on Home instead, where the journey map (every unlocked
+    // level, forward and back), the daily, and collections are reachable.
+    // Before this, every launch re-ran the picker and then `.go()`'d straight
+    // into level 1 — which left the map and everything else unreachable, and
+    // is why the app looked like it had no level select at all.
+    initialLocation: returning
+        ? const HomeRoute().location
+        : const LanguageRoute().location,
     debugLogDiagnostics: false,
     routes: [
       GoRoute(

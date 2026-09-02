@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
 import '../../application/leaderboard_controller.dart';
 import '../../data/repositories/leaderboard_cache.dart';
@@ -13,6 +15,7 @@ import '../../services/time/trusted_clock.dart';
 import '../meta/friends_tab.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/flavor_badge.dart';
+import '../widgets/system_back_handler.dart';
 import '../widgets/sync_status.dart';
 
 /// The leaderboard: Global / Urdu / Hindi / English / Weekly / Daily / Friends
@@ -47,46 +50,54 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.navLeaderboard),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: AppTokens.space16),
-            child: Center(child: SyncStatusIndicator()),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppTokens.space24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: FlavorBadge(),
-              ),
-              const SizedBox(height: AppTokens.space16),
-              _TabStrip(
-                selected: _tab,
-                onSelect: (tab) => setState(() => _tab = tab),
-              ),
-              const SizedBox(height: AppTokens.space16),
-              Expanded(
-                // KeyedSubtree per tab: a new key forces a fresh element (and a
-                // fresh provider watch) rather than Flutter reusing the old
-                // `_BoardBody`'s state across a board-id change — belt and
-                // braces alongside the `switch` itself never re-showing the
-                // previous tab's tree.
-                child: switch (_tab) {
-                  _BoardTab.friends => const FriendsTab(
-                    key: ValueKey(_BoardTab.friends),
-                  ),
-                  final tab => _BoardBody(tab: tab, key: ValueKey(tab)),
-                },
-              ),
-            ],
+    // Reached with `.go()`, so there is nothing to pop: both the arrow and
+    // the Android system back have to navigate explicitly, or the app closes.
+    void goHome() => context.go(const HomeRoute().location);
+
+    return SystemBackHandler(
+      onBack: goHome,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: goHome),
+          title: Text(l10n.navLeaderboard),
+          actions: const [
+            Padding(
+              padding: EdgeInsets.only(right: AppTokens.space16),
+              child: Center(child: SyncStatusIndicator()),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AppTokens.space24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: FlavorBadge(),
+                ),
+                const SizedBox(height: AppTokens.space16),
+                _TabStrip(
+                  selected: _tab,
+                  onSelect: (tab) => setState(() => _tab = tab),
+                ),
+                const SizedBox(height: AppTokens.space16),
+                Expanded(
+                  // KeyedSubtree per tab: a new key forces a fresh element (and a
+                  // fresh provider watch) rather than Flutter reusing the old
+                  // `_BoardBody`'s state across a board-id change — belt and
+                  // braces alongside the `switch` itself never re-showing the
+                  // previous tab's tree.
+                  child: switch (_tab) {
+                    _BoardTab.friends => const FriendsTab(
+                      key: ValueKey(_BoardTab.friends),
+                    ),
+                    final tab => _BoardBody(tab: tab, key: ValueKey(tab)),
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -11,6 +11,7 @@ import '../../services/haptics/haptics_service.dart';
 import '../../services/time/trusted_clock.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
+import '../widgets/system_back_handler.dart';
 
 /// The Daily Challenge's pre-game screen (Ch12): today's date, whether the one
 /// attempt has been used, and the button in.
@@ -35,61 +36,71 @@ class DailyScreen extends ConsumerWidget {
     final resultAsync = ref.watch(todaysDailyResultProvider);
     final dayAsync = ref.watch(currentDayProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(l10n.navDaily)),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppTokens.space24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  MetaCard(
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.calendar_today_rounded,
-                          size: 40,
-                          color: tokens.colors.primary,
-                        ),
-                        const SizedBox(height: AppTokens.space8),
-                        Text(
-                          // The UTC day key itself, not a localized date:
-                          // this IS the puzzle's identity (`daily_results` is
-                          // keyed by it), and every player worldwide sees the
-                          // same string for the same puzzle.
-                          '${dayAsync.value ?? ''}',
-                          style: AppTypography.uiTextStyle(
-                            Language.english,
-                            UiRole.title,
-                            color: tokens.colors.onSurface,
+    // Reached with `.go()`, so there is nothing to pop: both the arrow and
+    // the Android system back have to navigate explicitly, or the app closes.
+    void goHome() => context.go(const HomeRoute().location);
+
+    return SystemBackHandler(
+      onBack: goHome,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: goHome),
+          title: Text(l10n.navDaily),
+        ),
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppTokens.space24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    MetaCard(
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.calendar_today_rounded,
+                            size: 40,
+                            color: tokens.colors.primary,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: AppTokens.space8),
+                          Text(
+                            // The UTC day key itself, not a localized date:
+                            // this IS the puzzle's identity (`daily_results` is
+                            // keyed by it), and every player worldwide sees the
+                            // same string for the same puzzle.
+                            '${dayAsync.value ?? ''}',
+                            style: AppTypography.uiTextStyle(
+                              Language.english,
+                              UiRole.title,
+                              color: tokens.colors.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppTokens.space24),
-                  resultAsync.when(
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (error, _) => Center(child: Text('$error')),
-                    data: (result) => result != null
-                        ? _AlreadyPlayed(
-                            stars: result.stars,
-                            score: result.score,
-                          )
-                        : _PlayToday(
-                            onPlay: () {
-                              ref.read(audioServiceProvider).playButtonTap();
-                              ref.read(hapticsServiceProvider).buttonTap();
-                              context.go(const DailyGameRoute().location);
-                            },
-                          ),
-                  ),
-                ],
+                    const SizedBox(height: AppTokens.space24),
+                    resultAsync.when(
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (error, _) => Center(child: Text('$error')),
+                      data: (result) => result != null
+                          ? _AlreadyPlayed(
+                              stars: result.stars,
+                              score: result.score,
+                            )
+                          : _PlayToday(
+                              onPlay: () {
+                                ref.read(audioServiceProvider).playButtonTap();
+                                ref.read(hapticsServiceProvider).buttonTap();
+                                context.go(const DailyGameRoute().location);
+                              },
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

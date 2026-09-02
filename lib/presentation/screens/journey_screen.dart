@@ -10,6 +10,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
 import '../meta/journey_providers.dart';
+import '../widgets/system_back_handler.dart';
 
 /// The journey map (Ch02) — a vertically scrolling path of level nodes,
 /// grouped into ten-level regions, replacing a flat level list.
@@ -61,12 +62,22 @@ class JourneyScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final mapAsync = ref.watch(journeyMapProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: Text(l10n.navJourney)),
-      body: mapAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('$error')),
-        data: (map) => _JourneyPath(map: map),
+    // Reached with `.go()`, so there is nothing to pop: both the arrow and
+    // the Android system back have to navigate explicitly, or the app closes.
+    void goHome() => context.go(const HomeRoute().location);
+
+    return SystemBackHandler(
+      onBack: goHome,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: goHome),
+          title: Text(l10n.navJourney),
+        ),
+        body: mapAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Center(child: Text('$error')),
+          data: (map) => _JourneyPath(map: map),
+        ),
       ),
     );
   }
