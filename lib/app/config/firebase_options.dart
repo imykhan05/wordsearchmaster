@@ -57,15 +57,26 @@ abstract final class FlavorFirebaseOptions {
   /// `linkWithCredential` failing with an audience mismatch that reads like a
   /// generic sign-in error.
   ///
-  /// Still null for all three flavors: each project's `oauth_client` list is
-  /// currently empty, because Google Sign-In needs a SHA-1 (and SHA-256)
-  /// certificate fingerprint registered on the Android app before Firebase
-  /// will mint this client — see `docs/firebase-setup.md` §3. Guest play is
-  /// unaffected; only the "sign in with Google" merge path needs this.
+  /// Populated for all three flavors as of `docs/firebase-setup.md` §3: the
+  /// SHA-1 certificate fingerprint (`23:8f:8d:2a:...`) is registered on all
+  /// three Android apps, so each project's `google-services.json` now mints
+  /// a `client_type: 3` web client alongside the Android one.
+  ///
+  /// That fingerprint is the DEBUG keystore's — `android/key.properties` (a
+  /// real upload keystore) does not exist yet, so `build.gradle.kts` falls
+  /// back to debug signing for every build, `--release` included (see that
+  /// file's own header). The moment a real upload keystore is added, its
+  /// SHA-1 needs registering here too — Play Console's release build will
+  /// carry a different certificate, and Google Sign-In on that build will
+  /// fail with the same audience-mismatch-shaped error this method's own
+  /// doc above warns about until that fingerprint is added alongside this
+  /// one.
   static String? googleServerClientId(Flavor flavor) => switch (flavor) {
-    // TODO(setup): paste each project's client_type 3 OAuth client id, once
-    // a SHA-1 fingerprint has been registered and google-services.json
-    // re-downloaded (docs/firebase-setup.md §3).
-    Flavor.dev || Flavor.stg || Flavor.prod => null,
+    Flavor.dev =>
+      '102773080765-mkd8flj2e35l5kp1mivbjtr7ilqt01m7.apps.googleusercontent.com',
+    Flavor.stg =>
+      '186642919120-21fijsbvovu9eeiamk0pk3f1o51otb0i.apps.googleusercontent.com',
+    Flavor.prod =>
+      '145564669719-14o24s3h4dadmd32kh366i37tft9np40.apps.googleusercontent.com',
   };
 }

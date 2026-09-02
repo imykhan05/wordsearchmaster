@@ -26,10 +26,16 @@ instead, which is exactly what happened this time. The ids actually in use
 | stg    | `wsm-stg-b1d5f`       |
 | prod   | `wsm-prod-a750e`      |
 
-Google Sign-In is not wired up yet on any of the three — each project's
-`google-services.json` came back with an empty `oauth_client` list, which
-means §3 below (SHA-1 fingerprint → web client id) still needs doing before
-"Sign in with Google" works. Guest play is unaffected.
+Google Sign-In is wired up on all three flavors — the debug keystore's SHA-1
+is registered on all three Android apps, each `google-services.json` now
+carries a `client_type: 3` web client, and `FlavorFirebaseOptions.
+googleServerClientId` (§3 below) is populated. This covers every build today
+because no upload keystore exists yet (`android/key.properties` is absent,
+so `build.gradle.kts` falls back to debug signing even for `--release`) — the
+moment a real upload keystore is added, ITS SHA-1 needs registering on all
+three projects too, or Google Sign-In breaks on the first properly-signed
+release build with an error that looks like a generic sign-in failure rather
+than a missing fingerprint.
 
 ## 1. Create the three projects
 
