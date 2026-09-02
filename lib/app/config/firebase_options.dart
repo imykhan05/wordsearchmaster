@@ -62,15 +62,13 @@ abstract final class FlavorFirebaseOptions {
   /// three Android apps, so each project's `google-services.json` now mints
   /// a `client_type: 3` web client alongside the Android one.
   ///
-  /// That fingerprint is the DEBUG keystore's — `android/key.properties` (a
-  /// real upload keystore) does not exist yet, so `build.gradle.kts` falls
-  /// back to debug signing for every build, `--release` included (see that
-  /// file's own header). The moment a real upload keystore is added, its
-  /// SHA-1 needs registering here too — Play Console's release build will
-  /// carry a different certificate, and Google Sign-In on that build will
-  /// fail with the same audience-mismatch-shaped error this method's own
-  /// doc above warns about until that fingerprint is added alongside this
-  /// one.
+  /// That fingerprint is the REAL upload keystore's (`android/upload-
+  /// keystore.jks`, wired via the gitignored `android/key.properties` —
+  /// see `build.gradle.kts`'s own header), not the debug keystore's, so it
+  /// covers an actual Play Console release build, not just local `flutter
+  /// run`. If that keystore is ever rotated (lost password, compromised),
+  /// the NEW one's SHA-1 needs registering here too, on all three projects,
+  /// before Google Sign-In works again on a build signed with it.
   static String? googleServerClientId(Flavor flavor) => switch (flavor) {
     Flavor.dev =>
       '102773080765-mkd8flj2e35l5kp1mivbjtr7ilqt01m7.apps.googleusercontent.com',

@@ -26,16 +26,17 @@ instead, which is exactly what happened this time. The ids actually in use
 | stg    | `wsm-stg-b1d5f`       |
 | prod   | `wsm-prod-a750e`      |
 
-Google Sign-In is wired up on all three flavors — the debug keystore's SHA-1
-is registered on all three Android apps, each `google-services.json` now
-carries a `client_type: 3` web client, and `FlavorFirebaseOptions.
-googleServerClientId` (§3 below) is populated. This covers every build today
-because no upload keystore exists yet (`android/key.properties` is absent,
-so `build.gradle.kts` falls back to debug signing even for `--release`) — the
-moment a real upload keystore is added, ITS SHA-1 needs registering on all
-three projects too, or Google Sign-In breaks on the first properly-signed
-release build with an error that looks like a generic sign-in failure rather
-than a missing fingerprint.
+Google Sign-In is wired up on all three flavors — the real upload keystore's
+SHA-1 (`android/upload-keystore.jks`, wired via the gitignored `android/
+key.properties` — see `android/app/build.gradle.kts`'s own header) is
+registered on all three Android apps, each `google-services.json` now
+carries a `client_type: 3` web client, and
+`FlavorFirebaseOptions.googleServerClientId` (§3 below) is populated. This
+already covers a real Play Console release build, not just local `flutter
+run` — if that keystore is ever rotated (lost password, compromised), the
+NEW one's SHA-1 needs registering on all three projects too, or Google
+Sign-In breaks on the first build signed with it, with an error that looks
+like a generic sign-in failure rather than a missing fingerprint.
 
 ## 1. Create the three projects
 
