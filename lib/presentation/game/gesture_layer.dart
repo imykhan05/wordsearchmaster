@@ -61,7 +61,16 @@ class GestureLayer extends StatefulWidget {
 }
 
 class _GestureLayerState extends State<GestureLayer> {
-  late final SelectionResolver _resolver = SelectionResolver(
+  /// Deliberately NOT `late final`. The grid can change size WITHOUT this
+  /// widget remounting: P07's Zeigarnik swap advances `GameState.level` in
+  /// place, so crossing a Ch07 curve step (level 5→6 takes the grid 6x6→8x8)
+  /// hands this layer a new geometry on an existing State. A `final` resolver
+  /// froze `size` at the grid the player STARTED on, and
+  /// `SelectionResolver.begin` then rejected every cell outside it — on an
+  /// 8x8 reached from a 6x6, the last two rows AND columns silently stopped
+  /// responding to touch while still being painted. Rebuilt in
+  /// [didUpdateWidget] instead.
+  late SelectionResolver _resolver = SelectionResolver(
     size: widget.geometry.size,
   );
 
@@ -73,6 +82,9 @@ class _GestureLayerState extends State<GestureLayer> {
   void didUpdateWidget(GestureLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.geometry.size != widget.geometry.size) {
+      // The resolver bounds-checks every cell against `size`, so it has to be
+      // rebuilt for the new grid — see the field's own comment.
+      _resolver = SelectionResolver(size: widget.geometry.size);
       _activePointer = null;
       widget.selection.value = SelectionState.empty;
     }

@@ -541,4 +541,137 @@ void main() {
       expect(state.selection.value.isEmpty, isTrue);
     });
   });
+
+  group('the grid grows WITHOUT a remount (P07 Zeigarnik swap)', () {
+    // Advancing a level mutates `GameState.level` in place, so the screen
+    // never remounts — crossing a Ch07 curve step (level 5→6 takes the grid
+    // 6x6→8x8) reaches `GestureLayer` as an update on a LIVE State. Its
+    // `SelectionResolver` used to be `late final`, so `size` stayed frozen at
+    // the grid the player started on and every cell outside it was rejected:
+    // on an 8x8 reached from a 6x6, the last two rows and columns were
+    // painted but silently untouchable. Reported from a real device at
+    // level 6, in both English and Urdu.
+    Future<GlobalKey<GameGridState>> pumpThenGrow(
+      WidgetTester tester,
+      List<SelectionState> released,
+    ) async {
+      final key = GlobalKey<GameGridState>();
+
+      Widget build(GridResult grid) => MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: boxSize,
+              height: boxSize,
+              child: GameGrid(
+                key: key,
+                cells: grid.cells,
+                language: Language.english,
+                foundWordCells: const [],
+                onSelectionReleased: (state, _) {
+                  released.add(state);
+                  // "Matched" so the miss-fade ticker never starts — this
+                  // group is about which cells the resolver ACCEPTS, and a
+                  // pending fade timer would outlive the tree.
+                  return true;
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      GridResult gridOf(int size, List<String> words) => GridGenerator.generate(
+        seed: 90 + size,
+        size: size,
+        words: words,
+        lang: Language.english,
+        allowedDirections: GridDirections.forLanguage(
+          Language.english,
+          DirectionTier.all,
+        ),
+      );
+
+      await tester.pumpWidget(build(gridOf(6, const ['SUN', 'MOON'])));
+      await tester.pump();
+      final before = key.currentState!;
+
+      // Play ONE drag while the grid is still 6x6. This is load-bearing, not
+      // set-dressing: the resolver is `late`, so it is not constructed until
+      // something first reads it. A test that grew the grid without touching
+      // it would build the resolver AFTER the change — already at the new
+      // size — and pass against the very bug it exists to catch. A real
+      // player has of course dragged on levels 1–5 before reaching 6.
+      final warmUp = await tester.startGesture(
+        globalCenterOf(tester, before, const Cell(0, 0)),
+      );
+      await tester.pump();
+      await warmUp.moveTo(globalCenterOf(tester, before, const Cell(0, 2)));
+      await tester.pump();
+      await warmUp.up();
+      await tester.pump();
+      released.clear();
+
+      await tester.pumpWidget(build(gridOf(8, const ['WATER', 'STONE'])));
+      await tester.pump();
+
+      // The precondition the bug needed: same State, new geometry.
+      expect(
+        key.currentState,
+        same(before),
+        reason: 'the grid updated in place rather than remounting',
+      );
+      return key;
+    }
+
+    testWidgets('a cell beyond the OLD size is still selectable', (
+      tester,
+    ) async {
+      final released = <SelectionState>[];
+      final key = await pumpThenGrow(tester, released);
+      final state = key.currentState!;
+
+      expect(state.geometry!.size, 8);
+
+      // Row 7 exists only in the 8x8 — under the stale resolver this drag
+      // produced nothing at all.
+      final gesture = await tester.startGesture(
+        globalCenterOf(tester, state, const Cell(7, 5)),
+      );
+      await tester.pump();
+      await gesture.moveTo(globalCenterOf(tester, state, const Cell(7, 7)));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      expect(
+        released,
+        isNotEmpty,
+        reason: 'the drag on the last row registered at all',
+      );
+      expect(released.last.cells, contains(const Cell(7, 7)));
+    });
+
+    testWidgets('the last COLUMN is reachable too, not just the last row', (
+      tester,
+    ) async {
+      final released = <SelectionState>[];
+      final key = await pumpThenGrow(tester, released);
+      final state = key.currentState!;
+
+      final gesture = await tester.startGesture(
+        globalCenterOf(tester, state, const Cell(5, 7)),
+      );
+      await tester.pump();
+      await gesture.moveTo(globalCenterOf(tester, state, const Cell(7, 7)));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      expect(released, isNotEmpty);
+      expect(released.last.cells, contains(const Cell(7, 7)));
+    });
+  });
 }
