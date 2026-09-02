@@ -90,6 +90,10 @@
   "@soundLabel": {
     "description": "Label next to the sound on/off switch in the pause sheet."
   },
+  "musicLabel": "Music",
+  "@musicLabel": {
+    "description": "Label next to the background-music on/off switch in the pause sheet. A separate switch from Sound."
+  },
   "streakLabel": "Day streak",
   "@streakLabel": {
     "description": "Label under the streak counter on the home screen — days in a row with at least one completed level."

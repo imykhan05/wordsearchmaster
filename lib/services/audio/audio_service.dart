@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'audio_clip.dart';
@@ -41,6 +42,16 @@ abstract interface class AudioService {
   /// now — "master mute respected instantly, mid-playback" (Ch03) rules out
   /// a mute that only takes effect on the NEXT sound.
   void setMuted(bool muted);
+
+  /// Starts or stops the looping background bed.
+  ///
+  /// Independent of [setMuted], which is the SFX toggle: the two are separate
+  /// switches in the UI because players want them separately (see
+  /// `UiSettingsStore.musicEnabled`). Idempotent in both directions — the
+  /// sync provider calls it on every settings change and on every app
+  /// lifecycle transition, so "already playing" and "already stopped" both
+  /// have to be no-ops rather than restarts.
+  Future<void> setMusicPlaying(bool playing);
 }
 
 /// Drops every call on the floor. The binding for tests and for anything
@@ -68,6 +79,9 @@ final class NoopAudioService implements AudioService {
 
   @override
   void setMuted(bool muted) {}
+
+  @override
+  Future<void> setMusicPlaying(bool playing) async {}
 }
 
 /// Real playback via `package:audioplayers`.
@@ -94,8 +108,19 @@ final class NoopAudioService implements AudioService {
 final class AudioPlayersAudioService implements AudioService {
   static const int _playersPerClip = 3;
 
+  /// The looping background bed. Deliberately NOT an [AudioClip] in the
+  /// pooled set: it needs [ReleaseMode.loop] where every SFX needs
+  /// [ReleaseMode.stop], it plays for the whole session where they last
+  /// ~100ms, and `preload` would otherwise build three players for it.
+  static const String _musicAsset = 'audio/music_loop.wav';
+
+  /// Well under the SFX. The bed exists to be noticed only when it stops.
+  static const double _musicVolume = 0.35;
+
   final Map<AudioClip, List<AudioPlayer>> _pools = {};
   final Map<AudioClip, int> _nextPlayerIndex = {};
+  AudioPlayer? _music;
+  bool _musicPlaying = false;
   bool _muted = false;
 
   @override
@@ -111,6 +136,12 @@ final class AudioPlayersAudioService implements AudioService {
       _pools[clip] = pool;
       _nextPlayerIndex[clip] = 0;
     }
+
+    final music = AudioPlayer(playerId: 'music_loop');
+    await music.setReleaseMode(ReleaseMode.loop);
+    await music.setVolume(_musicVolume);
+    await music.setSource(AssetSource(_musicAsset));
+    _music = music;
   }
 
   @override
@@ -156,6 +187,28 @@ final class AudioPlayersAudioService implements AudioService {
   }
 
   @override
+  Future<void> setMusicPlaying(bool playing) async {
+    final music = _music;
+    // Before `preload`, or after it failed: remember the intent so the state
+    // is right, but there is nothing to drive yet.
+    if (music == null) {
+      _musicPlaying = playing;
+      return;
+    }
+    if (playing == _musicPlaying) return;
+    _musicPlaying = playing;
+    try {
+      // `pause` rather than `stop`: the player keeps its position, so
+      // returning from a phone call resumes the bed where it was instead of
+      // restarting the loop from the top.
+      await (playing ? music.resume() : music.pause());
+    } catch (_) {
+      // Same rule as the SFX below: audio is juice, and juice never
+      // surfaces an error to the player (CLAUDE.md → Never do).
+    }
+  }
+
+  @override
   void setMuted(bool muted) {
     _muted = muted;
     if (!muted) return;
@@ -193,5 +246,45 @@ AudioService audioService(Ref ref) => const NoopAudioService();
 void audioMuteSync(Ref ref) {
   ref.listen<bool>(soundEnabledProvider, (previous, enabled) {
     ref.read(audioServiceProvider).setMuted(!enabled);
+  }, fireImmediately: true);
+}
+
+/// Keeps the background loop in step with BOTH the music toggle and the app's
+/// own lifecycle.
+///
+/// The lifecycle half is not optional politeness: without it the bed keeps
+/// playing over whatever the player switched to — a call, a video, another
+/// game — which is the fastest way to get an app muted at the OS level for
+/// good. [AppLifecycleListener] gives the two transitions that matter, and
+/// `setMusicPlaying` is idempotent so the overlapping sources of truth here
+/// (a toggle change while backgrounded, say) cannot double-start it.
+///
+/// Watched once, at the app root, next to [audioMuteSync].
+@Riverpod(keepAlive: true)
+void musicSync(Ref ref) {
+  var enabled = false;
+  var foreground = true;
+
+  void apply() {
+    unawaited(
+      ref.read(audioServiceProvider).setMusicPlaying(enabled && foreground),
+    );
+  }
+
+  final lifecycle = AppLifecycleListener(
+    onHide: () {
+      foreground = false;
+      apply();
+    },
+    onShow: () {
+      foreground = true;
+      apply();
+    },
+  );
+  ref.onDispose(lifecycle.dispose);
+
+  ref.listen<bool>(musicEnabledProvider, (previous, value) {
+    enabled = value;
+    apply();
   }, fireImmediately: true);
 }

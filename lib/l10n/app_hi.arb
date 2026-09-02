@@ -29,6 +29,7 @@
   "resumeButton": "जारी रखें",
   "restartButton": "फिर से शुरू करें",
   "soundLabel": "आवाज़",
+  "musicLabel": "संगीत",
   "streakLabel": "दिनों की लड़ी",
   "streakFreezesLabel": "{count, plural, =1{1 फ़्रीज़} other{{count} फ़्रीज़}}",
   "@streakFreezesLabel": {

@@ -20,6 +20,7 @@ class PauseSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final soundEnabled = ref.watch(soundEnabledProvider);
+    final musicEnabled = ref.watch(musicEnabledProvider);
 
     return SafeArea(
       child: Padding(
@@ -48,6 +49,14 @@ class PauseSheet extends ConsumerWidget {
               value: soundEnabled,
               onChanged: (_) =>
                   ref.read(soundEnabledProvider.notifier).toggle(),
+            ),
+            // Its own switch, not a sub-setting of sound: the two are wanted
+            // independently — see `UiSettingsStore.musicEnabled`.
+            SwitchListTile(
+              title: Text(l10n.musicLabel),
+              value: musicEnabled,
+              onChanged: (_) =>
+                  ref.read(musicEnabledProvider.notifier).toggle(),
             ),
             const SizedBox(height: AppTokens.space8),
             TextButton(

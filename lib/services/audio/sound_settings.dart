@@ -26,6 +26,26 @@ class SoundEnabled extends _$SoundEnabled {
   }
 }
 
+/// Whether the soft background loop plays.
+///
+/// Its own toggle rather than a branch of [SoundEnabled], for the reason
+/// `UiSettingsStore.musicEnabled` states: a player who wants the found-word
+/// chime and nothing else is the common case, not an edge one.
+@riverpod
+class MusicEnabled extends _$MusicEnabled {
+  @override
+  bool build() => ref.watch(uiSettingsStoreProvider).musicEnabled;
+
+  void toggle() => _set(!state);
+
+  void set(bool value) => _set(value);
+
+  void _set(bool value) {
+    state = value;
+    ref.read(uiSettingsStoreProvider).setMusicEnabled(value);
+  }
+}
+
 /// Whether the grid buzzes as a selection crosses each new cell (P06).
 ///
 /// Separate from sound on purpose: Ch03 notes that players who mute a game in

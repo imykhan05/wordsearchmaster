@@ -29,6 +29,7 @@
   "resumeButton": "جاری رکھیں",
   "restartButton": "دوبارہ شروع کریں",
   "soundLabel": "آواز",
+  "musicLabel": "موسیقی",
   "streakLabel": "دن کی لڑی",
   "streakFreezesLabel": "{count, plural, =1{1 فریز} other{{count} فریز}}",
   "@streakFreezesLabel": {

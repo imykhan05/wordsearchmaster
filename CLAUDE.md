@@ -2097,3 +2097,91 @@ Note on `lib/domain/`: it must stay runnable as plain Dart, so it uses
 `GridVector` rather than `dart:ui`'s `Offset`, and knows nothing about
 `Locale`, `TextDirection` or font families. The Flutter-typed views of a
 `Language` live in the `LanguageX` extension in `lib/app/language/`.
+
+## Player-reported fixes and the music bed (post-P17)
+
+Three changes driven by playing the real closed-testing build rather than by
+a prompt. Each is small; each was invisible to the existing suite for a
+reason worth keeping.
+
+### The grid grew and the last rows stopped responding
+
+`GestureLayer` held its `SelectionResolver` in a **`late final`** field, so
+`size` froze at whatever grid the player first dragged on. P07's Zeigarnik
+swap advances the level IN PLACE without remounting, so crossing a Ch07
+curve step (5→6 takes the grid 6x6→8x8) handed the layer a new geometry on a
+live `State` — and `SelectionResolver.begin` then rejected every cell
+outside the old bounds. The last two rows AND columns were painted and
+completely untouchable, in every language. It is rebuilt in
+`didUpdateWidget` now.
+
+**The regression test drags once on the 6x6 before growing it, and that step
+is load-bearing.** `late` defers construction to first READ: a test that
+grew an untouched grid builds the resolver at the new size and passes
+against the bug it exists to catch. That version was written first, passed
+with the fix reverted, and is why the test now warms the resolver up the way
+a player who has played levels 1–5 already has.
+
+### Back closed the app, and the level map was unreachable
+
+Every forward navigation is `.go()`, which REPLACES the stack — deliberately,
+since the app is a hub plus one-deep screens and pushing would let Home →
+Journey → Game → Home stack without bound. The cost is that the Navigator has
+nothing to pop, so Android's back fell through to the OS and closed the app
+mid-level. Journey/Daily/Profile/Leaderboard were worse: reached with `.go()`,
+`automaticallyImplyLeading` found nothing to imply, so they had no arrow
+either and were dead ends by both routes out.
+
+`SystemBackHandler` (`presentation/widgets/`) is a `PopScope` that never pops
+and navigates explicitly. The game leaves to the **level map**, not Home —
+a player leaving a level is usually picking another one — through a single
+`_leaveGame` shared by the AppBar arrow and the system back, so the two
+cannot drift apart.
+
+Compounding it, the router always opened on the language picker and P12
+sends that pick straight into level 1, so every launch dropped a returning
+player back into a level with the map, the daily and collections all
+unreachable. That is why the app looked as though it had no level select and
+no memory of finished levels: **both already existed** — `JourneyScreen`
+renders all 300 nodes with unlocking derived from the verified
+`level_progress` rows, and `hasChosenLanguageProvider` was written for
+exactly this and never wired up. The router now opens a returning player on
+Home and **READS** that flag rather than watching it: watching rebuilds the
+whole `GoRouter` the moment an FTUE player taps a language card, throwing
+them out of the level that tap just started. `router_start_test.dart` pins
+all three of those.
+
+Ch02's FTUE is untouched — a first launch still opens the picker and still
+auto-loads level 1 with no Play tap.
+
+### Background music
+
+A separate `AudioPlayer` at `ReleaseMode.loop`, NOT a sixth `AudioClip`: the
+pooled clips are `ReleaseMode.stop`, last ~100ms, and `preload` would build
+three players for a track that needs one.
+
+- **`musicEnabled` is its own `UiSettingsStore` key and its own switch**, not
+  a branch of `soundEnabled` — the same argument Ch03 already makes for
+  splitting haptics out of sound. A player who keeps the found-word chime
+  (it is the feedback that a word landed) and wants nothing else is the
+  common case. `audio_service_test.dart` asserts muting the SFX leaves the
+  bed exactly as it was.
+- **`musicSyncProvider` also watches the app lifecycle.** Not politeness:
+  a bed that keeps playing over a phone call or another app is how an app
+  gets muted at the OS level permanently. `setMusicPlaying` is idempotent
+  because the toggle and the lifecycle both drive it, and it `pause`s rather
+  than `stop`s so returning resumes mid-loop instead of restarting.
+- **The loop is seamless by construction, not by fading.** Every partial in
+  `tool/generate_audio_assets.py`'s `_music_loop` is snapped to a whole
+  multiple of the loop's own fundamental (1/8s), so each sine completes an
+  integer number of cycles across the loop and the wrap is exactly
+  continuous — which also lets note tails be written modulo the buffer
+  instead of being cut off. The generator MEASURES the seam against the
+  largest internal sample step and asserts, rather than trusting it.
+- 16kHz mono, 8 seconds, 250KB; total audio 332KB against the 400KB budget.
+
+**Not verified here**: the sound itself. This container has no audio device,
+and `audioplayers_linux` needs GStreamer runtime plugins it does not have
+(the same gap this file's P09 section already records). The loop's seam is
+proven numerically and the wiring by tests; whether the bed is pleasant is a
+judgement only a device can make.

@@ -24,6 +24,14 @@ abstract interface class UiSettingsStore {
   bool get hapticsEnabled;
   Future<void> setHapticsEnabled(bool value);
 
+  /// Whether the soft background loop plays. SEPARATE from [soundEnabled]
+  /// rather than folded into it: the two are wanted independently — a player
+  /// who keeps the found-word chime (it is the feedback that a word landed)
+  /// often still wants silence otherwise, and Ch03's own reasoning for
+  /// splitting haptics out of sound applies unchanged here.
+  bool get musicEnabled;
+  Future<void> setMusicEnabled(bool value);
+
   /// Null until the player picks one on the FTUE language screen.
   Language? get selectedLanguage;
   Future<void> setSelectedLanguage(Language value);
@@ -61,6 +69,7 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   InMemoryUiSettingsStore({
     this.soundEnabled = true,
     this.hapticsEnabled = true,
+    this.musicEnabled = true,
     this.selectedLanguage,
     this.urduConnectedFormIntroShown = false,
     this.loginPromptDismissed = false,
@@ -71,6 +80,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool soundEnabled;
   @override
   bool hapticsEnabled;
+  @override
+  bool musicEnabled;
   @override
   Language? selectedLanguage;
   @override
@@ -84,6 +95,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   Future<void> setSoundEnabled(bool value) async => soundEnabled = value;
   @override
   Future<void> setHapticsEnabled(bool value) async => hapticsEnabled = value;
+  @override
+  Future<void> setMusicEnabled(bool value) async => musicEnabled = value;
   @override
   Future<void> setSelectedLanguage(Language value) async =>
       selectedLanguage = value;
@@ -105,6 +118,7 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
 
   static const String _soundKey = 'ui.sound_enabled';
   static const String _hapticsKey = 'ui.haptics_enabled';
+  static const String _musicKey = 'ui.music_enabled';
   static const String _languageKey = 'ui.selected_language';
   static const String _urduIntroKey = 'ui.urdu_connected_form_intro_shown';
   static const String _loginPromptKey = 'ui.login_prompt_dismissed';
@@ -128,6 +142,12 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setHapticsEnabled(bool value) =>
       _prefs.setBool(_hapticsKey, value);
+
+  @override
+  bool get musicEnabled => _prefs.getBool(_musicKey) ?? true;
+
+  @override
+  Future<void> setMusicEnabled(bool value) => _prefs.setBool(_musicKey, value);
 
   @override
   Language? get selectedLanguage {

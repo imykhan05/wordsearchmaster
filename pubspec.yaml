@@ -96,8 +96,11 @@ flutter:
     # so a native speaker can correct them without touching Dart. P10 adds the
     # word and level packs alongside these.
     - assets/content/
-    # Ch03 SFX — synthesised tones, see tool/generate_audio_assets.py. Whole
-    # set is ~61KB, well under the 400KB budget.
+    # Ch03 SFX plus the looping background bed — synthesised tones, see
+    # tool/generate_audio_assets.py. 61KB of SFX and a 250KB 8-second music
+    # loop, 332KB in all, inside the 400KB budget. The loop is 16kHz mono
+    # (the SFX are 22.05kHz) precisely to buy that headroom, which a low
+    # mellow pad loses nothing audible to.
     - assets/audio/
 
   # Fonts are BUNDLED, never taken from the device: many budget Android

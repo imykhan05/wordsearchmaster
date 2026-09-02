@@ -52,6 +52,9 @@ final class _RecordingAudioService implements AudioService {
 
   @override
   void setMuted(bool muted) {}
+
+  @override
+  Future<void> setMusicPlaying(bool playing) async {}
 }
 
 final class _RecordingHapticsService implements HapticsService {

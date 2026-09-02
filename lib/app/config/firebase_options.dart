@@ -70,11 +70,8 @@ abstract final class FlavorFirebaseOptions {
   /// the NEW one's SHA-1 needs registering here too, on all three projects,
   /// before Google Sign-In works again on a build signed with it.
   static String? googleServerClientId(Flavor flavor) => switch (flavor) {
-    Flavor.dev =>
-      '102773080765-mkd8flj2e35l5kp1mivbjtr7ilqt01m7.apps.googleusercontent.com',
-    Flavor.stg =>
-      '186642919120-21fijsbvovu9eeiamk0pk3f1o51otb0i.apps.googleusercontent.com',
-    Flavor.prod =>
-      '145564669719-14o24s3h4dadmd32kh366i37tft9np40.apps.googleusercontent.com',
+    Flavor.dev => '102773080765-mkd8flj2e35l5kp1mivbjtr7ilqt01m7.apps.googleusercontent.com',
+    Flavor.stg => '186642919120-21fijsbvovu9eeiamk0pk3f1o51otb0i.apps.googleusercontent.com',
+    Flavor.prod => '145564669719-14o24s3h4dadmd32kh366i37tft9np40.apps.googleusercontent.com',
   };
 }

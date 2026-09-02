@@ -126,5 +126,122 @@ def main():
     print(f"TOTAL: {total / 1024:.1f} KB")
 
 
+# ---------------------------------------------------------------------------
+# Background music (Ch03's "soft, unobtrusive" bed, added after P09)
+#
+# A LOOP, not a clip, which changes the synthesis rules completely: the last
+# sample has to flow into the first with no discontinuity, or every pass round
+# the loop fires an audible click.
+#
+# The trick that makes that exact rather than approximate: every partial is
+# snapped to a whole multiple of the loop's own fundamental (1 / LOOP_SECONDS).
+# A sine whose frequency is k/L completes exactly k cycles in L seconds, so
+# sin(2*pi*f*(t+L)) == sin(2*pi*f*t) — the waveform is periodic in the loop by
+# construction, and note tails can be wrapped modulo the buffer instead of
+# being cut off. The detune this costs is at most half of 1/L (0.0625 Hz at
+# L=8), far below anything audible.
+#
+# 16kHz rather than the SFX 22.05kHz: this is a low, mellow pad with almost no
+# energy above 4kHz, and the rate drops 8 seconds of audio from 353KB to
+# 256KB — which is what keeps the whole audio set inside its 400KB budget.
+
+MUSIC_SAMPLE_RATE = 16000
+MUSIC_LOOP_SECONDS = 8.0
+
+
+def _snap(freq):
+    """Round to a whole multiple of the loop fundamental — see above."""
+    fundamental = 1.0 / MUSIC_LOOP_SECONDS
+    return round(freq / fundamental) * fundamental
+
+
+def _music_loop():
+    n = int(MUSIC_SAMPLE_RATE * MUSIC_LOOP_SECONDS)
+    out = [0.0] * n
+
+    # A sustained, barely-there chord. Continuous across the wrap because
+    # each frequency is snapped; no envelope at all, so nothing to line up.
+    for freq, amp in ((130.813, 0.055), (195.998, 0.040), (261.626, 0.030)):
+        f = _snap(freq)
+        for i in range(n):
+            out[i] += amp * math.sin(2 * math.pi * f * i / MUSIC_SAMPLE_RATE)
+
+    # A slow pentatonic figure over the top (C D E G A — the same scale
+    # ComboPitchLadder walks, so the found-word chimes sit in key with the
+    # bed rather than against it). Each note is written with its index taken
+    # modulo n, so a tail running past the end reappears at the start where
+    # the next pass will continue it seamlessly.
+    pattern = [
+        (0.0, 523.251),
+        (1.0, 783.991),
+        (2.0, 659.255),
+        (3.0, 880.000),
+        (4.0, 783.991),
+        (5.0, 587.330),
+        (6.0, 659.255),
+        (7.0, 392.000),
+    ]
+    decay_seconds = 1.9
+    attack_seconds = 0.035
+    for start_s, freq in pattern:
+        f = _snap(freq)
+        f2 = _snap(freq * 2)
+        start = int(start_s * MUSIC_SAMPLE_RATE)
+        length = int(decay_seconds * MUSIC_SAMPLE_RATE)
+        attack_n = max(1, int(attack_seconds * MUSIC_SAMPLE_RATE))
+        for j in range(length):
+            if j < attack_n:
+                env = j / attack_n
+            else:
+                env = (1.0 - (j - attack_n) / (length - attack_n)) ** 2.6
+            i = (start + j) % n
+            t = i / MUSIC_SAMPLE_RATE
+            value = math.sin(2 * math.pi * f * t)
+            value += 0.12 * math.sin(2 * math.pi * f2 * t)
+            out[i] += 0.115 * env * value
+
+    return out
+
+
+def _write_music(name, samples):
+    path = os.path.join(OUT_DIR, name)
+    with wave.open(path, "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(MUSIC_SAMPLE_RATE)
+        f.writeframes(
+            b"".join(
+                struct.pack("<h", max(-32767, min(32767, int(s * 32767))))
+                for s in samples
+            )
+        )
+    return path, os.path.getsize(path)
+
+
+def generate_music():
+    samples = _music_loop()
+    peak = max(abs(s) for s in samples)
+    print(f"music peak before headroom: {peak:.3f}")
+    # Leave real headroom: this plays UNDER the SFX for the whole session,
+    # and a bed that competes with the found-word chime is a bed players
+    # switch off.
+    target_peak = 0.30
+    samples = [s * (target_peak / peak) for s in samples]
+
+    # The seam is the whole point, so measure it rather than trusting it: the
+    # step from the last sample back to the first must be no larger than a
+    # step anywhere inside the buffer.
+    seam = abs(samples[0] - samples[-1])
+    biggest_internal = max(
+        abs(samples[i + 1] - samples[i]) for i in range(0, len(samples) - 1, 7)
+    )
+    print(f"seam step {seam:.5f} vs largest internal step {biggest_internal:.5f}")
+    assert seam <= biggest_internal, "loop seam would click"
+
+    name, size = _write_music("music_loop.wav", samples)
+    print(f"music_loop.wav: {size / 1024:.1f} KB")
+
+
 if __name__ == "__main__":
     main()
+    generate_music()
