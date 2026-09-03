@@ -124,7 +124,12 @@ final class FirebaseAuthService implements AuthService {
     }
 
     final idToken = googleAccount.authentication.idToken;
-    if (idToken == null) return const LinkFailed('missing-id-token');
+    if (idToken == null) {
+      lastGoogleSignInDiagnostic =
+          'missing-id-token: '
+          '${googleAccount.email}';
+      return const LinkFailed('missing-id-token');
+    }
     final credential = fb.GoogleAuthProvider.credential(idToken: idToken);
 
     final user = _auth.currentUser;
@@ -178,6 +183,13 @@ final class FirebaseAuthService implements AuthService {
           ? LinkRequiresMerge(account)
           : LinkSucceeded(account);
     } catch (error, stackTrace) {
+      // This call is the one that actually exchanges the Google credential
+      // for a Firebase user — a client-certificate/OAuth mismatch (a Play
+      // App Signing build using a fingerprint that was never registered)
+      // surfaces HERE, not at `authenticate()`. It was the one catch block
+      // in this file that dropped the diagnostic on the floor, which made
+      // exactly that failure mode invisible to `AccountCard`'s debug SnackBar.
+      lastGoogleSignInDiagnostic = error.toString();
       _reporter.nonFatal(
         error,
         stackTrace: stackTrace,
