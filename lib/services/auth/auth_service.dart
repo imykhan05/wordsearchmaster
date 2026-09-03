@@ -156,6 +156,23 @@ abstract interface class AuthService {
   /// Opens the Google sheet and upgrades the current anonymous account.
   Future<LinkOutcome> linkWithGoogle();
 
+  /// The raw platform exception (code + description) behind the MOST RECENT
+  /// [linkWithGoogle] call that did not cleanly succeed — including a
+  /// [LinkCancelled] outcome. Null if the last call succeeded, or if none has
+  /// run yet.
+  ///
+  /// NEVER shown to a player in production — [LinkCancelled]'s whole point is
+  /// that backing out of the sheet stays silent. It exists because Android's
+  /// Credential Manager reports `GoogleSignInExceptionCode.canceled` for two
+  /// genuinely different things: the player tapping away, and the SYSTEM
+  /// cancelling the credential retrieval after a backend failure (a
+  /// misconfigured OAuth client, most often) — and those are indistinguishable
+  /// from the [LinkOutcome] alone. `AccountCard` surfaces this on non-prod
+  /// flavors only, so a closed-testing build can show the real reason instead
+  /// of the same silent "nothing happened" every failure mode of this kind
+  /// otherwise produces.
+  String? get lastGoogleSignInDiagnostic;
+
   /// Signs out and immediately signs back in as a FRESH anonymous guest.
   ///
   /// It does NOT delete local data — Ch02's rule, and the reason this returns
@@ -186,6 +203,9 @@ final class NoopAuthService implements AuthService {
   @override
   Future<LinkOutcome> linkWithGoogle() async =>
       const LinkFailed('auth-unavailable');
+
+  @override
+  String? get lastGoogleSignInDiagnostic => null;
 
   @override
   Future<AuthAccount?> signOut() async => null;

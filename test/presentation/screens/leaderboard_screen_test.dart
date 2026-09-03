@@ -123,6 +123,9 @@ final class _FakeAuth implements AuthService {
   Future<LinkOutcome> linkWithGoogle() async => const LinkCancelled();
 
   @override
+  String? get lastGoogleSignInDiagnostic => null;
+
+  @override
   Future<AuthAccount?> signOut() async => currentAccount;
 }
 

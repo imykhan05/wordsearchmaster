@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/config/app_config.dart';
 import '../../app/theme/theme.dart';
 import '../../application/account_controller.dart';
 import '../../domain/text/language.dart';
@@ -59,6 +60,29 @@ class _AccountCardState extends ConsumerState<AccountCard> {
     };
     if (message != null) {
       messenger.showSnackBar(SnackBar(content: Text(message)));
+    }
+
+    // Closed-testing diagnostic, never shown on prod. `cancelled` and
+    // `failed` both look the same to a player as "nothing happened", but
+    // Android's Credential Manager reports `canceled` for a real user
+    // cancel AND for the system cancelling credential retrieval after a
+    // backend failure — indistinguishable without this raw code. See
+    // `AuthService.lastGoogleSignInDiagnostic`'s own doc.
+    if (result != AccountLinkResult.linked &&
+        ref.read(appConfigProvider).flavor != Flavor.prod) {
+      final diagnostic = ref.read(authServiceProvider).lastGoogleSignInDiagnostic;
+      if (diagnostic != null) {
+        // Built as a variable, not a `Text('...')` literal: this is
+        // deliberately NOT a translatable string (it never reaches a
+        // player), so it must not trip `check_localized_strings.dart` either.
+        final debugText = '[debug] $diagnostic';
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(debugText),
+            duration: const Duration(seconds: 12),
+          ),
+        );
+      }
     }
   }
 

@@ -49,6 +49,9 @@ final class FirebaseAuthService implements AuthService {
   bool _googleInitialised = false;
 
   @override
+  String? lastGoogleSignInDiagnostic;
+
+  @override
   AuthAccount? get currentAccount => _toAccount(_auth.currentUser);
 
   @override
@@ -79,6 +82,10 @@ final class FirebaseAuthService implements AuthService {
 
   @override
   Future<LinkOutcome> linkWithGoogle() async {
+    // Cleared on every call, so a stale diagnostic from a PREVIOUS attempt
+    // can never be read as describing this one.
+    lastGoogleSignInDiagnostic = null;
+
     final GoogleSignInAccount googleAccount;
     try {
       if (!_googleInitialised) {
@@ -87,8 +94,16 @@ final class FirebaseAuthService implements AuthService {
       }
       googleAccount = await _google.authenticate();
     } on GoogleSignInException catch (error, stackTrace) {
-      // Backing out of the sheet is a decision, not a fault. Everything else
-      // is worth a report.
+      // Recorded BEFORE the cancelled branch, deliberately — see this
+      // service's own `lastGoogleSignInDiagnostic` doc. Android's Credential
+      // Manager reports `canceled` both for the player backing out AND for
+      // the system cancelling credential retrieval after a backend failure,
+      // and only this raw code+description tells the two apart.
+      lastGoogleSignInDiagnostic = error.toString();
+
+      // Backing out of the sheet is a decision, not a fault — so it is never
+      // reported to Crashlytics or shown to the player. Everything else is
+      // worth both.
       if (error.code == GoogleSignInExceptionCode.canceled) {
         return const LinkCancelled();
       }
@@ -99,6 +114,7 @@ final class FirebaseAuthService implements AuthService {
       );
       return LinkFailed(error.code.name);
     } catch (error, stackTrace) {
+      lastGoogleSignInDiagnostic = error.toString();
       _reporter.nonFatal(
         error,
         stackTrace: stackTrace,
@@ -132,6 +148,7 @@ final class FirebaseAuthService implements AuthService {
         final existing = error.credential ?? credential;
         return _signInWith(existing, requiresMerge: true);
       }
+      lastGoogleSignInDiagnostic = error.toString();
       _reporter.nonFatal(
         error,
         stackTrace: stackTrace,
@@ -139,6 +156,7 @@ final class FirebaseAuthService implements AuthService {
       );
       return LinkFailed(error.code);
     } catch (error, stackTrace) {
+      lastGoogleSignInDiagnostic = error.toString();
       _reporter.nonFatal(
         error,
         stackTrace: stackTrace,
