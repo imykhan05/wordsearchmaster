@@ -1994,6 +1994,194 @@ the literal acceptance-criterion shape (130 accounts, a scan, a pinned rank
 read back correctly for an account outside the top 100).
 
 
+## Notification preferences (post-P17)
+
+A player-requested addition on top of the streak-reminder push (the
+previous section): an in-app opt-out that does not touch the OS permission
+at all.
+
+`UiSettingsStore.streakRemindersEnabled` (default true) is the same
+UI-toggle carve-out as `soundEnabled`/`musicEnabled`/`hapticsEnabled` — a
+preference, not game data, so `shared_preferences` is the right home for
+it. `notificationRegistrationSync` reads it and registers a **null**
+`fcmToken` while it is off rather than skipping registration outright, so
+`language` stays current either way; `sendDueStreakReminders`'s own
+existing "no token, no push" guard (post-P17) is what actually stops the
+send, which is why this needed no new server-side field. `SettingsScreen`
+gained a matching "Notifications" section, parallel to the existing "Sound
+& haptics" one.
+
+## Ads scaffolding, ahead of an AppLovin MAX account (pre-P18)
+
+The Production Bible's P18 is "wire in real interstitial + rewarded ads."
+No MAX account exists yet, so this could not be that prompt — what follows
+instead is everything P18 needs BUT the account itself: the interface, the
+pacing policy, the wiring into gameplay, and the real vendor integration,
+all Noop-backed until `docs/applovin-max-setup.md`'s steps are run. The
+precedent is exactly P13's: `FlavorFirebaseOptions.forFlavor` returned null
+for months before three real Firebase projects existed, and the whole app
+ran correctly in that state the entire time because "unconfigured" was
+written as a first-class, tested path rather than assumed away.
+
+### The three rules, mined from two 100M+-install competitors' reviews
+
+Before any ad code was written, CLAUDE.md's `## Never do` gained three
+rules (pre-dating the code, not backfilled after it): never increase
+interstitial frequency as the player advances, never show an ad that
+failed to load, and never show a fullscreen ad with no working skip/close.
+All three came from reading real 1-star reviews of PlaySimple's Word Search
+and Bluetile's Word Search Journey — escalating ad pressure, blank/broken
+ad views, and forced-watch interstitials were the recurring complaints, not
+difficulty or bugs. Every decision below exists to make those three rules
+structurally true rather than conventionally true.
+
+### `AdFrequencyPolicy` — one tunable, and that is what makes "never escalate" true by construction
+
+`lib/domain/progression/ad_policy.dart` is pure Dart, RemoteConfig-backed
+like `CoinEconomy`/`DdaConfig`: `canShowInterstitial` takes
+`totalLevelsCompleted` (gates the very first ad — CLAUDE.md's existing
+"never before the player's first completed level" rule) and
+`levelsSinceLastInterstitial` (compared against
+`RemoteConfigKeys.minLevelsBetweenInterstitials`, default 4, floored at 1
+so a console typo cannot turn every completion into an ad). There is
+deliberately no third input: the gap is the SAME at level 4 and at level
+300, because nothing in the function's signature lets a caller make it
+otherwise without editing this file. "Never after a failed or abandoned
+level" is enforced the same way DDA's abandon rule is — by the CALLER never
+consulting this policy on that path, not by a parameter here a future
+caller could pass wrong.
+
+### `AdRepository` — two global counters, journey-only
+
+`lib/data/repositories/ad_repository.dart` persists
+`totalLevelsCompleted`/`levelsSinceLastInterstitial` as tagged
+`kv_settings` rows, the same carve-out `DdaRepository`'s abandon counters
+already use — except GLOBAL, not per-(language, level): ad pacing is about
+how many puzzles this PLAYER has just finished, not which language track,
+so switching languages must not open a second, independent ad budget.
+`ProgressionController.recordCompletion`'s `JourneySession` branch advances
+both counters; the Daily never does, because it is a once-a-day mode with
+its own economics and no Zeigarnik "Continue" seam to show an interstitial
+at in the first place. Recording a SHOWN interstitial resets only the gap
+counter, never the lifetime total — and a failed/skipped show is never
+recorded as shown at all, so an ad that could not load never costs the
+player their pacing budget (CLAUDE.md's "never show a failed ad" rule,
+extended to "and never charge them for one nobody saw").
+
+### `AdGateway` — the interface every other file is written against
+
+`lib/services/ads/ad_gateway.dart` follows the identical
+interface-Noop-real triad every other vendor SDK in this codebase uses
+(`AuthService`, `NotificationService`, `AudioService`). `RewardedAdOutcome`
+is a three-value enum (`earned`/`dismissed`/`unavailable`) rather than a
+bool, because a caller (`game_screen.dart`) genuinely reacts differently to
+"the ad experience finished" versus "nothing was ever shown" — CLAUDE.md's
+"never show a failed/blank ad" rule needs the caller to be able to tell
+those apart. `earned` means only that the AD finished; it does NOT mean
+coins were credited — see the S2S section below.
+
+### Wired at the level-complete seam, not inside `ProgressionController`
+
+`game_screen.dart`'s `_continueFromLevelComplete` (the level-complete
+card's "Continue" handler) checks `AdRepository.canShowInterstitial` and
+calls `AdGateway.showInterstitial()` BEFORE the Zeigarnik phase flip
+becomes visible — so the grid screen itself is never the thing an
+interstitial appears on top of, extending "never a banner on the grid
+screen" to fullscreen ads in spirit even though the letter of that rule is
+about banners specifically. `ProgressionController.recordCompletion` only
+ever advances the PACING counters (a repository write); showing the ad is
+a presentation action and stays out of that controller, consistent with
+its own header's "coins/chest/streak/badges only" scope.
+
+`LevelCompleteCard`'s rewarded "double reward" button
+(`doubleRewardPlaceholder` since P09, disabled the whole time) now takes a
+real `onWatchAd` callback. `_GameContent` gates whether it is even passed
+through (`AdGateway.isRewardedReady && a resolvable account exists`)
+rather than handing through a callback that would silently no-op when
+tapped — `RewardedActionButton.onPressed == null` is its own "not
+available" contract (P16), and a button that LOOKS enabled but does
+nothing on tap is worse than one that looks disabled. A successful watch
+shows only a reassuring "reward on the way" message, never a doubled coin
+figure this screen has no authority to promise — see the next section for
+why.
+
+### The client still cannot mint its own coins
+
+P14's `grantRewardedReward` is unchanged and remains the ONLY path that
+credits a rewarded watch, via AppLovin's S2S postback — `showRewarded`
+calls `AppLovinMAX.setUserId(uid)` immediately before showing the ad
+specifically so that postback's `{USER_ID}` macro carries the right
+account, but the crediting itself still happens entirely outside this
+client's control. `RewardedAdOutcome.earned` is therefore purely a UI
+signal, never a ledger write.
+
+### `MaxAdGateway` — real, verified against the actual plugin source
+
+`lib/services/ads/max_ad_gateway.dart` is written against `applovin_max`
+v4.6.4's real API — read directly from the installed package source in
+this sandbox rather than from memory, the same discipline P13 applied to
+Firebase. The plugin's fullscreen-ad API is listener-based with exactly
+ONE listener slot per ad FORMAT (a static field on `AppLovinMAX`, not one
+per ad unit), which only works cleanly because `MaxAdGateway` itself is a
+single, `keepAlive` instance: a `Completer` captures whichever load/show is
+currently in flight, and the matching listener callback resolves it. Every
+show re-arms the next load immediately in
+`onAdHiddenCallback`/`onAdDisplayFailedCallback`, since a MAX fullscreen ad
+is single-use.
+
+### Three separate MAX apps, not one shared set of ad unit ids
+
+`AppConfig.adUnitIds` (`AdUnitIds?`, from the new
+`FlavorAdConfig.forFlavor` in `app/config/ad_config.dart`) mirrors
+`FlavorFirebaseOptions`'s exact null-degrades-to-Noop shape — all three
+flavors return null today. Unlike Firebase, though, there is no way to test
+AppLovin's per-DEVICE test mode from here (`setTestDeviceAdvertisingIds`
+needs a real device's advertising id, discovered from that device's own
+logs), so the one guarantee this repo CAN make unconditional instead is
+structural: dev, stg and prod each get their OWN MAX app registration —
+own SDK key, own ad units — so prod's real, revenue-generating ids are
+simply never PRESENT in a dev/stg binary, regardless of whether device
+test-mode was ever configured on the phone running it.
+`docs/applovin-max-setup.md` is the step-by-step runbook, mirroring
+`docs/firebase-setup.md`'s.
+
+### `ads.init` is awaited with a bounded 3s ceiling, not fire-and-forget
+
+The original P07-era `TODO(P18)` comment called this step "deferred, never
+blocks the first frame," matching every other unawaited step in
+`bootstrap.dart`. That shape turned out not to compose with actually
+returning a working gateway: `runApp` happens immediately after
+`initializeServices` returns, so a truly fire-and-forget step's result has
+no `ProviderContainer` to reach once the tree is already built. Rather than
+inventing a second, reactive-after-the-fact provider mechanism for a
+feature with no real account to exercise it, `ads.init` is AWAITED like
+steps 1-7, but bounded at the same 3-second ceiling `remoteConfig.fetch`
+already uses two steps up — a hung SDK init degrades to `NoopAdGateway`
+exactly like a hung Remote Config fetch degrades to shipped defaults,
+rather than stalling startup. `initAds` is a new injectable seam
+(alongside `openDatabase`/`loadContent`/`loadAudio`) so
+`bootstrap_offline_test.dart` can prove both the throw and the timeout
+paths degrade correctly without a real SDK.
+
+### What could not be verified here
+
+The standing limitation from every earlier prompt that touched a vendor
+SDK (P13's Firebase, P14's MAX reward signature) applies again, doubled: no
+MAX account exists, and there is no physical device in this sandbox even
+if one did. Specifically unverified: `MaxAdGateway` against a live SDK
+(the listener wiring is written against the real plugin source, but never
+actually exercised against AppLovin's servers); AppLovin's device-level
+test mode (needs a real device's advertising id — see
+`docs/applovin-max-setup.md` §3); whether a real interstitial/rewarded ad
+actually appears, is skippable within AppLovin's own minimum window, and
+never blank — the CLAUDE.md rules this whole effort was built to satisfy
+can only be confirmed by playing the real thing; and the MAX dashboard's
+S2S postback signature scheme against `grantRewardedReward` (P14's own
+"must confirm... not reachable from this repository" note, unchanged).
+Everything pure — `AdFrequencyPolicy`, `AdRepository`'s counters, the
+Noop/interface layer, and the level-complete/rewarded-button wiring
+against a fake gateway — is fully tested and green.
+
 ## Localization
 
 - Every user-facing string comes from `AppLocalizations.of(context)`. ARB
