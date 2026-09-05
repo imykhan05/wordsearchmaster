@@ -26,6 +26,7 @@ library;
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../domain/progression/ad_policy.dart';
 import '../../domain/progression/coin_economy.dart';
 import '../../domain/progression/dda.dart';
 
@@ -121,6 +122,19 @@ abstract final class RemoteConfigKeys {
     max: 600,
   );
 
+  /// Pre-P18: the fixed gap `AdFrequencyPolicy` enforces between two
+  /// interstitials, in levels completed. `min: 1` is deliberate, not just a
+  /// safety floor — CLAUDE.md's "never escalate ad frequency" rule would be
+  /// trivially defeated by a console value of 0 turning every completion
+  /// into an ad, so the range itself rules that console typo out rather
+  /// than trusting every future editor of this key to remember why.
+  static const minLevelsBetweenInterstitials = RemoteConfigKey(
+    'min_levels_between_interstitials',
+    4,
+    min: 1,
+    max: 50,
+  );
+
   /// The whole table, for the dev panel and for
   /// `remote_config_test.dart`'s "every key has a distinct wire name" check.
   static const List<RemoteConfigKey> all = [
@@ -131,6 +145,7 @@ abstract final class RemoteConfigKeys {
     starterGrantCoins,
     ddaStuckSeconds,
     ddaHintOfferSeconds,
+    minLevelsBetweenInterstitials,
   ];
 }
 
@@ -203,5 +218,18 @@ DdaConfig ddaConfig(Ref ref) {
   return DdaConfig(
     stuckSeconds: config.getInt(RemoteConfigKeys.ddaStuckSeconds),
     hintOfferSeconds: config.getInt(RemoteConfigKeys.ddaHintOfferSeconds),
+  );
+}
+
+/// The interstitial gap, assembled from the levers — the same "one place
+/// this is built" shape as [coinEconomy]/[ddaConfig] above, so a Remote
+/// Config change reaches ad frequency without a code change.
+@Riverpod(keepAlive: true)
+AdFrequencyPolicy adFrequencyPolicy(Ref ref) {
+  final config = ref.watch(remoteConfigProvider);
+  return AdFrequencyPolicy(
+    minLevelsBetweenInterstitials: config.getInt(
+      RemoteConfigKeys.minLevelsBetweenInterstitials,
+    ),
   );
 }

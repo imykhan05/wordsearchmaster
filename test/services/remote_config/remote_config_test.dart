@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:word_search_master/domain/progression/ad_policy.dart';
 import 'package:word_search_master/domain/progression/coin_economy.dart';
 import 'package:word_search_master/domain/progression/dda.dart';
 import 'package:word_search_master/services/remote_config/remote_config.dart';
@@ -37,6 +38,17 @@ void main() {
     test('the Ch02/P12 DDA defaults are 25s / 60s', () {
       expect(RemoteConfigKeys.ddaStuckSeconds.defaultValue, 25);
       expect(RemoteConfigKeys.ddaHintOfferSeconds.defaultValue, 60);
+    });
+
+    test('the ad-frequency gap defaults to 4 levels and floors at 1', () {
+      expect(RemoteConfigKeys.minLevelsBetweenInterstitials.defaultValue, 4);
+      expect(
+        RemoteConfigKeys.minLevelsBetweenInterstitials.min,
+        1,
+        reason:
+            'a console value of 0 would defeat the never-escalate rule by '
+            'turning every completion into an ad',
+      );
     });
   });
 
@@ -157,6 +169,32 @@ void main() {
 
       expect(config.stuckSeconds, 10);
       expect(config.hintOfferSeconds, 20);
+    });
+  });
+
+  group('adFrequencyPolicyProvider', () {
+    test('assembles AdFrequencyPolicy.defaults from the shipped levers', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final policy = container.read(adFrequencyPolicyProvider);
+
+      expect(policy, AdFrequencyPolicy.defaults);
+    });
+
+    test('a lever change reaches the ad policy', () {
+      final container = ProviderContainer(
+        overrides: [
+          remoteConfigProvider.overrideWithValue(
+            const OverrideRemoteConfig({'min_levels_between_interstitials': 8}),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final policy = container.read(adFrequencyPolicyProvider);
+
+      expect(policy.minLevelsBetweenInterstitials, 8);
     });
   });
 }
