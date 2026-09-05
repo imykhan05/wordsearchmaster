@@ -327,6 +327,55 @@ void main() {
         isEmpty,
       );
     });
+
+    test('finding the LAST word via a hint still wins the level and freezes '
+        'a completion summary with the real hint count', () async {
+      // A bare container.read() with no sustained watcher can let an
+      // autoDispose provider get disposed and silently rebuilt between
+      // calls — container.listen keeps this element alive across the
+      // whole test, the same way GameScreen's own ref.watch does in the
+      // real app.
+      final sub = container.listen(
+        gameControllerProvider(JourneySession(1)),
+        (previous, next) {},
+      );
+      addTearDown(sub.close);
+
+      final state = await container.read(
+        gameControllerProvider(JourneySession(1)).future,
+      );
+      final notifier = container.read(
+        gameControllerProvider(JourneySession(1)).notifier,
+      );
+
+      expect(state.allWords, hasLength(4));
+
+      for (var i = 0; i < 3; i++) {
+        notifier.processSelection(selectionFor(state, i));
+      }
+
+      var next = sub.read().value!;
+      expect(next.foundWords, hasLength(3));
+      expect(next.isLevelWon, isFalse);
+
+      notifier.useHint();
+      next = sub.read().value!;
+      expect(next.hintedCell, isNotNull);
+
+      // Using a hint only reveals the word's starting cell — the player
+      // still has to drag it, through the same processSelection path as
+      // every other word, which is what actually wins the level.
+      notifier.processSelection(selectionFor(state, 3));
+      next = sub.read().value!;
+
+      // The Zeigarnik swap has already moved `foundWords`/`events` on to
+      // the NEXT level by this point (P07) — the just-finished level's
+      // facts live in `completedSummary`, not on the live state.
+      expect(next.phase, GamePhase.levelComplete);
+      expect(next.completedSummary, isNotNull);
+      expect(next.completedSummary!.hintsUsed, 1);
+      expect(next.completedSummary!.stars, 2);
+    });
   });
 
   group('pause / resume', () {
