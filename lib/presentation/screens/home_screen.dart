@@ -13,6 +13,7 @@ import '../../l10n/app_localizations.dart';
 import '../widgets/sync_status.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
+import '../../services/notifications/notification_service.dart';
 import '../../services/settings/ui_settings_store.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
@@ -52,6 +53,9 @@ class HomeScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const _StreakBanner(),
+              // Invisible — see its own doc for why the streak banner is the
+              // trigger rather than first launch or app resume.
+              const _NotificationPermissionRequester(),
               const SizedBox(height: AppTokens.space16),
               const CoinBalanceTile(),
               // Renders nothing (and no extra gap) until level 8 is
@@ -186,6 +190,65 @@ class _StreakBanner extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+/// Post-P17: asks for the OS notification permission once a streak exists
+/// worth protecting, never on first launch.
+///
+/// Entirely invisible — [build] always returns [SizedBox.shrink]. The streak
+/// banner sitting right above it is what makes the MOMENT defensible rather
+/// than arbitrary: Ch02's FTUE (`app_smoke_test.dart` pins "no login, no
+/// permission dialog, no ad" on the very first screen) rules out asking
+/// before a player has played at all, and asking the instant they reach Home
+/// for the first time would be the identical mistake one screen later. A
+/// streak of 2 is the earliest point there is something concrete to lose,
+/// which is what the permission is actually for.
+///
+/// [_requested] is a LOCAL, session-only guard, separate from
+/// [UiSettingsStore.notificationPermissionAsked]: the store's flag is written
+/// asynchronously, and [NotificationService] is not itself observed by
+/// Riverpod, so nothing else stops [build] running again — a level completing
+/// while the request is still in flight, say — before that write lands. The
+/// stored flag is what makes the ask permanent across sessions; this field is
+/// what makes it idempotent within one.
+class _NotificationPermissionRequester extends ConsumerStatefulWidget {
+  const _NotificationPermissionRequester();
+
+  @override
+  ConsumerState<_NotificationPermissionRequester> createState() =>
+      _NotificationPermissionRequesterState();
+}
+
+class _NotificationPermissionRequesterState
+    extends ConsumerState<_NotificationPermissionRequester> {
+  bool _requested = false;
+
+  Future<void> _ask() async {
+    await ref.read(notificationServiceProvider).requestPermission();
+    await ref
+        .read(uiSettingsStoreProvider)
+        .setNotificationPermissionAsked(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final streak = ref.watch(currentStreakProvider).value?.state.current ?? 0;
+    final alreadyAsked = ref
+        .read(uiSettingsStoreProvider)
+        .notificationPermissionAsked;
+
+    if (!_requested && !alreadyAsked && streak >= 2) {
+      _requested = true;
+      // Deferred a frame: this runs from inside `build`, and the OS
+      // permission sheet is exactly the kind of side effect that must not
+      // start before the frame it was triggered from has finished.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_ask());
+      });
+    }
+
+    return const SizedBox.shrink();
   }
 }
 

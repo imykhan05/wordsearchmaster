@@ -62,6 +62,14 @@ abstract interface class UiSettingsStore {
   /// achievement itself is never at risk of being un-shown by clearing it.
   Set<String> get seenAchievementPopupIds;
   Future<void> markAchievementPopupSeen(String id);
+
+  /// Has the OS notification-permission prompt already been shown once
+  /// (post-P17)? Asked at most once, ever, regardless of whether the player
+  /// granted or denied it — the same "ask once, respect the answer" flag
+  /// class as [urduConnectedFormIntroShown]/[loginPromptDismissed], not game
+  /// state, so it belongs here rather than in `kv_settings`.
+  bool get notificationPermissionAsked;
+  Future<void> setNotificationPermissionAsked(bool value);
 }
 
 /// Defaults only, forgotten on restart. The binding in tests.
@@ -73,6 +81,7 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.selectedLanguage,
     this.urduConnectedFormIntroShown = false,
     this.loginPromptDismissed = false,
+    this.notificationPermissionAsked = false,
     Set<String>? seenAchievementPopupIds,
   }) : seenAchievementPopupIds = seenAchievementPopupIds ?? {};
 
@@ -88,6 +97,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool urduConnectedFormIntroShown;
   @override
   bool loginPromptDismissed;
+  @override
+  bool notificationPermissionAsked;
   @override
   Set<String> seenAchievementPopupIds;
 
@@ -109,6 +120,9 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> markAchievementPopupSeen(String id) async =>
       seenAchievementPopupIds = {...seenAchievementPopupIds, id};
+  @override
+  Future<void> setNotificationPermissionAsked(bool value) async =>
+      notificationPermissionAsked = value;
 }
 
 /// The real one. Values are read once at startup and cached in memory, so
@@ -124,6 +138,8 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _loginPromptKey = 'ui.login_prompt_dismissed';
   static const String _seenAchievementPopupsKey =
       'ui.seen_achievement_popup_ids';
+  static const String _notificationPermissionAskedKey =
+      'ui.notification_permission_asked';
 
   final SharedPreferences _prefs;
 
@@ -189,6 +205,14 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
     _seenAchievementPopupsKey,
     {...seenAchievementPopupIds, id}.toList(),
   );
+
+  @override
+  bool get notificationPermissionAsked =>
+      _prefs.getBool(_notificationPermissionAskedKey) ?? false;
+
+  @override
+  Future<void> setNotificationPermissionAsked(bool value) =>
+      _prefs.setBool(_notificationPermissionAskedKey, value);
 }
 
 /// Overridden in `bootstrap.dart` with the prefs-backed store.

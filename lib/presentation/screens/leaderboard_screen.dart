@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
 import '../../application/leaderboard_controller.dart';
+import '../../data/remote/name_report_api.dart';
 import '../../data/repositories/leaderboard_cache.dart';
 import '../../domain/leaderboard/leaderboard_keys.dart' as leaderboard_keys;
 import '../../domain/text/language.dart';
@@ -234,8 +237,11 @@ class _Board extends ConsumerWidget {
             itemCount: entries.length,
             separatorBuilder: (_, _) =>
                 const SizedBox(height: AppTokens.space8),
-            itemBuilder: (context, index) =>
-                _EntryRow(rank: index + 1, entry: entries[index]),
+            itemBuilder: (context, index) => _EntryRow(
+              rank: index + 1,
+              entry: entries[index],
+              currentUid: uid,
+            ),
           ),
         ),
         // PINNED ROW: only when the signed-in player is outside [entries] —
@@ -253,16 +259,72 @@ class _Board extends ConsumerWidget {
   }
 }
 
-class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.rank, required this.entry});
+class _EntryRow extends ConsumerWidget {
+  const _EntryRow({
+    required this.rank,
+    required this.entry,
+    required this.currentUid,
+  });
 
   final int rank;
   final LeaderboardEntry entry;
 
+  /// Null with no signed-in account. Hides the report action on the row's
+  /// own entry — reporting yourself is refused server-side anyway
+  /// (`firestore.rules`), but there is no reason to show the button at all.
+  final String? currentUid;
+
+  /// A confirm step before a report that has a real, if delayed and
+  /// threshold-gated, consequence for someone else's account (AR-4 / T12) —
+  /// worth guarding against an accidental tap the way none of this screen's
+  /// other rows need to.
+  Future<void> _confirmAndReport(
+    BuildContext context,
+    WidgetRef ref,
+    AppLocalizations l10n,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.reportNameConfirmTitle),
+        content: Text(l10n.reportNameConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.reportNameCancelAction),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.reportNameConfirmAction),
+          ),
+        ],
+      ),
+    );
+    final reporterUid = currentUid;
+    if (confirmed != true || reporterUid == null || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final success = await ref
+        .read(nameReportApiProvider)
+        .reportDisplayName(reporterUid: reporterUid, reportedUid: entry.uid);
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? l10n.reportNameSubmittedMessage
+              : l10n.reportNameFailedMessage,
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final tokens = AppTokens.of(context);
     final name = entry.displayName ?? entry.uid;
+    final canReport = currentUid != null && currentUid != entry.uid;
 
     return MetaCard(
       child: Row(
@@ -311,6 +373,16 @@ class _EntryRow extends StatelessWidget {
               color: tokens.colors.onSurface,
             ),
           ),
+          if (canReport)
+            IconButton(
+              tooltip: l10n.reportNameAction,
+              iconSize: 18,
+              onPressed: () => unawaited(_confirmAndReport(context, ref, l10n)),
+              icon: Icon(
+                Icons.flag_outlined,
+                color: tokens.colors.onSurfaceFaint,
+              ),
+            ),
         ],
       ),
     );

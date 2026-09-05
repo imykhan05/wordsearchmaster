@@ -2214,3 +2214,113 @@ choice.
   Nothing about the switch touches `level_progress`: that table is keyed by
   `(language, level)` already, so the OTHER language's progress was always
   sitting there untouched, just unreachable.
+
+## Leaderboard moderation and re-engagement notifications (post-P17)
+
+Two user-requested features, plus a decision on a third request this repo
+declined to fake.
+
+### The Urdu/Hindi content review request was NOT attempted here
+
+`blocklist_ur.txt`/`blocklist_hi.txt` remain exactly as P10 left them —
+header-only, flagged `REQUIRES A NATIVE SPEAKER`. Their own file header
+already states the reason precisely: "Guessing at another language's
+profanity produces exactly that kind of false positive... a native reader
+must review the list." Adding a small set of guessed entries would have
+traded an honest, visible gap for a false sense of coverage — CLAUDE.md's own
+P10 rule ("an incomplete-but-honest list beats a guessed one") already
+settles this. The word packs' `_comment` review-status banners are untouched
+for the identical reason. This is real content work for an actual native
+speaker, not a prompt a coding session can responsibly complete.
+
+### Leaderboard display-name reports (AR-4 / T12)
+
+`nameReports/{reportId}` is the one client-initiated write in this codebase
+that is a bare Firestore `create` rather than a callable — see
+`functions/src/nameReports.ts`'s header for why a report needs no computed
+response, and therefore no callable. `firestore.rules` allows nothing else on
+the collection, not even a read by the reporter: telling a reporter how close
+a name is to being blanked is the identical mistake Ch08 already rules out
+for a suspected cheater.
+
+`onNameReportCreated` (a Firestore trigger, same "wiring unverified in this
+sandbox" gap as `updateLeaderboards`/`recomputeLeaderboardRanks`) blanks the
+reported `displayName` to `null` once `LIMITS.nameReportThreshold` (3)
+DISTINCT players have reported it — `FieldValue.arrayUnion` on the reporter's
+own uid is what makes a repeat report from one account count once, so the
+report button itself cannot become a griefing tool. Every report is logged to
+`moderation/{uid}/flags/{autoId}` (kind `name_report`), the same subcollection
+`submissions.ts` and `submitAchievement.ts` already write evidence into.
+
+Still owed, and tracked honestly rather than silently: no profanity filter
+(SECURITY.md's AR-4 already argues a bad one is worse than none for Urdu/
+Hindi names specifically), no human moderation queue yet, and nothing stops a
+blanked player immediately re-setting the same name. The client side
+(`lib/presentation/screens/leaderboard_screen.dart`'s `_EntryRow`) adds one
+`IconButton` per row (hidden on the player's own entry), a confirm dialog,
+and a `NameReportApi` following the same interface-Noop-Firestore triad as
+every other vendor-touching service in this codebase.
+
+### Streak-expiring re-engagement push (max one push a day)
+
+Reuses `users/{uid}.stats.engagementStreak` — P17's existing, ALREADY-SERVER-
+DERIVED streak counter for the Streak Keeper achievement — rather than
+building a second sync path for the player-facing local streak
+(`lib/domain/progression/streak.dart`), which CLAUDE.md's own P11 section
+already establishes as permanently device-only. `stats.ts`'s header already
+admits the two numbers can disagree because of sync lag; that is exactly as
+acceptable here, where the cost is a slightly early or late reminder, not a
+wrongly-granted achievement. The one new honesty required: a player with an
+unspent streak FREEZE (local-only, never synced) can still get a reminder on
+a day they are actually already safe — an accepted false positive, the same
+class of trade `SECURITY.md`'s standing assumption #3 already licenses for
+every threshold in this codebase.
+
+`functions/src/streakReminders.ts`'s `sendDueStreakReminders` runs once daily
+(`0 13 * * *` UTC — 6pm PKT/6:30pm IST, Ch01's primary audience; a stated
+simplification, since nothing anywhere stores a per-account timezone), scans
+`users` for `stats.engagementStreak.lastDay == yesterday` (a plain
+single-field equality query — no composite index needed, unlike the
+collection-group query `deleteAccount` requires), and sends at most one push
+per account. `users/{uid}.notifications.lastPushSentDay` is written ONLY by
+this function and gates every future push type the same way, not just this
+one — the max-one-push-a-day rule is enforced server-side, per account,
+type-agnostically, rather than trusted to each caller separately.
+
+The send TRANSPORT is injectable (`StreakReminderSender`) for the same reason
+`bootstrap.dart`'s `openDatabase`/`loadContent` seams exist: there is no FCM
+emulator, so the integration test proves the query/skip/write-back logic
+against a real Firestore with a fake transport, never a real send.
+
+**Client-side additions, kept intentionally small:**
+
+- `fcmToken` and `language` joined `profileFields()` in `firestore.rules` —
+  the identical "data the player's own device hands the server about itself"
+  category `displayName`/`photoUrl` already occupy, not a new kind of trust.
+- `NotificationService` (`services/notifications/`) wraps `firebase_messaging`
+  behind the same interface-Noop-real triad as every other vendor SDK in this
+  codebase; `notificationRegistrationSyncProvider` keeps the token and
+  language current, watched once at the app root next to `audioMuteSync`/
+  `musicSync`.
+- The OS permission prompt is requested from `HomeScreen`, gated on a streak
+  of 2 (`_NotificationPermissionRequester`, entirely invisible — it never
+  renders anything) — not on first launch, which `app_smoke_test.dart`
+  already pins as permission-free, and not the instant a returning player
+  reaches Home, which would be the identical mistake one screen later. A
+  streak of 2 is the earliest point there is something concrete for the
+  reminder to protect. Asked at most once ever
+  (`UiSettingsStore.notificationPermissionAsked`), whether granted or denied.
+
+### What could not be verified here
+
+Same standing limitation as every other Firestore trigger and scheduled
+function in this codebase (P14, P17): `onNameReportCreated`'s and
+`sendStreakReminders`'s WIRING cannot be registered under this sandbox's
+outbound-proxy-restricted emulator run. Both function BODIES
+(`applyNameReport`, `sendDueStreakReminders`) are fully exercised against a
+real Firestore emulator instead. Nor could an actual push notification be
+delivered to a device — there is no FCM emulator and no service account here;
+the transport is proven only via the injectable fake, matching this
+codebase's existing standard for anything that needs a real device or a real
+external network to confirm (App Check enforcement, the MAX callback, the
+background-music loop's audibility).

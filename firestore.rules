@@ -52,8 +52,16 @@ service cloud.firestore {
     // The only fields a player authors. Everything else on `users/{uid}` —
     // totals, progress, the rate window, the timing accumulator,
     // suspiciousCount — is server-authored and is what a cheater edits first.
+    //
+    // `fcmToken` and `language` (post-P17, re-engagement notifications) join
+    // this list for the same reason `displayName`/`photoUrl` are on it: this
+    // is data the player's OWN DEVICE hands the server about itself, not
+    // anything earned or computed. `sendStreakReminders` (`functions/src/
+    // streakReminders.ts`) is the one reader, and nothing server-authored
+    // lives under either key — a device that lies about its own token or
+    // language reaches nobody but itself.
     function profileFields() {
-      return ['displayName', 'photoUrl', 'updatedAt'];
+      return ['displayName', 'photoUrl', 'updatedAt', 'fcmToken', 'language'];
     }
 
     // Value checks, applied on CREATE as well as UPDATE.
@@ -80,7 +88,16 @@ service cloud.firestore {
              && (!('photoUrl' in request.resource.data)
                  || request.resource.data.photoUrl == null
                  || (request.resource.data.photoUrl is string
-                     && request.resource.data.photoUrl.size() <= 500));
+                     && request.resource.data.photoUrl.size() <= 500))
+             // An FCM registration token; Google does not document a fixed
+             // upper length, so this is a generous ceiling against abuse
+             // rather than a measured real-world size.
+             && (!('fcmToken' in request.resource.data)
+                 || request.resource.data.fcmToken == null
+                 || (request.resource.data.fcmToken is string
+                     && request.resource.data.fcmToken.size() <= 4096))
+             && (!('language' in request.resource.data)
+                 || request.resource.data.language in ['ur', 'hi', 'en']);
     }
 
     // An update may CHANGE only the profile fields.
@@ -192,6 +209,34 @@ service cloud.firestore {
     // through `redeemInviteCode` exclusively, which is the only path that
     // ever needs to resolve a code to a uid.
     match /inviteCodes/{document=**} { allow read, write: if false; }
+
+    // A leaderboard-name report (AR-4 / T12). CREATE only, and a client can
+    // create nothing else on it — nothing here can be read back, including by
+    // the reporter, which is what stops a report becoming a way to enumerate
+    // who has been reported or how close a name is to being blanked.
+    // `onNameReportCreated` (Admin SDK, bypasses these rules) is the only
+    // reader, and the only writer of what a report actually causes: nothing
+    // in this file lets a client blank anyone's `displayName` directly.
+    match /nameReports/{reportId} {
+      allow get, list, update, delete: if false;
+
+      allow create: if isSignedIn()
+                    && request.resource.data.keys().hasOnly(
+                         ['reportedUid', 'reporterUid', 'createdAt'])
+                    // The reporter can only ever speak for themselves — a
+                    // spoofed `reporterUid` would let one account manufacture
+                    // several "distinct" reports against the same name.
+                    && request.resource.data.reporterUid == request.auth.uid
+                    && request.resource.data.reportedUid is string
+                    && request.resource.data.reportedUid.size() > 0
+                    && request.resource.data.reportedUid != request.auth.uid
+                    // Must be `FieldValue.serverTimestamp()`, which Firestore
+                    // resolves to exactly `request.time` at write time — a
+                    // client-supplied literal is refused, the same reasoning
+                    // `recordSubmission`'s own timing checks give for never
+                    // trusting a client's clock.
+                    && request.resource.data.createdAt == request.time;
+    }
 
     // Anything a future prompt adds is denied until it says otherwise. This
     // changes no behaviour (see the header); it is here so that the answer to

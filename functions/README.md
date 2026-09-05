@@ -276,6 +276,39 @@ signed, so a server-set balance would have nowhere to land.
 
 ---
 
+## `onNameReportCreated` (Firestore trigger)
+
+Trigger on `nameReports/{reportId}`. The client's only path into this system
+is a plain `create` — `firestore.rules` allows nothing else on the
+collection, not even reading a report back (see AR-4 in `SECURITY.md` for
+why: a reporter who could read reports would learn how close a name is to
+being blanked).
+
+**Distinct reporters, never a raw count.** `crossesReportThreshold` counts
+uids via `FieldValue.arrayUnion`, which is idempotent — the same account
+reporting the same name five times still counts once. `LIMITS.
+nameReportThreshold` (3) is the number of DIFFERENT players who have to agree
+before a `displayName` is blanked to `null`.
+
+Every report is logged to `moderation/{uid}/flags/{autoId}` (kind
+`name_report`), whether or not it crosses the threshold — the same
+subcollection `submissions.ts` and `submitAchievement.ts` already write
+evidence into.
+
+**Trigger wiring is unverified in this sandbox**, the identical gap
+`updateLeaderboards` (P14) and `recomputeLeaderboardRanks` (P17) already
+document: registering an `onDocumentCreated` trigger needs a live project,
+which this environment's outbound-proxy restriction blocks even under the
+emulator. `applyNameReport`, the function body, is split out for exactly that
+reason and is fully exercised against a real Firestore in
+`test/integration/moderation.test.ts`.
+
+**Still owed, tracked in SECURITY.md's AR-4:** a real moderation queue for a
+human to review the flagged reports, and something to stop a blanked name
+being immediately re-set to the same string.
+
+---
+
 ## Firestore layout
 
 ```
@@ -293,8 +326,9 @@ users/{uid}/scores/{level_en_47 | daily_en_2026-08-31}
 users/{uid}/nonces/{base64url(nonce)}
 users/{uid}/coinGrants/{base64url(eventId)}
 leaderboards/{board}/entries/{uid}   ← the only publicly readable collection
-moderation/{uid}/flags/{autoId}
+moderation/{uid}/flags/{autoId}      ← suspicious submissions AND name reports
 rewardCallbacks/{base64url(eventId)}
+nameReports/{autoId}                 ← client CREATE-only, unreadable by any client
 ```
 
 `firestore.rules` is production-grade from day one (never test mode). The client

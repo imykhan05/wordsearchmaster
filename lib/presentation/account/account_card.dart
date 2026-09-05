@@ -70,7 +70,9 @@ class _AccountCardState extends ConsumerState<AccountCard> {
     // `AuthService.lastGoogleSignInDiagnostic`'s own doc.
     if (result != AccountLinkResult.linked &&
         ref.read(appConfigProvider).flavor != Flavor.prod) {
-      final diagnostic = ref.read(authServiceProvider).lastGoogleSignInDiagnostic;
+      final diagnostic = ref
+          .read(authServiceProvider)
+          .lastGoogleSignInDiagnostic;
       if (diagnostic != null) {
         // Built as a variable, not a `Text('...')` literal: this is
         // deliberately NOT a translatable string (it never reaches a

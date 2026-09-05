@@ -96,11 +96,9 @@ void main() {
       containerWith(fake, musicEnabled: false).read(musicSyncProvider);
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        fake.musicHistory,
-        [false],
-        reason: 'the stored preference has to win before the first frame',
-      );
+      expect(fake.musicHistory, [
+        false,
+      ], reason: 'the stored preference has to win before the first frame');
     });
 
     test('toggling the setting drives the loop both ways', () async {
@@ -139,11 +137,9 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(fake.mutedHistory, [false, true]);
-      expect(
-        fake.musicHistory,
-        [true],
-        reason: 'muting the SFX left the music exactly as it was',
-      );
+      expect(fake.musicHistory, [
+        true,
+      ], reason: 'muting the SFX left the music exactly as it was');
     });
   });
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../application/achievements_controller.dart';
+import '../application/notification_sync.dart';
 import '../application/sync_controller.dart';
 import '../presentation/meta/achievement_unlock_card.dart';
 import '../services/audio/audio_service.dart';
@@ -38,6 +39,9 @@ class WordSearchMasterApp extends ConsumerWidget {
     // P17: diffs the live server achievement stream into the popup queue.
     // Same shape and same reason as the two triggers above.
     ref.watch(achievementPopupSyncProvider);
+    // Post-P17: keeps this device's push-notification registration current.
+    // Same shape and same reason as the sync providers above.
+    ref.watch(notificationRegistrationSyncProvider);
 
     return MaterialApp.router(
       onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,

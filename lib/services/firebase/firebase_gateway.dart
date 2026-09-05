@@ -25,11 +25,14 @@ library;
 import '../../data/remote/cloud_account_repository.dart';
 import '../../data/remote/friends_api.dart';
 import '../../data/remote/leaderboard_api.dart';
+import '../../data/remote/name_report_api.dart';
+import '../../data/remote/notification_registration_api.dart';
 import '../../data/remote/user_stats_api.dart';
 import '../analytics/analytics_service.dart';
 import '../app_check/app_check_gateway.dart';
 import '../auth/auth_service.dart';
 import '../diagnostics/error_reporter.dart';
+import '../notifications/notification_service.dart';
 import '../remote_config/remote_config.dart';
 
 /// The services a live Firebase app provides, once step 2 has succeeded.
@@ -48,6 +51,9 @@ final class FirebaseServices {
     required this.userStats,
     required this.leaderboard,
     required this.friends,
+    required this.nameReport,
+    required this.notifications,
+    required this.notificationRegistration,
   });
 
   /// Crashlytics-backed once Firebase is up. Replaces the Noop that steps 1–2
@@ -78,6 +84,18 @@ final class FirebaseServices {
   final UserStatsApi userStats;
   final LeaderboardApi leaderboard;
   final FriendsApi friends;
+
+  /// AR-4 / T12: reports a leaderboard display name. A thin Firestore writer,
+  /// same reason it needs no bootstrap step of its own — read `NameReportApi`'s
+  /// header for why it is a bare create rather than a callable.
+  final NameReportApi nameReport;
+
+  /// Post-P17 re-engagement: the device-side permission/token wrapper and the
+  /// Firestore writer that registers it. Neither needs a bootstrap step —
+  /// permission is asked for lazily, from the home screen, once a streak
+  /// exists worth protecting (see `HomeScreen`'s own doc).
+  final NotificationService notifications;
+  final NotificationRegistrationApi notificationRegistration;
 }
 
 /// Brings Firebase up, or reports that it could not.

@@ -5,6 +5,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart' as rc;
 import 'package:flutter/foundation.dart';
 
@@ -12,12 +13,15 @@ import '../../app/config/app_config.dart';
 import '../../data/remote/firestore_account_repository.dart';
 import '../../data/remote/firestore_friends_api.dart';
 import '../../data/remote/firestore_leaderboard_api.dart';
+import '../../data/remote/firestore_name_report_api.dart';
+import '../../data/remote/firestore_notification_registration_api.dart';
 import '../../data/remote/firestore_user_stats_api.dart';
 import '../analytics/firebase_analytics_service.dart';
 import '../app_check/firebase_app_check_gateway.dart';
 import '../auth/firebase_auth_service.dart';
 import '../diagnostics/crashlytics_error_reporter.dart';
 import '../diagnostics/error_reporter.dart';
+import '../notifications/firebase_notification_service.dart';
 import '../remote_config/firebase_remote_config.dart';
 import 'firebase_gateway.dart';
 
@@ -95,6 +99,18 @@ final class LiveFirebaseGateway implements FirebaseGateway {
         friends: FirestoreFriendsApi(
           firestore: firestore,
           functions: functions,
+          reporter: reporter,
+        ),
+        nameReport: FirestoreNameReportApi(
+          firestore: firestore,
+          reporter: reporter,
+        ),
+        notifications: FirebaseNotificationService(
+          messaging: FirebaseMessaging.instance,
+          reporter: reporter,
+        ),
+        notificationRegistration: FirestoreNotificationRegistrationApi(
+          firestore: firestore,
           reporter: reporter,
         ),
       );

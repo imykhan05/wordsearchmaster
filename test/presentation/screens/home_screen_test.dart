@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
+import 'package:word_search_master/domain/progression/streak.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
+import 'package:word_search_master/services/notifications/notification_service.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 import '../../support/fake_meta.dart';
@@ -17,6 +19,8 @@ void main() {
     WidgetTester tester, {
     int highestCompletedLevel = 0,
     UiSettingsStore? settings,
+    int streak = 0,
+    NotificationService? notifications,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -24,7 +28,12 @@ void main() {
           appConfigProvider.overrideWithValue(AppConfig.dev()),
           if (settings != null)
             uiSettingsStoreProvider.overrideWithValue(settings),
-          ...fakeMetaOverrides(highestCompletedLevel: highestCompletedLevel),
+          if (notifications != null)
+            notificationServiceProvider.overrideWithValue(notifications),
+          ...fakeMetaOverrides(
+            highestCompletedLevel: highestCompletedLevel,
+            streak: StreakState(current: streak),
+          ),
         ],
         child: const WordSearchMasterApp(),
       ),
@@ -116,4 +125,89 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
     },
   );
+
+  group('notification permission request (post-P17)', () {
+    testWidgets('never asked with no streak at all', (tester) async {
+      final notifications = _FakeNotificationService();
+      final settings = InMemoryUiSettingsStore();
+
+      await pumpHome(
+        tester,
+        streak: 0,
+        settings: settings,
+        notifications: notifications,
+      );
+
+      expect(notifications.requestCount, 0);
+      expect(settings.notificationPermissionAsked, isFalse);
+    });
+
+    testWidgets('never asked with a streak of 1 — nothing worth losing yet', (
+      tester,
+    ) async {
+      final notifications = _FakeNotificationService();
+      final settings = InMemoryUiSettingsStore();
+
+      await pumpHome(
+        tester,
+        streak: 1,
+        settings: settings,
+        notifications: notifications,
+      );
+
+      expect(notifications.requestCount, 0);
+    });
+
+    testWidgets('asks once a streak of 2 exists, and remembers it asked', (
+      tester,
+    ) async {
+      final notifications = _FakeNotificationService();
+      final settings = InMemoryUiSettingsStore();
+
+      await pumpHome(
+        tester,
+        streak: 2,
+        settings: settings,
+        notifications: notifications,
+      );
+
+      expect(notifications.requestCount, 1);
+      expect(settings.notificationPermissionAsked, isTrue);
+    });
+
+    testWidgets(
+      'a returning session that already answered is never asked again',
+      (tester) async {
+        final notifications = _FakeNotificationService();
+        final settings = InMemoryUiSettingsStore(
+          notificationPermissionAsked: true,
+        );
+
+        await pumpHome(
+          tester,
+          streak: 10,
+          settings: settings,
+          notifications: notifications,
+        );
+
+        expect(notifications.requestCount, 0);
+      },
+    );
+  });
+}
+
+final class _FakeNotificationService implements NotificationService {
+  int requestCount = 0;
+
+  @override
+  Future<bool> requestPermission() async {
+    requestCount++;
+    return true;
+  }
+
+  @override
+  Future<String?> getToken() async => null;
+
+  @override
+  Stream<String> get onTokenRefresh => const Stream.empty();
 }

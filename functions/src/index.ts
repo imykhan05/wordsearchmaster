@@ -36,6 +36,8 @@ export { grantRewardedReward } from './grantRewardedReward';
 export { recomputeLeaderboardRanks } from './ranks';
 export { submitAchievement } from './submitAchievement';
 export { createInviteCode, redeemInviteCode } from './friends';
+export { onNameReportCreated } from './nameReports';
+export { sendStreakReminders } from './streakReminders';
 
 /**
  * `submitScore` — a finished journey level.

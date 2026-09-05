@@ -34,6 +34,7 @@ void main() {
       );
       expect(store.urduConnectedFormIntroShown, isFalse);
       expect(store.loginPromptDismissed, isFalse);
+      expect(store.notificationPermissionAsked, isFalse);
     });
 
     test('values survive a reopen', () async {
@@ -43,6 +44,7 @@ void main() {
       await store.setSelectedLanguage(Language.urdu);
       await store.setUrduConnectedFormIntroShown(true);
       await store.setLoginPromptDismissed(true);
+      await store.setNotificationPermissionAsked(true);
 
       final reopened = await PrefsUiSettingsStore.open();
       expect(reopened.soundEnabled, isFalse);
@@ -50,6 +52,7 @@ void main() {
       expect(reopened.selectedLanguage, Language.urdu);
       expect(reopened.urduConnectedFormIntroShown, isTrue);
       expect(reopened.loginPromptDismissed, isTrue);
+      expect(reopened.notificationPermissionAsked, isTrue);
     });
 
     test('an unknown stored language code falls back to the picker', () async {
@@ -137,7 +140,7 @@ void main() {
     });
   });
 
-  test('ONLY the six UI toggles are stored here — no game data', () async {
+  test('ONLY the known UI toggles are stored here — no game data', () async {
     // The boundary, pinned. Coins, progress and scores belong in Drift with
     // an HMAC tag; a plain preferences file is a one-line cheat.
     SharedPreferences.setMockInitialValues({});
@@ -148,6 +151,7 @@ void main() {
     await store.setUrduConnectedFormIntroShown(true);
     await store.setLoginPromptDismissed(true);
     await store.markAchievementPopupSeen('first_word');
+    await store.setNotificationPermissionAsked(true);
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys(), <String>{
@@ -157,6 +161,7 @@ void main() {
       'ui.urdu_connected_form_intro_shown',
       'ui.login_prompt_dismissed',
       'ui.seen_achievement_popup_ids',
+      'ui.notification_permission_asked',
     });
   });
 

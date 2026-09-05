@@ -10,6 +10,8 @@ import '../data/local/app_database.dart';
 import '../data/remote/cloud_account_repository.dart';
 import '../data/remote/friends_api.dart';
 import '../data/remote/leaderboard_api.dart';
+import '../data/remote/name_report_api.dart';
+import '../data/remote/notification_registration_api.dart';
 import '../data/remote/sync_api.dart';
 import '../data/remote/user_stats_api.dart';
 import '../data/repositories/streak_repository.dart';
@@ -21,6 +23,7 @@ import '../services/auth/auth_service.dart';
 import '../services/diagnostics/error_reporter.dart';
 import '../services/firebase/firebase_gateway.dart';
 import '../services/firebase/live_firebase_gateway.dart';
+import '../services/notifications/notification_service.dart';
 import '../services/remote_config/remote_config.dart';
 import '../services/settings/ui_settings_store.dart';
 import '../services/time/trusted_clock.dart';
@@ -47,6 +50,9 @@ final class BootstrapServices {
     required this.userStats,
     required this.leaderboard,
     required this.friends,
+    required this.nameReport,
+    required this.notifications,
+    required this.notificationRegistration,
     this.database,
     this.content,
     this.clock,
@@ -65,6 +71,9 @@ final class BootstrapServices {
   final UserStatsApi userStats;
   final LeaderboardApi leaderboard;
   final FriendsApi friends;
+  final NameReportApi nameReport;
+  final NotificationService notifications;
+  final NotificationRegistrationApi notificationRegistration;
 
   /// Whether there is a network right now (Ch10 / P16). The plugin-backed
   /// binding when the platform channel answered, the assume-online fallback
@@ -298,6 +307,11 @@ Future<BootstrapServices> initializeServices(
     userStats: services?.userStats ?? const NoopUserStatsApi(),
     leaderboard: services?.leaderboard ?? const NoopLeaderboardApi(),
     friends: services?.friends ?? const NoopFriendsApi(),
+    nameReport: services?.nameReport ?? const NoopNameReportApi(),
+    notifications: services?.notifications ?? const NoopNotificationService(),
+    notificationRegistration:
+        services?.notificationRegistration ??
+        const NoopNotificationRegistrationApi(),
     database: database,
     content: content,
     clock: clock,
@@ -343,6 +357,13 @@ Future<void> bootstrap(
             userStatsApiProvider.overrideWithValue(services.userStats),
             leaderboardApiProvider.overrideWithValue(services.leaderboard),
             friendsApiProvider.overrideWithValue(services.friends),
+            nameReportApiProvider.overrideWithValue(services.nameReport),
+            notificationServiceProvider.overrideWithValue(
+              services.notifications,
+            ),
+            notificationRegistrationApiProvider.overrideWithValue(
+              services.notificationRegistration,
+            ),
             // Each of the four below is absent only if its step threw. The
             // matching provider then falls back to its own default — see each
             // one's doc for what that means; none of them is fatal.

@@ -44,6 +44,12 @@ export const COLLECTIONS = {
   friends: 'friends',
   /** `inviteCodes/{code}` — the code -> owner uid map, server-only (P17). */
   inviteCodes: 'inviteCodes',
+  /**
+   * `nameReports/{autoId}` — one doc per report, client-CREATE-only (post-P17
+   * moderation). Never read back by a client; `onNameReportCreated` folds
+   * each one into `users/{uid}.moderation.nameReporters`.
+   */
+  nameReports: 'nameReports',
 } as const;
 
 /** The three language codes, matching `Language.code`. */
@@ -146,6 +152,19 @@ export const LIMITS = {
 
   /** A player cannot exceed this many accepted friends. */
   maxFriends: 200,
+
+  /**
+   * Distinct reporters needed before a `displayName` is blanked server-side
+   * (AR-4 / T12).
+   *
+   * DISTINCT, never raw report count — `arrayUnion` on the reporter's own uid
+   * is what makes one player mashing "report" unable to blank a name alone.
+   * Three independent players agreeing is a small, deliberately low bar: the
+   * cost of a false positive here is a placeholder name, not a lost score or
+   * a lost level, so this leans toward acting rather than toward certainty —
+   * see `nameReports.ts`'s own header.
+   */
+  nameReportThreshold: 3,
 } as const;
 
 /**

@@ -382,6 +382,16 @@
   "@leaderboardRankUnknown": {
     "description": "Shown in the pinned row when the player has no computed rank on this board yet — no score, or the periodic rank job has not reached it."
   },
+  "reportNameAction": "Report name",
+  "@reportNameAction": {
+    "description": "Icon button on a leaderboard row, hidden on the player's own entry."
+  },
+  "reportNameConfirmTitle": "Report this name?",
+  "reportNameConfirmMessage": "We'll look into it if enough players report the same name.",
+  "reportNameConfirmAction": "Report",
+  "reportNameCancelAction": "Cancel",
+  "reportNameSubmittedMessage": "Thanks — your report was sent.",
+  "reportNameFailedMessage": "Couldn't send your report — try again.",
   "friendsEmpty": "No friends yet — share your code to add one",
   "friendsInviteCodeLabel": "Your invite code",
   "friendsShareButton": "Share",

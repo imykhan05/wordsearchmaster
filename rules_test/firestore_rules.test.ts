@@ -47,6 +47,7 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
+  addDoc,
   collection,
   deleteDoc,
   deleteField,
@@ -54,6 +55,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   updateDoc,
   where,
@@ -382,6 +384,75 @@ describe('users/{uid} · displayName length', () => {
     await assertFails(
       updateDoc(doc(asAlice(), 'users', ALICE), {
         photoUrl: `https://example.test/${'x'.repeat(600)}`,
+      }),
+    );
+  });
+});
+
+// ===========================================================================
+// /users/{uid} — fcmToken and language (post-P17 re-engagement notifications)
+// ===========================================================================
+
+describe('users/{uid} · fcmToken and language', () => {
+  beforeEach(() => seedUser());
+
+  it('ALLOW: the owner registers an fcmToken', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asAlice(), 'users', ALICE), { fcmToken: 'a-real-looking-token' }),
+    );
+  });
+
+  it('ALLOW: the owner sets their language preference', async () => {
+    await assertSucceeds(updateDoc(doc(asAlice(), 'users', ALICE), { language: 'ur' }));
+  });
+
+  it('ALLOW: both together, the shape the registration write actually sends', async () => {
+    await assertSucceeds(
+      updateDoc(doc(asAlice(), 'users', ALICE), {
+        fcmToken: 'a-real-looking-token',
+        language: 'hi',
+      }),
+    );
+  });
+
+  it('ALLOW: clearing fcmToken to null', async () => {
+    await assertSucceeds(updateDoc(doc(asAlice(), 'users', ALICE), { fcmToken: null }));
+  });
+
+  it('DENY: a language outside the three real ones', async () => {
+    await assertFails(updateDoc(doc(asAlice(), 'users', ALICE), { language: 'fr' }));
+  });
+
+  it('DENY: an absurdly long fcmToken', async () => {
+    await assertFails(
+      updateDoc(doc(asAlice(), 'users', ALICE), { fcmToken: 'x'.repeat(5000) }),
+    );
+  });
+
+  it('DENY: another player registers a token on Ayesha\'s document', async () => {
+    await assertFails(
+      updateDoc(doc(asMallory(), 'users', ALICE), { fcmToken: 'stolen' }),
+    );
+  });
+
+  it('DENY: setting fcmToken alongside a server-authored field', async () => {
+    await assertFails(
+      updateDoc(doc(asAlice(), 'users', ALICE), {
+        fcmToken: 'a-real-looking-token',
+        suspiciousCount: 7,
+      }),
+    );
+  });
+
+  it('ALLOW: registering a token on CREATE, before any level has ever synced', async () => {
+    // A player can consent to notifications before their first submission
+    // creates `users/{uid}` any other way — the registration write must not
+    // depend on a score having landed first.
+    await testEnv.clearFirestore();
+    await assertSucceeds(
+      setDoc(doc(asAlice(), 'users', ALICE), {
+        fcmToken: 'a-real-looking-token',
+        language: 'en',
       }),
     );
   });
@@ -829,6 +900,132 @@ describe('inviteCodes', () => {
     await asServer(async (db) => {
       const snapshot = await getDoc(doc(db, 'inviteCodes', 'ABCD1234'));
       expect(snapshot.data()?.['uid']).toBe(ALICE);
+    });
+  });
+});
+
+// ===========================================================================
+// nameReports/{reportId} — client CREATE only, invisible to every reader
+// (AR-4 / T12, post-P17)
+// ===========================================================================
+
+describe('nameReports · create', () => {
+  it('ALLOW: a signed-in player reports a name they saw on a leaderboard', async () => {
+    await assertSucceeds(
+      addDoc(collection(asAlice(), 'nameReports'), {
+        reportedUid: MALLORY,
+        reporterUid: ALICE,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('DENY: an unauthenticated caller reports a name', async () => {
+    await assertFails(
+      addDoc(collection(asStranger(), 'nameReports'), {
+        reportedUid: MALLORY,
+        reporterUid: 'nobody',
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it("DENY: spoofing reporterUid as someone else's uid", async () => {
+    // Without this, one account could manufacture several "distinct"
+    // reports against the same name by lying about who is reporting —
+    // exactly the check that makes `crossesReportThreshold` mean anything.
+    await assertFails(
+      addDoc(collection(asAlice(), 'nameReports'), {
+        reportedUid: MALLORY,
+        reporterUid: 'someone-else',
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('DENY: reporting yourself', async () => {
+    await assertFails(
+      addDoc(collection(asAlice(), 'nameReports'), {
+        reportedUid: ALICE,
+        reporterUid: ALICE,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('DENY: a client-supplied timestamp instead of the server one', async () => {
+    // `createdAt == request.time` only holds for `serverTimestamp()`; a
+    // literal number is the client asserting its own clock, which is exactly
+    // what this codebase never trusts (`validation.ts`'s timing checks make
+    // the identical call for a submission's `completedAt`).
+    await assertFails(
+      addDoc(collection(asAlice(), 'nameReports'), {
+        reportedUid: MALLORY,
+        reporterUid: ALICE,
+        createdAt: 1_756_600_000_000,
+      }),
+    );
+  });
+
+  it('DENY: a report missing reportedUid', async () => {
+    await assertFails(
+      addDoc(collection(asAlice(), 'nameReports'), {
+        reporterUid: ALICE,
+        createdAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('DENY: a report carrying an extra field', async () => {
+    await assertFails(
+      addDoc(collection(asAlice(), 'nameReports'), {
+        reportedUid: MALLORY,
+        reporterUid: ALICE,
+        createdAt: serverTimestamp(),
+        reason: 'offensive',
+      }),
+    );
+  });
+});
+
+describe('nameReports · reading and writing back', () => {
+  beforeEach(async () => {
+    await asServer((db) =>
+      setDoc(doc(db, 'nameReports', 'r1'), {
+        reportedUid: MALLORY,
+        reporterUid: ALICE,
+        createdAt: 1_756_600_000_000,
+      }),
+    );
+  });
+
+  it('DENY: the reporter reads their own report back', async () => {
+    // No feedback beyond "thanks" is the point — see `nameReports.ts`'s
+    // header. A reporter who could read reports back would learn how close a
+    // name is to being blanked.
+    await assertFails(getDoc(doc(asAlice(), 'nameReports', 'r1')));
+  });
+
+  it('DENY: any client lists the report collection', async () => {
+    await assertFails(getDocs(collection(asAlice(), 'nameReports')));
+  });
+
+  it('DENY: the reporter edits their own report', async () => {
+    await assertFails(
+      updateDoc(doc(asAlice(), 'nameReports', 'r1'), { reportedUid: ALICE }),
+    );
+  });
+
+  it('DENY: the reporter deletes their own report', async () => {
+    await assertFails(deleteDoc(doc(asAlice(), 'nameReports', 'r1')));
+  });
+
+  it('ALLOW: the server path onNameReportCreated uses still works', async () => {
+    // The allow half: `applyNameReport` (Admin SDK) really can read the
+    // report it was triggered by.
+    await asServer(async (db) => {
+      const snapshot = await getDoc(doc(db, 'nameReports', 'r1'));
+      expect(snapshot.data()?.['reportedUid']).toBe(MALLORY);
     });
   });
 });

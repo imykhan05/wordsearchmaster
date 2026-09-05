@@ -47,7 +47,7 @@ Three things shape every row below.
 | T9 | **Server-authored fields edited** on the player's own user document | Update rule restricted to a three-key diff set; create rule restricted to the same keys | `firestore.rules` | **Implemented** — see AR-8 for the exact guarantee |
 | T10 | **Enumerating other players** — listing `/users` for names and photos | `allow list: if false` on `/users`; `get` is owner-only | `firestore.rules` | **Implemented** |
 | T11 | **Leaderboard pollution** — forged entries, inflated totals | Entries are written only by the Admin SDK; totals move by the improvement over the previous best, so replays cannot pump a board; flagged scores never reach a board | `functions/src/updateLeaderboards.ts` | **Implemented** |
-| T12 | **Abusive or oversized display names** published to every player | 24-character cap and a string type check, on create and update alike | `firestore.rules` | **Partial** — see AR-4 |
+| T12 | **Abusive or oversized display names** published to every player | 24-character cap and a string type check on every write; a report action (`nameReports/{reportId}`, client CREATE-only) blanks a name server-side once 3 DISTINCT players report it | `firestore.rules`, `functions/src/nameReports.ts` | **Partial** — see AR-4 |
 | T13 | **Rewarded-ad fraud** — client grants itself coins | Coins are minted only by an endpoint the client cannot invoke: HMAC-SHA256 over the callback parameters with `timingSafeEqual`, a 15-minute freshness window, idempotency per `event_id`, and a hard ceiling per grant | `functions/src/grantRewardedReward.ts` | **Implemented** — see AR-5 |
 | T14 | **Calls from outside the app** — a script hitting the callables directly | `enforceAppCheck: true` on every callable; Play Integrity in production, debug provider on dev/stg | `functions/src/index.ts`, `lib/services/app_check/app_check_gateway.dart` | **Partial** — see AR-6 |
 | T15 | **Submission flood** against the backend | Fixed-window rate limit, 240/hour/uid, sized for an offline backlog drain | `functions/src/config.ts` | **Implemented** |
@@ -114,19 +114,37 @@ sync.
 the day they invented until real time catches up, and their streak breaks across
 the gap. The submission itself is still adjudicated server-side.
 
-### AR-4 — Display names are length-checked, not moderated
+### AR-4 — Display names are length-checked and reportable, not moderated
 
-A 24-character cap and a string type check. No profanity filter, no
-homoglyph normalisation, no reporting flow — so a player can put an offensive
-name on a public leaderboard until someone notices.
+A 24-character cap and a string type check on every write, plus (post-P17) a
+report action: any leaderboard row can be reported, and `onNameReportCreated`
+blanks the reported account's `displayName` the moment 3 DISTINCT players
+have reported it (`nameReportThreshold` in `functions/src/config.ts`). Still
+no profanity filter, no homoglyph normalisation, and nothing stops a blanked
+player immediately setting a new name — including the same one.
 
-**Why this is acceptable *for now*:** it is a launch-scale problem, and a bad
-filter is worse than none (they reject real names in Urdu and Hindi far more
-often than they catch abuse in either).
+**Why the filter gap is acceptable *for now*:** it is a launch-scale problem,
+and a bad filter is worse than none (they reject real names in Urdu and Hindi
+far more often than they catch abuse in either).
 
-**What is still owed before a public leaderboard ships:** a report action on a
-leaderboard row and a moderation queue that can blank a `displayName`
-server-side. Tracked here, not implemented.
+**Why the threshold is a count of DISTINCT reporters, not raw reports:** a
+raw count would make the report button itself a griefing tool — one hostile
+account could blank anyone's name on demand. `FieldValue.arrayUnion` on the
+reporter's own uid makes a repeat report from the same account a no-op toward
+the threshold, so blanking a name genuinely needs several different players
+to agree it is a problem.
+
+**Why the reporter gets no feedback beyond "thanks":** the same reasoning
+Ch08 gives for never telling a suspected cheater which check caught them — a
+report count, or a "your report is under review", would tell an abusive
+player exactly how close their name is to being blanked, and the collection
+that would answer that (`nameReports/`) is unreadable by any client,
+including the reporter, for the same reason `moderation/` is.
+
+**What is still owed before a public leaderboard ships:** a real moderation
+queue (a human reviewing `moderation/{uid}/flags` entries of kind
+`name_report`) and something to stop a blanked name being immediately
+re-set. Both tracked here, neither implemented.
 
 ### AR-5 — The MAX callback signature scheme is unverified against the real dashboard
 
