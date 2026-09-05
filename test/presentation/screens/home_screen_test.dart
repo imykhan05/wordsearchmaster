@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
+import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/progression/streak.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/services/notifications/notification_service.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 import '../../support/fake_meta.dart';
+import '../../support/local_db.dart';
 
 /// Ch02/P12: "Login is offered only after level 8, framed as 'save your
 /// progress', and is dismissible."
@@ -22,10 +24,23 @@ void main() {
     int streak = 0,
     NotificationService? notifications,
   }) async {
+    // A real (in-memory) database, built OUTSIDE the pump before the fake
+    // clock is in play — most tests in this file never touch it, since
+    // `fakeMetaOverrides` bypasses every P11 repository Home itself reads.
+    // The leaderboard-button test below is the exception: navigating into
+    // `LeaderboardScreen` reaches `cachedLeaderboardProvider` ->
+    // `LeaderboardCache`, which needs a real `appDatabaseProvider` — the
+    // default `drift_flutter` connection never resolves under
+    // `flutter_test`'s fake async, which otherwise hangs `pumpAndSettle`
+    // exactly the way `ContentRepository`'s `rootBundle` reads do.
+    final db = await openMemoryDatabase();
+    addTearDown(db.database.close);
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appConfigProvider.overrideWithValue(AppConfig.dev()),
+          appDatabaseProvider.overrideWithValue(db.database),
           if (settings != null)
             uiSettingsStoreProvider.overrideWithValue(settings),
           if (notifications != null)
@@ -62,6 +77,21 @@ void main() {
 
       expect(find.text(l10n.navSettings), findsWidgets);
       expect(find.byType(SwitchListTile), findsNWidgets(3));
+    },
+  );
+
+  testWidgets(
+    'the leaderboard button on Home is the only way to reach LeaderboardRoute, and it works',
+    (tester) async {
+      // Same bug, same shape as the settings-icon regression above:
+      // `LeaderboardRoute` rendered fine for any test driving the router
+      // directly, but nothing in the live app ever navigated there.
+      final l10n = await pumpHome(tester);
+
+      await tester.tap(find.text(l10n.navLeaderboard));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.navLeaderboard), findsWidgets);
     },
   );
 

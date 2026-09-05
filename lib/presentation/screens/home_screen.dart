@@ -91,6 +91,19 @@ class HomeScreen extends ConsumerWidget {
                 child: Text(l10n.navDaily),
               ),
               const SizedBox(height: AppTokens.space12),
+              // Same bug class as the Settings gear icon above: `LeaderboardRoute`
+              // rendered fine and every route-level test could reach it by
+              // driving the router directly, but nothing in the live app ever
+              // navigated there.
+              OutlinedButton(
+                onPressed: () {
+                  ref.read(audioServiceProvider).playButtonTap();
+                  ref.read(hapticsServiceProvider).buttonTap();
+                  context.go(const LeaderboardRoute().location);
+                },
+                child: Text(l10n.navLeaderboard),
+              ),
+              const SizedBox(height: AppTokens.space12),
               TextButton(
                 onPressed: () => context.go(const ProfileRoute().location),
                 child: Text(l10n.collectionsTitle),
