@@ -12,6 +12,7 @@ import 'package:word_search_master/domain/progression/dda.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/game_debug_panel.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
+import 'package:word_search_master/presentation/meta/journey_providers.dart';
 import 'package:word_search_master/presentation/screens/game_screen.dart';
 
 import '../../support/fake_content.dart';
@@ -45,6 +46,9 @@ void main() {
           appConfigProvider.overrideWithValue(config ?? AppConfig.dev()),
           appDatabaseProvider.overrideWithValue(testDb.database),
           contentRepositoryProvider.overrideWith((ref) => content),
+          // Settled, not the real live query — see game_screen_test.dart's
+          // identical override for why.
+          coinBalanceProvider.overrideWith((ref) => Stream.value(1000)),
         ],
         child: MaterialApp(
           theme: AppTheme.dark(),

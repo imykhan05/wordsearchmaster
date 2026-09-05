@@ -14,6 +14,7 @@ import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/grid/selection_resolver.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
+import 'package:word_search_master/presentation/meta/journey_providers.dart';
 import 'package:word_search_master/presentation/game/level_complete_card.dart';
 import 'package:word_search_master/presentation/screens/game_screen.dart';
 import 'package:word_search_master/services/audio/audio_service.dart';
@@ -114,6 +115,12 @@ void main() {
           appConfigProvider.overrideWithValue(AppConfig.prod()),
           appDatabaseProvider.overrideWithValue(testDb.database),
           contentRepositoryProvider.overrideWith((ref) => content),
+          // The hint button now watches this to decide whether a hint is
+          // affordable (previously it ignored the balance entirely) — a
+          // settled Stream.value avoids opening a live query this file's
+          // real in-memory database would otherwise have to keep serving,
+          // the same reason `fake_meta.dart`'s route-level tests do this.
+          coinBalanceProvider.overrideWith((ref) => Stream.value(1000)),
           if (audioService != null)
             audioServiceProvider.overrideWithValue(audioService),
           if (hapticsService != null)

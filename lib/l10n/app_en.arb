@@ -94,6 +94,14 @@
   "@musicLabel": {
     "description": "Label next to the background-music on/off switch in the pause sheet. A separate switch from Sound."
   },
+  "hapticsLabel": "Haptics",
+  "@hapticsLabel": {
+    "description": "Label next to the haptics on/off switch on the settings screen — vibration feedback on the grid (Ch03)."
+  },
+  "settingsAudioSectionTitle": "Sound & haptics",
+  "@settingsAudioSectionTitle": {
+    "description": "Heading over the sound/music/haptics toggles on the settings screen."
+  },
   "streakLabel": "Day streak",
   "@streakLabel": {
     "description": "Label under the streak counter on the home screen — days in a row with at least one completed level."

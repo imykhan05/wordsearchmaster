@@ -9,6 +9,7 @@ import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/domain/text/script_normalizer.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
+import 'package:word_search_master/presentation/meta/journey_providers.dart';
 import 'package:word_search_master/presentation/screens/game_screen.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
@@ -32,6 +33,9 @@ void main() {
           appDatabaseProvider.overrideWithValue(testDb.database),
           contentRepositoryProvider.overrideWith((ref) => content),
           uiSettingsStoreProvider.overrideWithValue(settings),
+          // Settled, not the real live query — see game_screen_test.dart's
+          // identical override for why.
+          coinBalanceProvider.overrideWith((ref) => Stream.value(1000)),
         ],
         child: MaterialApp(
           theme: AppTheme.dark(),

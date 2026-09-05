@@ -32,6 +32,7 @@ import '../game/level_complete_card.dart';
 import '../game/particles.dart';
 import '../game/pause_sheet.dart';
 import '../meta/chest_open.dart';
+import '../meta/journey_providers.dart';
 import '../widgets/rolling_counter.dart';
 import '../widgets/system_back_handler.dart';
 
@@ -615,23 +616,37 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   }
 }
 
-class _HintButton extends StatelessWidget {
+/// Ties the button's enabled state to the coin balance rather than leaving a
+/// tappable-but-silent button when `tryBuyHint` would refuse the spend —
+/// `notEnoughCoins`/`hintCost` were already authored in the ARB files for
+/// exactly this and had never been wired to anything. No dialog either way
+/// (CLAUDE.md → never a user-visible error for an economy outcome): a
+/// disabled icon plus its tooltip is the same "balance is the explanation"
+/// idiom, just actually visible instead of a tap that does nothing.
+class _HintButton extends ConsumerWidget {
   const _HintButton({required this.state, required this.onPressed});
 
   final GameState state;
   final Future<void> Function() onPressed;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    final hintCost = ref.watch(coinEconomyProvider).hintCostCoins;
+    final balance = ref.watch(coinBalanceProvider).value ?? 0;
+    final canAfford = balance >= hintCost;
     final canHint =
-        state.phase == GamePhase.playing && state.remainingWords.isNotEmpty;
+        state.phase == GamePhase.playing &&
+        state.remainingWords.isNotEmpty &&
+        canAfford;
 
     return Badge(
       label: Text('${state.hintsUsed}'),
       isLabelVisible: state.hintsUsed > 0,
       child: IconButton(
-        tooltip: l10n.hintButtonLabel,
+        tooltip:
+            '${l10n.hintButtonLabel} · '
+            '${canAfford ? l10n.hintCost(hintCost) : l10n.notEnoughCoins}',
         onPressed: canHint ? () => unawaited(onPressed()) : null,
         icon: const Icon(Icons.lightbulb_outline),
       ),
