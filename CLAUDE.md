@@ -2058,6 +2058,21 @@ read back correctly for an account outside the top 100).
 - Never use Firestore "test mode" rules — production rules from day one.
 - Never show an interstitial after a failed or abandoned level.
 - Never show any ad before the player's first completed level.
+- Never increase interstitial frequency as the player advances (more levels
+  completed, a higher region, a longer streak). The Ch07 curve is allowed to
+  get harder; how often the player is interrupted is not — competitor review
+  mining (pre-P18) shows escalating ad pressure, not difficulty, is what
+  drives a 1-star review and an uninstall. Any frequency change must be a
+  deliberate, explicit remote-config value read the same way at every level,
+  never a function of progress.
+- Never show an ad (interstitial or rewarded) that failed to load. Fail
+  silently and let the player continue exactly as if no ad had been offered —
+  a blank, frozen or broken ad view is worse than skipping the ad entirely.
+- Never show an interstitial or rewarded ad with no working skip/close
+  control reachable within the network's own minimum skip window, regardless
+  of what the ad network's default template does. A forced-interaction ad
+  (no back, no skip, must watch to completion) is not shipped even if the
+  mediation SDK makes it the path of least resistance.
 - Never block gameplay on a network call.
 - Never put a banner on the game grid screen.
 - Never use `shared_preferences` for game data (coins/progress/scores) — only
