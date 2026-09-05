@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/app_route.dart';
+import '../../app/language/selected_language.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/progression/collections.dart';
 import '../../domain/text/language.dart';
@@ -64,6 +65,20 @@ class _CollectionsGrid extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
+        // The only reachable way to switch language once FTUE has picked one
+        // — see `LanguageScreen`'s own header for the returning-player branch
+        // this tile routes into.
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              AppTokens.space24,
+              AppTokens.space24,
+              AppTokens.space24,
+              0,
+            ),
+            child: _LanguageTile(),
+          ),
+        ),
         // Ch02: Google Sign-In is offered after level 8 (the home banner) AND
         // from the profile screen — this is that second entry point, and the
         // only place a linked player can sign out again.
@@ -71,7 +86,7 @@ class _CollectionsGrid extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               AppTokens.space24,
-              AppTokens.space24,
+              AppTokens.space16,
               AppTokens.space24,
               0,
             ),
@@ -122,6 +137,56 @@ class _CollectionsGrid extends StatelessWidget {
         ),
         const SliverToBoxAdapter(child: SizedBox(height: AppTokens.space48)),
       ],
+    );
+  }
+}
+
+/// Opens `LanguageScreen` for a returning player who wants to switch —
+/// `LanguageScreen` itself tells FTUE and this case apart via
+/// `hasChosenLanguageProvider`, so this tile only has to navigate there.
+class _LanguageTile extends ConsumerWidget {
+  const _LanguageTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
+    final selected = ref.watch(selectedLanguageProvider);
+
+    return MetaCard(
+      child: InkWell(
+        borderRadius: AppTokens.borderRadius16,
+        onTap: () => context.go(const LanguageRoute().location),
+        child: Row(
+          children: [
+            Icon(Icons.language, color: tokens.colors.onSurfaceMuted),
+            const SizedBox(width: AppTokens.space12),
+            Expanded(
+              child: Text(
+                l10n.languageSectionTitle,
+                style: AppTypography.uiTextStyle(
+                  Language.english,
+                  UiRole.body,
+                  color: tokens.colors.onSurface,
+                ),
+              ),
+            ),
+            // The endonym, not a localized name — same rule as the picker
+            // itself (CLAUDE.md → Localization): a player who reads only
+            // Urdu still has to recognise their own language's name.
+            Text(
+              selected.endonym,
+              style: AppTypography.uiTextStyle(
+                selected,
+                UiRole.body,
+                color: tokens.colors.onSurfaceMuted,
+              ),
+            ),
+            const SizedBox(width: AppTokens.space4),
+            Icon(Icons.chevron_right, color: tokens.colors.onSurfaceMuted),
+          ],
+        ),
+      ),
     );
   }
 }

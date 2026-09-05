@@ -214,6 +214,10 @@
   "@saveProgressPromptDismiss": {
     "description": "Tooltip on the save-progress banner's close button."
   },
+  "languageSectionTitle": "Language",
+  "@languageSectionTitle": {
+    "description": "Heading of the language tile on the profile screen, which opens the language picker so a returning player can switch."
+  },
   "accountSectionTitle": "Account",
   "@accountSectionTitle": {
     "description": "Heading of the account card on the profile screen."

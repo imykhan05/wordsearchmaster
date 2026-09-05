@@ -2185,3 +2185,32 @@ and `audioplayers_linux` needs GStreamer runtime plugins it does not have
 (the same gap this file's P09 section already records). The loop's seam is
 proven numerically and the wiring by tests; whether the bed is pleasant is a
 judgement only a device can make.
+
+### Switching language after FTUE
+
+`LanguageScreen` was reachable exactly once — the FTUE — and every card's
+`onTap` went straight into `GameRoute('1')` unconditionally. A player who
+picked a language on first launch had no way back to that screen at all, so
+there was no way to switch languages short of reinstalling the app.
+
+The profile screen's new language tile (above the account card — the two are
+the profile's two identity settings) opens `LanguageScreen` a second way, and
+`LanguageScreen` now tells the two entries apart with the SAME
+`hasChosenLanguageProvider` the router already uses to tell FTUE from a
+returning player: read once at build, never watched, for the identical
+reason `router.dart`'s own copy of that read gives — watching it would flip
+the screen's own back arrow on mid-tap, the moment `select()` writes the new
+choice.
+
+- **First launch**: no back arrow (there is nothing valid to go back to yet),
+  and picking a card still goes straight into level 1 — Ch02's FTUE is
+  unchanged.
+- **Reached from Profile**: a back arrow appears, wrapped in the same
+  `SystemBackHandler` every other `.go()`-reached screen already uses (the
+  screen has replaced Profile in the stack, so system back needs an explicit
+  target too), and picking a card returns to Home instead of a level — a
+  returning player switching languages wants to see their new language's
+  map, not be dropped into a fresh level 1 as though this were day one.
+  Nothing about the switch touches `level_progress`: that table is keyed by
+  `(language, level)` already, so the OTHER language's progress was always
+  sitting there untouched, just unreachable.

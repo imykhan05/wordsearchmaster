@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:word_search_master/app/app.dart';
+import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
+import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 import '../../support/fake_content.dart';
 import '../../support/fake_meta.dart';
@@ -35,6 +37,59 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  /// A returning player, reaching `/language` a second way (post-P17): the
+  /// profile screen's language tile. `hasChosenLanguageProvider` is what
+  /// tells this apart from FTUE.
+  Future<void> pumpReturningPlayerAtLanguageScreen(WidgetTester tester) async {
+    final content = await buildTestContentRepository();
+    final testDb = await openMemoryDatabase();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appConfigProvider.overrideWithValue(AppConfig.dev()),
+          appDatabaseProvider.overrideWithValue(testDb.database),
+          contentRepositoryProvider.overrideWith((ref) => content),
+          uiSettingsStoreProvider.overrideWithValue(
+            InMemoryUiSettingsStore(selectedLanguage: Language.english),
+          ),
+          ...fakeMetaOverrides(),
+        ],
+        child: const WordSearchMasterApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(Navigator).first);
+    GoRouter.of(context).go(const LanguageRoute().location);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a first-time player sees no back arrow on the picker', (
+    tester,
+  ) async {
+    await pumpLanguageScreen(tester);
+    expect(find.byType(BackButton), findsNothing);
+  });
+
+  testWidgets(
+    'a returning player sees a back arrow, and picking a language returns '
+    'to Home rather than dropping into a level',
+    (tester) async {
+      await pumpReturningPlayerAtLanguageScreen(tester);
+      expect(find.byType(BackButton), findsOneWidget);
+
+      await tester.tap(find.text(Language.hindi.endonym));
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.byType(Navigator).first);
+      expect(
+        GoRouter.of(context).routeInformationProvider.value.uri.path,
+        '/home',
+      );
+      expect(find.byType(GameGrid), findsNothing);
+    },
+  );
 
   testWidgets('each card shows a sample of that language\'s own words', (
     tester,
