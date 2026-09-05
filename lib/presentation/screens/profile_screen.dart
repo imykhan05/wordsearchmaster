@@ -3,14 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/app_route.dart';
-import '../../app/language/selected_language.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/progression/collections.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../account/account_card.dart';
+import '../meta/category_labels.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
+import '../widgets/language_tile.dart';
 import '../widgets/system_back_handler.dart';
 
 /// Profile, which for P11 is the COLLECTIONS grid (Ch02): one slot per word
@@ -76,7 +77,7 @@ class _CollectionsGrid extends StatelessWidget {
               AppTokens.space24,
               0,
             ),
-            child: _LanguageTile(),
+            child: LanguageTile(),
           ),
         ),
         // Ch02: Google Sign-In is offered after level 8 (the home banner) AND
@@ -141,56 +142,6 @@ class _CollectionsGrid extends StatelessWidget {
   }
 }
 
-/// Opens `LanguageScreen` for a returning player who wants to switch —
-/// `LanguageScreen` itself tells FTUE and this case apart via
-/// `hasChosenLanguageProvider`, so this tile only has to navigate there.
-class _LanguageTile extends ConsumerWidget {
-  const _LanguageTile();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
-    final tokens = AppTokens.of(context);
-    final selected = ref.watch(selectedLanguageProvider);
-
-    return MetaCard(
-      child: InkWell(
-        borderRadius: AppTokens.borderRadius16,
-        onTap: () => context.go(const LanguageRoute().location),
-        child: Row(
-          children: [
-            Icon(Icons.language, color: tokens.colors.onSurfaceMuted),
-            const SizedBox(width: AppTokens.space12),
-            Expanded(
-              child: Text(
-                l10n.languageSectionTitle,
-                style: AppTypography.uiTextStyle(
-                  Language.english,
-                  UiRole.body,
-                  color: tokens.colors.onSurface,
-                ),
-              ),
-            ),
-            // The endonym, not a localized name — same rule as the picker
-            // itself (CLAUDE.md → Localization): a player who reads only
-            // Urdu still has to recognise their own language's name.
-            Text(
-              selected.endonym,
-              style: AppTypography.uiTextStyle(
-                selected,
-                UiRole.body,
-                color: tokens.colors.onSurfaceMuted,
-              ),
-            ),
-            const SizedBox(width: AppTokens.space4),
-            Icon(Icons.chevron_right, color: tokens.colors.onSurfaceMuted),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// One collection slot: filled when earned, an outline with a progress ring
 /// when not (Ch02's "filled/empty slots", plus the ring — see
 /// `CategoryBadge.progress` for why a purely binary grid would sit empty for
@@ -248,14 +199,7 @@ class _BadgeSlot extends StatelessWidget {
           ),
           const SizedBox(height: AppTokens.space4),
           Text(
-            // The raw category key ("animals"). NOT localized, deliberately
-            // and temporarily: the twelve categories are content-side labels
-            // (P10 writes them into every `WordEntry`), so localizing them
-            // means twelve more ARB entries per language reviewed by the same
-            // native speaker who still has to review the word packs
-            // themselves. Flagged with them rather than machine-drafted here.
-            // TODO(P17/P21): localized category names, native-reviewed.
-            badge.category,
+            categoryLabel(l10n, badge.category),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.uiTextStyle(

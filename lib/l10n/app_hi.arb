@@ -30,6 +30,8 @@
   "restartButton": "फिर से शुरू करें",
   "soundLabel": "आवाज़",
   "musicLabel": "संगीत",
+  "hapticsLabel": "स्पंदन",
+  "settingsAudioSectionTitle": "ध्वनि और स्पंदन",
   "streakLabel": "दिनों की लड़ी",
   "streakFreezesLabel": "{count, plural, =1{1 फ़्रीज़} other{{count} फ़्रीज़}}",
   "@streakFreezesLabel": {
@@ -67,6 +69,18 @@
     }
   },
   "chestOpenTitle": "संदूक!",
+  "categoryNature": "प्रकृति",
+  "categoryAnimals": "जानवर",
+  "categoryFood": "खाना",
+  "categoryColors": "रंग",
+  "categoryFamily": "परिवार",
+  "categoryBody": "शरीर",
+  "categoryHome": "घर",
+  "categorySchool": "स्कूल",
+  "categorySports": "खेल",
+  "categoryWeather": "मौसम",
+  "categoryProfessions": "पेशे",
+  "categoryNumbers": "संख्याएँ",
   "notEnoughCoins": "सिक्के पर्याप्त नहीं",
   "hintCost": "{cost} सिक्के",
   "@hintCost": {

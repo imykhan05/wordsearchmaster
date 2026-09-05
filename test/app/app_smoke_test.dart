@@ -102,11 +102,11 @@ void main() {
     (tester) async {
       await enterApp(tester, AppConfig.dev());
 
-      // P11 turned home, journey, daily and profile into real screens, so the
-      // stub route-nav row they used to carry is gone — navigate by route
-      // instead of by tapping a button that no longer exists. These two are
-      // the last stubs: P17 builds the leaderboard, P21 the settings screen.
-      for (final route in const [LeaderboardRoute(), SettingsRoute()]) {
+      // P11 turned home, journey, daily and profile into real screens, and
+      // the post-P17 settings screen (sound/music/haptics/language) means
+      // this stub route-nav row is gone from there too — navigate by route
+      // instead of by tapping a button that no longer exists.
+      for (final route in const [LeaderboardRoute()]) {
         await goTo(tester, route);
 
         expect(
@@ -128,6 +128,7 @@ void main() {
       (DailyRoute(), 'Daily Challenge'),
       (ProfileRoute(), 'Profile'),
       (HomeRoute(), 'Home'),
+      (SettingsRoute(), 'Settings'),
     ]) {
       await goTo(tester, route);
       expect(find.text(title), findsWidgets, reason: route.location);

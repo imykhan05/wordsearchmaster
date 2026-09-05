@@ -176,6 +176,54 @@
   "@chestOpenTitle": {
     "description": "Heading on the chest-opening celebration shown every 5th level."
   },
+  "categoryNature": "Nature",
+  "@categoryNature": {
+    "description": "Content-pack category name, shown on a collections badge and in the Collector achievement popup."
+  },
+  "categoryAnimals": "Animals",
+  "@categoryAnimals": {
+    "description": "Content-pack category name."
+  },
+  "categoryFood": "Food",
+  "@categoryFood": {
+    "description": "Content-pack category name."
+  },
+  "categoryColors": "Colors",
+  "@categoryColors": {
+    "description": "Content-pack category name."
+  },
+  "categoryFamily": "Family",
+  "@categoryFamily": {
+    "description": "Content-pack category name."
+  },
+  "categoryBody": "Body",
+  "@categoryBody": {
+    "description": "Content-pack category name."
+  },
+  "categoryHome": "Home",
+  "@categoryHome": {
+    "description": "Content-pack category name."
+  },
+  "categorySchool": "School",
+  "@categorySchool": {
+    "description": "Content-pack category name."
+  },
+  "categorySports": "Sports",
+  "@categorySports": {
+    "description": "Content-pack category name."
+  },
+  "categoryWeather": "Weather",
+  "@categoryWeather": {
+    "description": "Content-pack category name."
+  },
+  "categoryProfessions": "Professions",
+  "@categoryProfessions": {
+    "description": "Content-pack category name."
+  },
+  "categoryNumbers": "Numbers",
+  "@categoryNumbers": {
+    "description": "Content-pack category name."
+  },
   "notEnoughCoins": "Not enough coins",
   "@notEnoughCoins": {
     "description": "Shown on the hint button when the player's balance cannot cover a hint."

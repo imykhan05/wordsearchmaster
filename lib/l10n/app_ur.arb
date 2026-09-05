@@ -30,6 +30,8 @@
   "restartButton": "دوبارہ شروع کریں",
   "soundLabel": "آواز",
   "musicLabel": "موسیقی",
+  "hapticsLabel": "ارتعاش",
+  "settingsAudioSectionTitle": "آواز اور ارتعاش",
   "streakLabel": "دن کی لڑی",
   "streakFreezesLabel": "{count, plural, =1{1 فریز} other{{count} فریز}}",
   "@streakFreezesLabel": {
@@ -67,6 +69,18 @@
     }
   },
   "chestOpenTitle": "صندوق!",
+  "categoryNature": "فطرت",
+  "categoryAnimals": "جانور",
+  "categoryFood": "کھانا",
+  "categoryColors": "رنگ",
+  "categoryFamily": "خاندان",
+  "categoryBody": "جسم",
+  "categoryHome": "گھر",
+  "categorySchool": "اسکول",
+  "categorySports": "کھیل",
+  "categoryWeather": "موسم",
+  "categoryProfessions": "پیشے",
+  "categoryNumbers": "نمبر",
   "notEnoughCoins": "سکے کافی نہیں",
   "hintCost": "{cost} سکے",
   "@hintCost": {

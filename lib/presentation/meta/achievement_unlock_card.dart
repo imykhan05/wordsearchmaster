@@ -6,6 +6,7 @@ import '../../application/achievements_controller.dart';
 import '../../domain/progression/achievements.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import 'category_labels.dart';
 
 /// The unlock popup (P17), shown for exactly one [AchievementUnlock] at a
 /// time by [AchievementPopupOverlay].
@@ -95,10 +96,6 @@ class AchievementUnlockCard extends StatelessWidget {
     );
   }
 
-  /// Collector's category name is deliberately the RAW content key
-  /// ("animals"), not a localized string — the same TODO(P17/P21) the
-  /// collections grid already carries (CLAUDE.md/P11): localizing all 12
-  /// category names is native-speaker review work this prompt does not own.
   static (String, String) _textFor(
     AchievementUnlock unlock,
     AppLocalizations l10n,
@@ -137,7 +134,8 @@ class AchievementUnlockCard extends StatelessWidget {
     },
     CollectorAchievementUnlock(:final category) => (
       l10n.achievementCollectorTitle,
-      '${l10n.achievementCollectorDescription}: $category',
+      '${l10n.achievementCollectorDescription}: '
+          '${categoryLabel(l10n, category)}',
     ),
   };
 }
