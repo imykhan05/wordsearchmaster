@@ -36,11 +36,22 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.navHome),
-        actions: const [
+        actions: [
+          // The only entry point into `SettingsRoute` anywhere in the live
+          // app — every other reference to it was either a test driving the
+          // router directly or `StubScreen`'s dev-only route switcher, which
+          // no route has built since P11/P17 gave every screen a real
+          // builder. Without this icon the screen existed but no player
+          // could ever reach it.
+          IconButton(
+            tooltip: l10n.navSettings,
+            onPressed: () => context.go(const SettingsRoute().location),
+            icon: const Icon(Icons.settings_outlined),
+          ),
           // Ch10's ONE permitted network surface: a small static icon. Never a
           // dialog, never a banner, never a retry button — see
           // `SyncStatusIndicator`'s own header.
-          Padding(
+          const Padding(
             padding: EdgeInsets.only(right: AppTokens.space16),
             child: Center(child: SyncStatusIndicator()),
           ),

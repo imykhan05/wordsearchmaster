@@ -46,6 +46,25 @@ void main() {
     return AppLocalizations.of(context);
   }
 
+  testWidgets(
+    'the app bar settings icon is the only way to reach SettingsRoute, and it works',
+    (tester) async {
+      // Regression test: `SettingsRoute` rendered fine and every route-level
+      // test could reach it by driving the router directly, but nothing in
+      // the live app ever navigated there — `StubScreen`'s dev-only route
+      // switcher is dead code (no route has built a `StubScreen` since P11/
+      // P17 gave every screen its own builder), so a real player had no way
+      // to open Settings at all.
+      final l10n = await pumpHome(tester);
+
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.navSettings), findsWidgets);
+      expect(find.byType(SwitchListTile), findsNWidgets(3));
+    },
+  );
+
   testWidgets('hidden before level 8', (tester) async {
     final l10n = await pumpHome(tester, highestCompletedLevel: 7);
 
