@@ -5,6 +5,7 @@ import 'package:word_search_master/application/progression_controller.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/data/local/outbox_kind.dart';
+import 'package:word_search_master/data/repositories/ad_repository.dart';
 import 'package:word_search_master/data/repositories/coins_repository.dart';
 import 'package:word_search_master/data/repositories/dda_repository.dart';
 import 'package:word_search_master/data/repositories/progress_repository.dart';
@@ -168,6 +169,20 @@ void main() {
       expect(kinds, contains(OutboxKind.levelComplete.name));
       expect(kinds, contains(OutboxKind.coinsDelta.name));
     });
+
+    test('pre-P18: advances the ad-pacing counters — game_screen.dart reads '
+        'these to decide interstitial eligibility, this controller only '
+        'ever writes them', () async {
+      final (container, _) = await harness();
+      final controller = container.read(progressionControllerProvider.notifier);
+
+      await controller.recordCompletion(summary(level: 1));
+      await controller.recordCompletion(summary(level: 2));
+
+      final adRepo = await container.read(adRepositoryProvider.future);
+      expect(await adRepo.totalLevelsCompleted(), 2);
+      expect(await adRepo.levelsSinceLastInterstitial(), 2);
+    });
   });
 
   group('a daily completion', () {
@@ -232,6 +247,21 @@ void main() {
       expect(second.streak.state.current, 1);
       expect(second.streak.state.lastPlayedDay, today);
     });
+
+    test(
+      'pre-P18: a daily completion never advances the ad-pacing counters — '
+      'ad pacing is a journey-only concept (AdRepository\'s own header)',
+      () async {
+        final (container, _) = await harness();
+
+        await container
+            .read(progressionControllerProvider.notifier)
+            .recordCompletion(summary(level: 0, session: DailySession(today)));
+
+        final adRepo = await container.read(adRepositoryProvider.future);
+        expect(await adRepo.totalLevelsCompleted(), 0);
+      },
+    );
   });
 
   group('the streak advances across days', () {

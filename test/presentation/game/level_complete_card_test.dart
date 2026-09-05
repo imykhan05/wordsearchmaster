@@ -24,7 +24,7 @@ void main() {
     events: [],
   );
 
-  Widget wrap({required bool reduceMotion}) {
+  Widget wrap({required bool reduceMotion, VoidCallback? onWatchAd}) {
     // A `ProviderScope` since P16: the card's rewarded-ad action is now a
     // `RewardedActionButton`, which reads connectivity so it can disable IN
     // PLACE rather than disappear (Ch10). The card is part of a Riverpod app,
@@ -46,6 +46,7 @@ void main() {
               summary: summary,
               coinsEarned: 20,
               onContinue: () {},
+              onWatchAd: onWatchAd,
             ),
           ),
         ),
@@ -99,5 +100,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
 
     expect(find.byIcon(Icons.monetization_on_rounded), findsOneWidget);
+  });
+
+  group('pre-P18: onWatchAd', () {
+    testWidgets('null (no rewarded ad available) leaves the button disabled', (
+      tester,
+    ) async {
+      await tester.pumpWidget(wrap(reduceMotion: true));
+      await tester.pump();
+
+      final button = tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+      expect(
+        button.onPressed,
+        isNull,
+        reason:
+            'RewardedActionButton.onPressed null is its own "not '
+            'available" contract',
+      );
+    });
+
+    testWidgets(
+      'a real callback enables the button, and tapping it calls through',
+      (tester) async {
+        var watched = 0;
+        await tester.pumpWidget(
+          wrap(reduceMotion: true, onWatchAd: () => watched++),
+        );
+        await tester.pump();
+
+        final button = tester.widget<OutlinedButton>(
+          find.byType(OutlinedButton),
+        );
+        expect(button.onPressed, isNotNull);
+
+        await tester.tap(find.byType(OutlinedButton));
+        await tester.pump();
+
+        expect(watched, 1);
+      },
+    );
   });
 }

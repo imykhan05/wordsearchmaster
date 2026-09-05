@@ -12,14 +12,17 @@ import '../../app/theme/theme.dart';
 import '../../application/achievements_controller.dart';
 import '../../application/game_controller.dart';
 import '../../application/progression_controller.dart';
+import '../../data/repositories/ad_repository.dart';
 import '../../data/repositories/dda_repository.dart';
 import '../../domain/grid/selection_resolver.dart';
 import '../../domain/progression/dda.dart';
 import '../../domain/text/language.dart';
 import '../../domain/text/script_normalizer.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/ads/ad_gateway.dart';
 import '../../services/analytics/analytics_service.dart';
 import '../../services/audio/audio_service.dart';
+import '../../services/auth/auth_service.dart';
 import '../../services/haptics/haptics_service.dart';
 import '../../services/remote_config/remote_config.dart';
 import '../../services/settings/ui_settings_store.dart';
@@ -469,6 +472,65 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     // background/economy outcome); the balance itself is the explanation.
   }
 
+  /// The level-complete card's "Continue" action. Pre-P18: offers an
+  /// interstitial FIRST, before the Zeigarnik swap becomes visible — so the
+  /// grid screen itself is never the thing an ad appears on top of (CLAUDE.md
+  /// bans a banner there outright; this keeps an interstitial from reading
+  /// like one by never overlapping it with the grid either). Only ever
+  /// consulted for a JOURNEY session: this is the "just finished a level"
+  /// seam, which a Daily attempt never has (there is no Zeigarnik swap for
+  /// it — `GameController`'s own decision).
+  ///
+  /// `ref` is read entirely before the only `await` in this chain, the same
+  /// discipline `ProgressionController`'s header requires of itself: the
+  /// player can navigate away WHILE a preloaded interstitial is showing, and
+  /// re-reading `ref` after that gap would race this widget's own disposal.
+  Future<void> _continueFromLevelComplete() async {
+    _tapFeedback();
+    if (_session is JourneySession) {
+      final adRepoFuture = ref.read(adRepositoryProvider.future);
+      final policy = ref.read(adFrequencyPolicyProvider);
+      final gateway = ref.read(adGatewayProvider);
+
+      final adRepo = await adRepoFuture;
+      if (await adRepo.canShowInterstitial(policy)) {
+        final shown = await gateway.showInterstitial();
+        if (shown) await adRepo.recordInterstitialShown();
+      }
+    }
+
+    if (!mounted) return;
+    _reward.value = null;
+    _chestDismissed.value = false;
+    ref.read(gameControllerProvider(_session).notifier).dismissLevelComplete();
+    _resetIdleClock();
+  }
+
+  /// The level-complete card's rewarded "double reward" button. Returns
+  /// whether the ad experience finished — never whether coins were
+  /// credited, since crediting is server-authoritative
+  /// (`grantRewardedReward`'s AppLovin S2S postback, P14): the client
+  /// cannot mint its own coins, so the only honest thing to do here is
+  /// reassure the player their reward is on its way, never show a doubled
+  /// figure this widget has no authority to promise.
+  ///
+  /// Same before-the-only-await `ref` discipline as
+  /// [_continueFromLevelComplete] — the player can back out mid-ad.
+  Future<void> _watchRewardedAd() async {
+    final uid = ref.read(currentAccountProvider).value?.uid;
+    if (uid == null) return;
+    final gateway = ref.read(adGatewayProvider);
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+
+    final outcome = await gateway.showRewarded(uid: uid);
+
+    if (!mounted || outcome != RewardedAdOutcome.earned) return;
+    messenger?.showSnackBar(
+      SnackBar(content: Text(l10n.rewardedAdEarnedMessage)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final asyncState = ref.watch(gameControllerProvider(_session));
@@ -543,13 +605,10 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
               onDebugForceDda: _debugForceDda,
               onSelectionReleased: _onSelectionReleased,
               onLevelComplete: () {
-                _tapFeedback();
-                _reward.value = null;
-                _chestDismissed.value = false;
-                ref
-                    .read(gameControllerProvider(_session).notifier)
-                    .dismissLevelComplete();
-                _resetIdleClock();
+                unawaited(_continueFromLevelComplete());
+              },
+              onWatchRewardedAd: () {
+                unawaited(_watchRewardedAd());
               },
             ),
           ),
@@ -677,6 +736,7 @@ class _GameContent extends ConsumerWidget {
     required this.onDebugForceDda,
     required this.onSelectionReleased,
     required this.onLevelComplete,
+    required this.onWatchRewardedAd,
   });
 
   final GameState state;
@@ -714,10 +774,24 @@ class _GameContent extends ConsumerWidget {
   final bool Function(SelectionState, GridGeometry) onSelectionReleased;
   final VoidCallback onLevelComplete;
 
+  /// Pre-P18: the level-complete card's rewarded "double reward" button
+  /// handler. Always a real callback from the parent — WHETHER it reaches
+  /// `LevelCompleteCard` at all is decided right here in [build], off
+  /// [AdGateway.isRewardedReady], because a caller passing a callback
+  /// through unconditionally is exactly how a button ends up looking
+  /// tappable while doing nothing (`RewardedActionButton`'s own contract:
+  /// null means "not available", not "available but a no-op").
+  final VoidCallback onWatchRewardedAd;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
     final tokens = AppTokens.of(context);
+    // Gates the rewarded button's enabled state — see [onWatchRewardedAd]'s
+    // own doc for why this decision belongs here rather than upstream.
+    final rewardedAdAvailable =
+        ref.watch(adGatewayProvider).isRewardedReady &&
+        ref.watch(currentAccountProvider).value?.uid != null;
 
     return Stack(
       children: [
@@ -839,6 +913,7 @@ class _GameContent extends ConsumerWidget {
                   summary: state.completedSummary!,
                   coinsEarned: reward?.coinsEarned ?? 0,
                   onContinue: onLevelComplete,
+                  onWatchAd: rewardedAdAvailable ? onWatchRewardedAd : null,
                 );
               },
             ),

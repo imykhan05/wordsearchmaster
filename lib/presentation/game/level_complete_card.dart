@@ -25,11 +25,20 @@ class LevelCompleteCard extends StatelessWidget {
     required this.summary,
     required this.onContinue,
     this.coinsEarned = 0,
+    this.onWatchAd,
     super.key,
   });
 
   final LevelCompletionSummary summary;
   final VoidCallback onContinue;
+
+  /// Pre-P18: the rewarded "double reward" action. Null means "not
+  /// available" — no rewarded ad loaded, no MAX account configured yet, or
+  /// the player has no resolvable account — and threads straight through to
+  /// `RewardedActionButton.onPressed`, which already renders the identical
+  /// subtree at the identical size either way (Ch10's "disable in place"
+  /// rule, P16).
+  final VoidCallback? onWatchAd;
 
   /// Coins this completion paid out, INCLUDING any chest — resolved by
   /// `ProgressionController` (P11), not by [summary]. `GameController` freezes
@@ -155,17 +164,19 @@ class LevelCompleteCard extends StatelessWidget {
                           child: Text(l10n.continueButton),
                         ),
                         const SizedBox(height: AppTokens.space24),
-                        // TODO(P18): pass a real `onPressed` once the
-                        // rewarded ad unit is wired.
-                        //
-                        // Already routed through `RewardedActionButton`, which
-                        // owns Ch10's "disable in place" rule: the button
-                        // keeps its exact rectangle whether the player is
-                        // online or not, so a finger already travelling
-                        // towards it never lands on whatever would have
-                        // reflowed into its place.
+                        // `RewardedActionButton` owns Ch10's "disable in
+                        // place" rule: the button keeps its exact rectangle
+                        // whether the player is online or not, so a finger
+                        // already travelling towards it never lands on
+                        // whatever would have reflowed into its place.
+                        // `onWatchAd` is null until a real MAX account is
+                        // configured and a rewarded ad is actually loaded
+                        // (`game_screen.dart` decides that), so this stays
+                        // disabled exactly like the old placeholder until
+                        // then — the wiring is real, the availability is not.
                         RewardedActionButton(
                           label: l10n.doubleRewardPlaceholder,
+                          onPressed: onWatchAd,
                         ),
                         const SizedBox(height: AppTokens.space16),
                         // TODO(P18): MREC (300x250) ad slot.

@@ -74,6 +74,10 @@
   "@doubleRewardPlaceholder": {
     "description": "Disabled placeholder button for the rewarded-ad double-reward action, wired in P18."
   },
+  "rewardedAdEarnedMessage": "Reward on the way!",
+  "@rewardedAdEarnedMessage": {
+    "description": "Snackbar shown after a player watches a rewarded ad to completion. Deliberately does not promise a specific amount or an immediate credit — the actual coins are granted server-side, asynchronously, so this only ever reassures rather than claims a number this screen has no authority to guarantee."
+  },
   "adPlaceholderLabel": "Ad space — coming soon",
   "@adPlaceholderLabel": {
     "description": "Label inside the reserved MREC ad slot on the level-complete card, wired in P18."

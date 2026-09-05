@@ -8,18 +8,23 @@ import 'package:word_search_master/app/theme/theme.dart';
 import 'package:word_search_master/application/game_controller.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
+import 'package:word_search_master/data/repositories/ad_repository.dart';
 import 'package:word_search_master/domain/grid/cell.dart';
 import 'package:word_search_master/domain/grid/grid_result.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/grid/selection_resolver.dart';
+import 'package:word_search_master/domain/progression/ad_policy.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
 import 'package:word_search_master/presentation/meta/journey_providers.dart';
 import 'package:word_search_master/presentation/game/level_complete_card.dart';
 import 'package:word_search_master/presentation/screens/game_screen.dart';
+import 'package:word_search_master/services/ads/ad_gateway.dart';
 import 'package:word_search_master/services/audio/audio_service.dart';
 import 'package:word_search_master/services/audio/combo_pitch_ladder.dart';
+import 'package:word_search_master/services/auth/auth_service.dart';
 import 'package:word_search_master/services/haptics/haptics_service.dart';
+import 'package:word_search_master/services/remote_config/remote_config.dart';
 
 import '../../support/fake_content.dart';
 import '../../support/local_db.dart';
@@ -77,6 +82,67 @@ final class _RecordingHapticsService implements HapticsService {
   void setEnabled(bool enabled) {}
 }
 
+/// Records every call rather than mocking — pre-P18's `AdGateway` seam.
+final class _FakeAdGateway implements AdGateway {
+  _FakeAdGateway({
+    this.isInterstitialReady = true,
+    this.isRewardedReady = false,
+    this.interstitialResult = true,
+    this.rewardedResult = RewardedAdOutcome.earned,
+  });
+
+  @override
+  final bool isInterstitialReady;
+  @override
+  final bool isRewardedReady;
+
+  /// What [showInterstitial] resolves to, on every call.
+  final bool interstitialResult;
+
+  /// What [showRewarded] resolves to, on every call.
+  final RewardedAdOutcome rewardedResult;
+
+  int interstitialShowCount = 0;
+  final List<String> rewardedUids = [];
+
+  @override
+  Future<bool> showInterstitial() async {
+    interstitialShowCount++;
+    return interstitialResult;
+  }
+
+  @override
+  Future<RewardedAdOutcome> showRewarded({required String uid}) async {
+    rewardedUids.add(uid);
+    return rewardedResult;
+  }
+}
+
+final class _FakeAuthService implements AuthService {
+  const _FakeAuthService(this._account);
+
+  final AuthAccount? _account;
+
+  @override
+  AuthAccount? get currentAccount => _account;
+
+  @override
+  Stream<AuthAccount?> watchAccount() =>
+      _account == null ? const Stream.empty() : Stream.value(_account);
+
+  @override
+  Future<AuthAccount?> ensureSignedIn() async => _account;
+
+  @override
+  Future<LinkOutcome> linkWithGoogle() async => const LinkCancelled();
+
+  @override
+  String? get lastGoogleSignInDiagnostic => null;
+
+  @override
+  Future<AuthAccount?> signOut() async => _account;
+}
+
 /// Covers P07's acceptance criteria directly: 20 levels playable back to
 /// back without a crash, the next level already loaded behind the result
 /// card (Ch02 Zeigarnik), and no `setState` anywhere in the gameplay UI.
@@ -91,6 +157,9 @@ void main() {
     AudioService? audioService,
     HapticsService? hapticsService,
     bool reduceMotion = false,
+    AdGateway? adGateway,
+    AuthService? authService,
+    AdFrequencyPolicy? adFrequencyPolicy,
   }) async {
     // TWO OVERRIDES THAT ARE NOT OPTIONAL SINCE P11:
     //
@@ -125,6 +194,11 @@ void main() {
             audioServiceProvider.overrideWithValue(audioService),
           if (hapticsService != null)
             hapticsServiceProvider.overrideWithValue(hapticsService),
+          if (adGateway != null) adGatewayProvider.overrideWithValue(adGateway),
+          if (authService != null)
+            authServiceProvider.overrideWithValue(authService),
+          if (adFrequencyPolicy != null)
+            adFrequencyPolicyProvider.overrideWithValue(adFrequencyPolicy),
         ],
         child: MediaQuery(
           data: MediaQueryData(disableAnimations: reduceMotion),
@@ -157,6 +231,39 @@ void main() {
       direction: placement.direction,
       cells: placement.cells,
     );
+  }
+
+  /// Finds every word of the CURRENT level (still keyed by `JourneySession(1)`
+  /// — P11's own decision: advancing a level mutates state in place rather
+  /// than remounting the provider) and settles the real async award chain,
+  /// the same `runAsync`/pump pair the 20-levels test above already
+  /// establishes for exactly this reason.
+  Future<void> completeCurrentLevel(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async {
+    final notifier = container.read(
+      gameControllerProvider(JourneySession(1)).notifier,
+    );
+    final state = container
+        .read(gameControllerProvider(JourneySession(1)))
+        .value!;
+    for (final placement in state.grid.placementDetails) {
+      notifier.processSelection(selectionFor(placement));
+    }
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
+  }
+
+  /// Taps the level-complete card's "Continue", then settles the pre-P18
+  /// interstitial check — another real (if fake-gateway-backed) async chain.
+  Future<void> tapContinue(WidgetTester tester) async {
+    final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)));
+    await tester.tap(find.text(l10n.continueButton));
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
   }
 
   testWidgets(
@@ -470,6 +577,170 @@ void main() {
         // running) must not fire it again.
         await tester.pump(const Duration(milliseconds: 500));
         expect(audio.allCalls.where((c) => c == 'levelComplete').length, 1);
+      },
+    );
+  });
+
+  group('pre-P18: ads at the level-complete seam', () {
+    testWidgets(
+      'shows a preloaded interstitial once the pacing policy allows it, '
+      'then still advances to the next level',
+      (tester) async {
+        final gateway = _FakeAdGateway(isInterstitialReady: true);
+        final container = await pumpGameScreen(
+          tester,
+          adGateway: gateway,
+          // Gap of 1: eligible immediately after the very first completion,
+          // so this test does not have to play four levels to prove it.
+          adFrequencyPolicy: const AdFrequencyPolicy(
+            minLevelsBetweenInterstitials: 1,
+          ),
+        );
+
+        await completeCurrentLevel(tester, container);
+        expect(find.byType(LevelCompleteCard), findsOneWidget);
+
+        await tapContinue(tester);
+
+        expect(gateway.interstitialShowCount, 1);
+        expect(
+          find.byType(LevelCompleteCard),
+          findsNothing,
+          reason: 'Continue must still advance the level regardless of ads',
+        );
+        expect(
+          container
+              .read(gameControllerProvider(JourneySession(1)))
+              .value!
+              .level,
+          2,
+        );
+      },
+    );
+
+    testWidgets(
+      'never shows one before the pacing gap is reached — the shipped '
+      'default is a 4-level gap, and only one level has been played',
+      (tester) async {
+        final gateway = _FakeAdGateway(isInterstitialReady: true);
+        final container = await pumpGameScreen(tester, adGateway: gateway);
+
+        await completeCurrentLevel(tester, container);
+        await tapContinue(tester);
+
+        expect(gateway.interstitialShowCount, 0);
+        expect(
+          find.byType(LevelCompleteCard),
+          findsNothing,
+          reason: 'Continue must still work when no ad was eligible',
+        );
+      },
+    );
+
+    testWidgets(
+      'an interstitial that fails to show is never recorded as shown — the '
+      'pacing budget is not spent on an ad nobody saw',
+      (tester) async {
+        final gateway = _FakeAdGateway(
+          isInterstitialReady: true,
+          interstitialResult: false,
+        );
+        final container = await pumpGameScreen(
+          tester,
+          adGateway: gateway,
+          adFrequencyPolicy: const AdFrequencyPolicy(
+            minLevelsBetweenInterstitials: 1,
+          ),
+        );
+
+        await completeCurrentLevel(tester, container);
+        await tapContinue(tester);
+
+        expect(gateway.interstitialShowCount, 1, reason: 'it was offered');
+        final adRepo = await container.read(adRepositoryProvider.future);
+        expect(
+          await adRepo.levelsSinceLastInterstitial(),
+          1,
+          reason:
+              'a failed show must not reset the gap counter, so the very '
+              'next completion is eligible again rather than waiting a '
+              'fresh full gap',
+        );
+      },
+    );
+
+    testWidgets(
+      'the rewarded button stays disabled under the default Noop gateway',
+      (tester) async {
+        final container = await pumpGameScreen(tester);
+
+        await completeCurrentLevel(tester, container);
+
+        final button = tester.widget<OutlinedButton>(
+          find.byType(OutlinedButton),
+        );
+        expect(button.onPressed, isNull);
+      },
+    );
+
+    testWidgets(
+      'a ready rewarded ad with a resolvable account enables the button, '
+      'and tapping it calls showRewarded with that uid',
+      (tester) async {
+        final gateway = _FakeAdGateway(isRewardedReady: true);
+        const account = AuthAccount(uid: 'u1', isAnonymous: true);
+        final container = await pumpGameScreen(
+          tester,
+          adGateway: gateway,
+          authService: const _FakeAuthService(account),
+        );
+
+        await completeCurrentLevel(tester, container);
+
+        final button = tester.widget<OutlinedButton>(
+          find.byType(OutlinedButton),
+        );
+        expect(button.onPressed, isNotNull);
+
+        await tester.tap(find.byType(OutlinedButton));
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+
+        expect(gateway.rewardedUids, ['u1']);
+        final l10n = AppLocalizations.of(
+          tester.element(find.byType(GameScreen)),
+        );
+        expect(find.text(l10n.rewardedAdEarnedMessage), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'closing the ad before it finishes shows no "reward on the way" '
+      'message — coins are never promised for an ad that was not watched',
+      (tester) async {
+        final gateway = _FakeAdGateway(
+          isRewardedReady: true,
+          rewardedResult: RewardedAdOutcome.dismissed,
+        );
+        const account = AuthAccount(uid: 'u1', isAnonymous: true);
+        final container = await pumpGameScreen(
+          tester,
+          adGateway: gateway,
+          authService: const _FakeAuthService(account),
+        );
+
+        await completeCurrentLevel(tester, container);
+        await tester.tap(find.byType(OutlinedButton));
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        await tester.pump();
+
+        expect(gateway.rewardedUids, ['u1']);
+        final l10n = AppLocalizations.of(
+          tester.element(find.byType(GameScreen)),
+        );
+        expect(find.text(l10n.rewardedAdEarnedMessage), findsNothing);
       },
     );
   });

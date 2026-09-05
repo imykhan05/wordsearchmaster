@@ -43,6 +43,7 @@ import 'dart:math';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../data/content/content_repository.dart';
+import '../data/repositories/ad_repository.dart';
 import '../data/repositories/coins_repository.dart';
 import '../data/repositories/collections_repository.dart';
 import '../data/repositories/daily_repository.dart';
@@ -118,6 +119,7 @@ class ProgressionController extends _$ProgressionController {
     );
     final contentFuture = ref.read(contentRepositoryProvider.future);
     final ddaRepoFuture = ref.read(ddaRepositoryProvider.future);
+    final adRepoFuture = ref.read(adRepositoryProvider.future);
     // -------------------------------------------------------------------
 
     final today = await clock.today();
@@ -180,6 +182,15 @@ class ProgressionController extends _$ProgressionController {
         // `domain/progression/dda.dart`'s `DdaAbandonRules` header.
         final ddaRepo = await ddaRepoFuture;
         await ddaRepo.clearAbandon(summary.language, level);
+
+        // Pre-P18: advances the interstitial pacing counters. Journey only
+        // (never Daily) — see `AdRepository`'s own header for why. The
+        // eligibility CHECK and the actual `AdGateway.showInterstitial()`
+        // call live at `game_screen.dart`'s "Continue" seam, not here —
+        // showing an ad is a presentation action, and this controller's own
+        // header is explicit that it owns repository writes only.
+        final adRepo = await adRepoFuture;
+        await adRepo.recordLevelCompleted();
 
         final coins = economy.coinsForLevel(stars: summary.stars);
         // Rolled with a fresh, unseeded Random rather than the level's own
