@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ad_config.dart';
 import 'firebase_options.dart';
 
 /// The three build flavors. Each has its own Firebase project, its own
@@ -22,6 +23,7 @@ final class AppConfig {
     required this.adsTestMode,
     required this.logLevel,
     this.googleServerClientId,
+    this.adUnitIds,
   });
 
   /// Builds the config for [flavor], reading its Firebase credentials from
@@ -35,6 +37,7 @@ final class AppConfig {
     firebaseOptions: FlavorFirebaseOptions.forFlavor(flavor),
     googleServerClientId: FlavorFirebaseOptions.googleServerClientId(flavor),
     adsTestMode: flavor != Flavor.prod,
+    adUnitIds: FlavorAdConfig.forFlavor(flavor),
     logLevel: switch (flavor) {
       Flavor.dev => AppLogLevel.debug,
       Flavor.stg => AppLogLevel.info,
@@ -62,6 +65,14 @@ final class AppConfig {
   /// True on dev/stg. When true, [services/ads] must only ever request MAX
   /// test-mode ad units — never a real one. See CLAUDE.md → Never do.
   final bool adsTestMode;
+
+  /// Null until a MAX account exists for this flavor — see
+  /// `ad_config.dart`'s header for why this is a SEPARATE set of credentials
+  /// per flavor, not one shared set. A null here is what keeps
+  /// `bootstrap.dart`'s ads.init step from ever constructing a
+  /// `MaxAdGateway`, leaving every ad-backed provider on `NoopAdGateway`.
+  final AdUnitIds? adUnitIds;
+
   final AppLogLevel logLevel;
 
   /// Where P14's Cloud Functions live. Pinned because the client must call
@@ -76,6 +87,10 @@ final class AppConfig {
 
   /// Whether this build has real Firebase credentials.
   bool get isFirebaseConfigured => firebaseOptions != null;
+
+  /// Whether this build has real MAX credentials. Mirrors
+  /// [isFirebaseConfigured] — see `ad_config.dart`.
+  bool get isAdsConfigured => adUnitIds != null;
 
   String get flavorName => flavor.name.toUpperCase();
 }

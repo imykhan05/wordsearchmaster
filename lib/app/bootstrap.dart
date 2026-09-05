@@ -15,6 +15,8 @@ import '../data/remote/notification_registration_api.dart';
 import '../data/remote/sync_api.dart';
 import '../data/remote/user_stats_api.dart';
 import '../data/repositories/streak_repository.dart';
+import '../services/ads/ad_gateway.dart';
+import '../services/ads/max_ad_gateway.dart';
 import '../services/analytics/analytics_service.dart';
 import '../services/app_check/app_check_gateway.dart';
 import '../services/audio/audio_service.dart';
@@ -27,6 +29,7 @@ import '../services/notifications/notification_service.dart';
 import '../services/remote_config/remote_config.dart';
 import '../services/settings/ui_settings_store.dart';
 import '../services/time/trusted_clock.dart';
+import 'config/ad_config.dart';
 import 'config/app_config.dart';
 import 'provider_observer.dart';
 
@@ -57,6 +60,7 @@ final class BootstrapServices {
     this.content,
     this.clock,
     this.audio,
+    this.adGateway,
   });
 
   final UiSettingsStore settings;
@@ -101,6 +105,12 @@ final class BootstrapServices {
   final TrustedClock? clock;
   final AudioService? audio;
 
+  /// Pre-P18: null whenever `AppConfig.adUnitIds` is null (no MAX account
+  /// yet for this flavor — the common case today) OR the SDK failed to
+  /// initialize. `NoopAdGateway` stays bound either way, matching every
+  /// other optional service in this class.
+  final AdGateway? adGateway;
+
   /// The one thing that genuinely must have worked for the game to be
   /// playable: local storage and content. Everything else is optional.
   bool get isPlayable => database != null && content != null;
@@ -118,7 +128,7 @@ final class BootstrapServices {
 ///   5. Remote Config fetch (3s timeout, hardcoded defaults as fallback)
 ///   6. Local DB open + migration
 ///   7. Content load
-///   8. Ads init (deferred, never blocks first frame)
+///   8. Ads init (bounded 3s ceiling, never blocks indefinitely)
 ///   9. runApp
 ///
 /// **3 before 4** because App Check attests the requests auth makes. Activate
@@ -141,16 +151,17 @@ final class BootstrapServices {
 /// fully supported mode rather than a degraded one (Drift is the source of
 /// truth — CLAUDE.md → Architecture).
 ///
-/// The seams ([firebase], [openDatabase], [loadContent], [loadAudio]) exist
-/// so `bootstrap_offline_test.dart` can make each of those fail on purpose
-/// and assert the app still comes up. Default to the real thing; a caller
-/// that passes nothing gets production behaviour.
+/// The seams ([firebase], [openDatabase], [loadContent], [loadAudio],
+/// [initAds]) exist so `bootstrap_offline_test.dart` can make each of those
+/// fail on purpose and assert the app still comes up. Default to the real
+/// thing; a caller that passes nothing gets production behaviour.
 Future<BootstrapServices> initializeServices(
   AppConfig config, {
   FirebaseGateway? firebase,
   QueryExecutor Function()? openDatabase,
   Future<ContentRepository> Function()? loadContent,
   Future<AudioService> Function()? loadAudio,
+  Future<AdGateway> Function(AdUnitIds ids)? initAds,
 }) async {
   // ---- 1. Flutter binding + error handlers → Crashlytics ----
   WidgetsFlutterBinding.ensureInitialized();
@@ -285,13 +296,31 @@ Future<BootstrapServices> initializeServices(
       ? const NoopSyncApi() as SyncApi
       : FunctionsSyncApi(functionsForRegion());
 
-  // ---- 8. Ads init — deferred, must never block the first frame ----
-  unawaited(
-    _step(config, 'ads.init', () async {
-      // TODO(P18): init AdGateway behind the interface; NoopAdGateway if
-      // ads_enabled is false or the SDK fails to init.
-    }),
-  );
+  // ---- 8. Ads init — bounded, must never block the first frame ----
+  //
+  // `adGateway` stays null (NoopAdGateway keeps binding) whenever
+  // `config.adUnitIds` is null — the common case until a MAX account exists
+  // for this flavor — so this step is a genuine no-op on every build today,
+  // not a step that silently fails. See `ad_config.dart`'s header for why
+  // dev/stg/prod each need their OWN MAX app rather than sharing one set of
+  // ad unit ids.
+  //
+  // AWAITED, not fire-and-forget: there is no `ProviderContainer` reachable
+  // yet at this point in bootstrap for a background completion to hand a
+  // result to once `runApp` has already built the tree, so the only way a
+  // real gateway ever reaches `BootstrapServices` at all is to resolve
+  // before returning. "Never block the first frame" is instead honoured the
+  // same way `remoteConfig.fetch` already does it two steps up: a hard
+  // ceiling, not an unbounded wait — a hung SDK init degrades to
+  // `NoopAdGateway` exactly like a hung Remote Config fetch degrades to the
+  // shipped defaults, rather than stalling startup.
+  AdGateway? adGateway;
+  if (config.adUnitIds case final AdUnitIds ids) {
+    await _step(config, 'ads.init', () async {
+      adGateway = await (initAds?.call(ids) ?? _initMaxAdGateway(ids, config))
+          .timeout(const Duration(seconds: 3));
+    });
+  }
 
   return BootstrapServices(
     settings: settings,
@@ -316,6 +345,7 @@ Future<BootstrapServices> initializeServices(
     content: content,
     clock: clock,
     audio: audio,
+    adGateway: adGateway,
   );
 }
 
@@ -323,6 +353,12 @@ Future<AudioService> _preloadAudio() async {
   final service = AudioPlayersAudioService();
   await service.preload();
   return service;
+}
+
+Future<AdGateway> _initMaxAdGateway(AdUnitIds ids, AppConfig config) async {
+  final gateway = MaxAdGateway(adUnitIds: ids, testMode: config.adsTestMode);
+  await gateway.initialize();
+  return gateway;
 }
 
 /// Steps 1–8, then 9: `runApp`.
@@ -375,6 +411,8 @@ Future<void> bootstrap(
               contentRepositoryProvider.overrideWith((ref) => loaded),
             if (services.clock case final TrustedClock resolved)
               trustedClockProvider.overrideWithValue(resolved),
+            if (services.adGateway case final AdGateway resolved)
+              adGatewayProvider.overrideWithValue(resolved),
           ],
           observers: observers,
           child: await appBuilder(),

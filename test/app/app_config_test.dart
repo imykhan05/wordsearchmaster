@@ -47,6 +47,21 @@ void main() {
         );
       }
     });
+
+    test(
+      'pre-P18: no flavor has ads configured yet — isAdsConfigured is honest '
+      'about it rather than assuming',
+      () {
+        for (final config in [
+          AppConfig.dev(),
+          AppConfig.stg(),
+          AppConfig.prod(),
+        ]) {
+          expect(config.adUnitIds, isNull);
+          expect(config.isAdsConfigured, isFalse);
+        }
+      },
+    );
   });
 
   test('appConfigProvider throws until overridden', () {

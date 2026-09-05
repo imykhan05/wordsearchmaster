@@ -1,8 +1,10 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/app/bootstrap.dart';
+import 'package:word_search_master/app/config/ad_config.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/domain/text/language.dart';
+import 'package:word_search_master/services/ads/ad_gateway.dart';
 import 'package:word_search_master/services/analytics/analytics_service.dart';
 import 'package:word_search_master/services/audio/audio_service.dart';
 import 'package:word_search_master/services/auth/auth_service.dart';
@@ -166,6 +168,116 @@ void main() {
         reason: 'one failed step must not cascade into the next',
       );
     });
+  });
+
+  group('pre-P18: ads.init never blocks or crashes startup either', () {
+    test(
+      'no MAX account configured (every flavor today) — a genuine no-op',
+      () async {
+        // AppConfig.dev() already carries `adUnitIds: null` (FlavorAdConfig has
+        // no real credentials for any flavor yet) — this is the state every
+        // real build is in right now, so it is worth pinning explicitly rather
+        // than only exercising the seam below.
+        final services = await boot();
+
+        expect(services.adGateway, isNull);
+        expect(services.isPlayable, isTrue);
+      },
+    );
+
+    test('a configured account initializes and is threaded through', () async {
+      const ids = AdUnitIds(
+        sdkKey: 'test-sdk-key',
+        interstitialAdUnitId: 'test-interstitial',
+        rewardedAdUnitId: 'test-rewarded',
+      );
+      final fakeGateway = const NoopAdGateway();
+
+      final services = await initializeServices(
+        const AppConfig(
+          flavor: Flavor.dev,
+          firebaseOptions: null,
+          adsTestMode: true,
+          logLevel: AppLogLevel.debug,
+          adUnitIds: ids,
+        ),
+        firebase: offline,
+        openDatabase: NativeDatabase.memory,
+        loadContent: buildTestContentRepository,
+        loadAudio: () async => const NoopAudioService(),
+        initAds: (idsPassedIn) async {
+          expect(idsPassedIn, ids, reason: 'the configured credentials');
+          return fakeGateway;
+        },
+      );
+
+      expect(services.adGateway, same(fakeGateway));
+    });
+
+    test(
+      'a throwing initializer is caught — startup still completes',
+      () async {
+        const ids = AdUnitIds(
+          sdkKey: 'test-sdk-key',
+          interstitialAdUnitId: 'test-interstitial',
+          rewardedAdUnitId: 'test-rewarded',
+        );
+
+        final services = await initializeServices(
+          const AppConfig(
+            flavor: Flavor.dev,
+            firebaseOptions: null,
+            adsTestMode: true,
+            logLevel: AppLogLevel.debug,
+            adUnitIds: ids,
+          ),
+          firebase: offline,
+          openDatabase: NativeDatabase.memory,
+          loadContent: buildTestContentRepository,
+          loadAudio: () async => const NoopAudioService(),
+          initAds: (idsPassedIn) async => throw StateError('SDK init failed'),
+        );
+
+        expect(services.adGateway, isNull);
+        expect(
+          services.isPlayable,
+          isTrue,
+          reason: 'a failed ad SDK must never take down the rest of bootstrap',
+        );
+      },
+    );
+
+    test('a hung initializer is bounded at 3s, not awaited forever', () async {
+      const ids = AdUnitIds(
+        sdkKey: 'test-sdk-key',
+        interstitialAdUnitId: 'test-interstitial',
+        rewardedAdUnitId: 'test-rewarded',
+      );
+
+      final services = await initializeServices(
+        const AppConfig(
+          flavor: Flavor.dev,
+          firebaseOptions: null,
+          adsTestMode: true,
+          logLevel: AppLogLevel.debug,
+          adUnitIds: ids,
+        ),
+        firebase: offline,
+        openDatabase: NativeDatabase.memory,
+        loadContent: buildTestContentRepository,
+        loadAudio: () async => const NoopAudioService(),
+        initAds: (idsPassedIn) => Future<AdGateway>.delayed(
+          const Duration(seconds: 30),
+          () => const NoopAdGateway(),
+        ),
+      );
+
+      expect(
+        services.adGateway,
+        isNull,
+        reason: 'the 3s ceiling must win, not the 30s hang',
+      );
+    }, timeout: const Timeout(Duration(seconds: 20)));
   });
 }
 
