@@ -76,7 +76,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(l10n.navSettings), findsWidgets);
-      expect(find.byType(SwitchListTile), findsNWidgets(3));
+      expect(find.byType(SwitchListTile), findsNWidgets(4));
     },
   );
 

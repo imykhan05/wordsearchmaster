@@ -9,6 +9,7 @@ import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
+import 'package:word_search_master/services/notifications/notification_settings.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 import '../../support/fake_content.dart';
@@ -48,14 +49,15 @@ void main() {
     return container;
   }
 
-  testWidgets('shows sound, music, haptics and the current language', (
-    tester,
-  ) async {
-    await pumpSettingsScreen(tester);
+  testWidgets(
+    'shows sound, music, haptics, streak reminders and the current language',
+    (tester) async {
+      await pumpSettingsScreen(tester);
 
-    expect(find.byType(SwitchListTile), findsNWidgets(3));
-    expect(find.text(Language.english.endonym), findsOneWidget);
-  });
+      expect(find.byType(SwitchListTile), findsNWidgets(4));
+      expect(find.text(Language.english.endonym), findsOneWidget);
+    },
+  );
 
   testWidgets('toggling sound flips soundEnabledProvider', (tester) async {
     final container = await pumpSettingsScreen(tester);
@@ -66,6 +68,19 @@ void main() {
 
     expect(container.read(soundEnabledProvider), isFalse);
   });
+
+  testWidgets(
+    'toggling streak reminders flips streakRemindersEnabledProvider',
+    (tester) async {
+      final container = await pumpSettingsScreen(tester);
+      expect(container.read(streakRemindersEnabledProvider), isTrue);
+
+      await tester.tap(find.byType(SwitchListTile).last);
+      await tester.pumpAndSettle();
+
+      expect(container.read(streakRemindersEnabledProvider), isFalse);
+    },
+  );
 
   testWidgets('the back arrow returns to Home', (tester) async {
     await pumpSettingsScreen(tester);

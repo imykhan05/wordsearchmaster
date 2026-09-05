@@ -32,6 +32,8 @@
   "musicLabel": "موسیقی",
   "hapticsLabel": "ارتعاش",
   "settingsAudioSectionTitle": "آواز اور ارتعاش",
+  "settingsNotificationsSectionTitle": "اطلاعات",
+  "streakReminderLabel": "لڑی کی یاد دہانی",
   "streakLabel": "دن کی لڑی",
   "streakFreezesLabel": "{count, plural, =1{1 فریز} other{{count} فریز}}",
   "@streakFreezesLabel": {

@@ -70,6 +70,17 @@ abstract interface class UiSettingsStore {
   /// state, so it belongs here rather than in `kv_settings`.
   bool get notificationPermissionAsked;
   Future<void> setNotificationPermissionAsked(bool value);
+
+  /// Whether this device wants the streak-expiring re-engagement push
+  /// (`sendDueStreakReminders`). Defaults to true — the OS permission prompt
+  /// is the real gate on whether a notification can ever be shown at all;
+  /// this is the in-app "stop sending me these specifically" opt-out on top
+  /// of it, the same UI-toggle carve-out as every other flag in this file.
+  /// `notificationRegistrationSync` reads it and registers a null
+  /// `fcmToken` when false, reusing the server's own existing "no token, no
+  /// push" guard rather than adding a second server-side field.
+  bool get streakRemindersEnabled;
+  Future<void> setStreakRemindersEnabled(bool value);
 }
 
 /// Defaults only, forgotten on restart. The binding in tests.
@@ -82,6 +93,7 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.urduConnectedFormIntroShown = false,
     this.loginPromptDismissed = false,
     this.notificationPermissionAsked = false,
+    this.streakRemindersEnabled = true,
     Set<String>? seenAchievementPopupIds,
   }) : seenAchievementPopupIds = seenAchievementPopupIds ?? {};
 
@@ -99,6 +111,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool loginPromptDismissed;
   @override
   bool notificationPermissionAsked;
+  @override
+  bool streakRemindersEnabled;
   @override
   Set<String> seenAchievementPopupIds;
 
@@ -123,6 +137,9 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setNotificationPermissionAsked(bool value) async =>
       notificationPermissionAsked = value;
+  @override
+  Future<void> setStreakRemindersEnabled(bool value) async =>
+      streakRemindersEnabled = value;
 }
 
 /// The real one. Values are read once at startup and cached in memory, so
@@ -140,6 +157,8 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
       'ui.seen_achievement_popup_ids';
   static const String _notificationPermissionAskedKey =
       'ui.notification_permission_asked';
+  static const String _streakRemindersEnabledKey =
+      'ui.streak_reminders_enabled';
 
   final SharedPreferences _prefs;
 
@@ -213,6 +232,14 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setNotificationPermissionAsked(bool value) =>
       _prefs.setBool(_notificationPermissionAskedKey, value);
+
+  @override
+  bool get streakRemindersEnabled =>
+      _prefs.getBool(_streakRemindersEnabledKey) ?? true;
+
+  @override
+  Future<void> setStreakRemindersEnabled(bool value) =>
+      _prefs.setBool(_streakRemindersEnabledKey, value);
 }
 
 /// Overridden in `bootstrap.dart` with the prefs-backed store.

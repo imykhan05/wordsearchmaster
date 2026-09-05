@@ -13,6 +13,12 @@
 /// streak exists worth protecting — see `HomeScreen`'s own doc), so this
 /// keeps the server's copy of "which device, which language" current whether
 /// or not the player has ever seen — let alone answered — the OS prompt.
+///
+/// [StreakRemindersEnabled] gates the token specifically: while it is off,
+/// `fcmToken` is registered as null rather than skipping registration
+/// entirely, so `language` still stays current and the server's own existing
+/// "no token, no push" guard (`sendDueStreakReminders`) is what actually
+/// stops the send — no second server-side opt-out field needed.
 library;
 
 import 'dart:async';
@@ -23,6 +29,7 @@ import '../app/language/selected_language.dart';
 import '../data/remote/notification_registration_api.dart';
 import '../services/auth/auth_service.dart';
 import '../services/notifications/notification_service.dart';
+import '../services/notifications/notification_settings.dart';
 
 part 'notification_sync.g.dart';
 
@@ -32,20 +39,27 @@ void notificationRegistrationSync(Ref ref) {
     final uid = ref.read(currentAccountProvider).value?.uid;
     if (uid == null) return;
     final language = ref.read(selectedLanguageProvider).code;
-    final token = await ref.read(notificationServiceProvider).getToken();
+    final remindersEnabled = ref.read(streakRemindersEnabledProvider);
+    final token = remindersEnabled
+        ? await ref.read(notificationServiceProvider).getToken()
+        : null;
     await ref
         .read(notificationRegistrationApiProvider)
         .register(uid: uid, fcmToken: token, language: language);
   }
 
   // Re-registers whenever the account resolves (guest → linked, sign-out →
-  // fresh guest) or the player switches language — `fireImmediately` on the
-  // account listener is what covers the ordinary cold start, where an
-  // account already exists by the time this provider is first watched.
+  // fresh guest), the player switches language, or flips the reminders
+  // toggle — `fireImmediately` on the account listener is what covers the
+  // ordinary cold start, where an account already exists by the time this
+  // provider is first watched.
   ref.listen(currentAccountProvider, (_, _) {
     unawaited(register());
   }, fireImmediately: true);
   ref.listen(selectedLanguageProvider, (_, _) {
+    unawaited(register());
+  });
+  ref.listen(streakRemindersEnabledProvider, (_, _) {
     unawaited(register());
   });
 

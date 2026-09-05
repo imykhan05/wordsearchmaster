@@ -7,6 +7,7 @@ import '../../app/theme/theme.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/audio/sound_settings.dart';
+import '../../services/notifications/notification_settings.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/language_tile.dart';
 import '../widgets/system_back_handler.dart';
@@ -30,6 +31,7 @@ class SettingsScreen extends ConsumerWidget {
     final soundEnabled = ref.watch(soundEnabledProvider);
     final musicEnabled = ref.watch(musicEnabledProvider);
     final hapticsEnabled = ref.watch(hapticsEnabledProvider);
+    final streakRemindersEnabled = ref.watch(streakRemindersEnabledProvider);
 
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes
@@ -95,6 +97,39 @@ class SettingsScreen extends ConsumerWidget {
                         value: hapticsEnabled,
                         onChanged: (_) =>
                             ref.read(hapticsEnabledProvider.notifier).toggle(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppTokens.space16),
+              MetaCard(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppTokens.space4,
+                        ),
+                        child: Text(
+                          l10n.settingsNotificationsSectionTitle,
+                          style: AppTypography.uiTextStyle(
+                            Language.english,
+                            UiRole.caption,
+                            color: tokens.colors.onSurfaceMuted,
+                          ),
+                        ),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(l10n.streakReminderLabel),
+                        value: streakRemindersEnabled,
+                        onChanged: (_) => ref
+                            .read(streakRemindersEnabledProvider.notifier)
+                            .toggle(),
                       ),
                     ],
                   ),

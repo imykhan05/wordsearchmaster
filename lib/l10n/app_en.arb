@@ -102,6 +102,14 @@
   "@settingsAudioSectionTitle": {
     "description": "Heading over the sound/music/haptics toggles on the settings screen."
   },
+  "settingsNotificationsSectionTitle": "Notifications",
+  "@settingsNotificationsSectionTitle": {
+    "description": "Heading over the notification toggles on the settings screen."
+  },
+  "streakReminderLabel": "Streak reminders",
+  "@streakReminderLabel": {
+    "description": "Label next to the switch on the settings screen that opts this device out of the streak-expiring re-engagement push, independent of the OS notification permission itself."
+  },
   "streakLabel": "Day streak",
   "@streakLabel": {
     "description": "Label under the streak counter on the home screen — days in a row with at least one completed level."

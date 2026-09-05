@@ -35,6 +35,13 @@ void main() {
       expect(store.urduConnectedFormIntroShown, isFalse);
       expect(store.loginPromptDismissed, isFalse);
       expect(store.notificationPermissionAsked, isFalse);
+      expect(
+        store.streakRemindersEnabled,
+        isTrue,
+        reason:
+            'the OS permission prompt is the real gate; this is an '
+            'opt-out on top of it, so it defaults on',
+      );
     });
 
     test('values survive a reopen', () async {
@@ -45,6 +52,7 @@ void main() {
       await store.setUrduConnectedFormIntroShown(true);
       await store.setLoginPromptDismissed(true);
       await store.setNotificationPermissionAsked(true);
+      await store.setStreakRemindersEnabled(false);
 
       final reopened = await PrefsUiSettingsStore.open();
       expect(reopened.soundEnabled, isFalse);
@@ -53,6 +61,7 @@ void main() {
       expect(reopened.urduConnectedFormIntroShown, isTrue);
       expect(reopened.loginPromptDismissed, isTrue);
       expect(reopened.notificationPermissionAsked, isTrue);
+      expect(reopened.streakRemindersEnabled, isFalse);
     });
 
     test('an unknown stored language code falls back to the picker', () async {
@@ -152,6 +161,7 @@ void main() {
     await store.setLoginPromptDismissed(true);
     await store.markAchievementPopupSeen('first_word');
     await store.setNotificationPermissionAsked(true);
+    await store.setStreakRemindersEnabled(false);
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys(), <String>{
@@ -162,6 +172,7 @@ void main() {
       'ui.login_prompt_dismissed',
       'ui.seen_achievement_popup_ids',
       'ui.notification_permission_asked',
+      'ui.streak_reminders_enabled',
     });
   });
 
