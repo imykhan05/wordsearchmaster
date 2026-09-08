@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../domain/audio/sound_theme.dart';
 import '../../domain/text/language.dart';
 
 part 'ui_settings_store.g.dart';
@@ -31,6 +32,14 @@ abstract interface class UiSettingsStore {
   /// splitting haptics out of sound applies unchanged here.
   bool get musicEnabled;
   Future<void> setMusicEnabled(bool value);
+
+  /// Which curated audio palette plays — see [SoundTheme]'s own doc for why
+  /// this is a small fixed set rather than a free-form sound picker.
+  /// Defaults to [SoundTheme.defaultTheme], the same "reads as a real
+  /// preference from the first launch, not an unset gap" shape [soundEnabled]
+  /// and [musicEnabled] already have.
+  SoundTheme get soundTheme;
+  Future<void> setSoundTheme(SoundTheme value);
 
   /// Null until the player picks one on the FTUE language screen.
   Language? get selectedLanguage;
@@ -89,6 +98,7 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.soundEnabled = true,
     this.hapticsEnabled = true,
     this.musicEnabled = true,
+    this.soundTheme = SoundTheme.defaultTheme,
     this.selectedLanguage,
     this.urduConnectedFormIntroShown = false,
     this.loginPromptDismissed = false,
@@ -103,6 +113,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool hapticsEnabled;
   @override
   bool musicEnabled;
+  @override
+  SoundTheme soundTheme;
   @override
   Language? selectedLanguage;
   @override
@@ -122,6 +134,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   Future<void> setHapticsEnabled(bool value) async => hapticsEnabled = value;
   @override
   Future<void> setMusicEnabled(bool value) async => musicEnabled = value;
+  @override
+  Future<void> setSoundTheme(SoundTheme value) async => soundTheme = value;
   @override
   Future<void> setSelectedLanguage(Language value) async =>
       selectedLanguage = value;
@@ -150,6 +164,7 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _soundKey = 'ui.sound_enabled';
   static const String _hapticsKey = 'ui.haptics_enabled';
   static const String _musicKey = 'ui.music_enabled';
+  static const String _soundThemeKey = 'ui.sound_theme';
   static const String _languageKey = 'ui.selected_language';
   static const String _urduIntroKey = 'ui.urdu_connected_form_intro_shown';
   static const String _loginPromptKey = 'ui.login_prompt_dismissed';
@@ -183,6 +198,14 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
 
   @override
   Future<void> setMusicEnabled(bool value) => _prefs.setBool(_musicKey, value);
+
+  @override
+  SoundTheme get soundTheme =>
+      SoundTheme.fromId(_prefs.getString(_soundThemeKey));
+
+  @override
+  Future<void> setSoundTheme(SoundTheme value) =>
+      _prefs.setString(_soundThemeKey, value.id);
 
   @override
   Language? get selectedLanguage {

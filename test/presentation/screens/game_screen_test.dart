@@ -13,6 +13,7 @@ import 'package:word_search_master/domain/grid/cell.dart';
 import 'package:word_search_master/domain/grid/grid_result.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/grid/selection_resolver.dart';
+import 'package:word_search_master/domain/audio/sound_theme.dart';
 import 'package:word_search_master/domain/progression/ad_policy.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
@@ -36,7 +37,10 @@ final class _RecordingAudioService implements AudioService {
   final List<int> foundCombos = [];
 
   @override
-  Future<void> preload() async {}
+  Future<void> preload({SoundTheme theme = SoundTheme.defaultTheme}) async {}
+
+  @override
+  Future<void> setTheme(SoundTheme theme) async {}
 
   @override
   Future<void> playFound({required int combo}) async {

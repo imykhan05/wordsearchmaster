@@ -1,4 +1,8 @@
-/// The five Ch03 sound effects. One entry per file under `assets/audio/`.
+import '../../domain/audio/sound_theme.dart';
+
+/// The five Ch03 sound effects. One entry per file under
+/// `assets/audio/{theme.id}/` — every [SoundTheme] ships the same five file
+/// names in its own folder, so [pathFor] only ever has to vary the folder.
 enum AudioClip {
   /// A correctly traced word. The only clip ever played at anything other
   /// than its natural pitch — see `ComboPitchLadder`.
@@ -15,7 +19,7 @@ enum AudioClip {
 
   coin;
 
-  String get assetPath => 'audio/${_fileNames[this]}';
+  String pathFor(SoundTheme theme) => 'audio/${theme.id}/${_fileNames[this]}';
 
   static const Map<AudioClip, String> _fileNames = {
     AudioClip.found: 'found.wav',

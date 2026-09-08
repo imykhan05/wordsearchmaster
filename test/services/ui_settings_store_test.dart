@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:word_search_master/app/language/selected_language.dart';
+import 'package:word_search_master/domain/audio/sound_theme.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
@@ -27,6 +28,11 @@ void main() {
 
       expect(store.soundEnabled, isTrue);
       expect(store.hapticsEnabled, isTrue);
+      expect(
+        store.soundTheme,
+        SoundTheme.defaultTheme,
+        reason: 'a real preference from the first launch, not an unset gap',
+      );
       expect(
         store.selectedLanguage,
         isNull,
@@ -156,6 +162,7 @@ void main() {
     final store = await PrefsUiSettingsStore.open();
     await store.setSoundEnabled(false);
     await store.setHapticsEnabled(false);
+    await store.setSoundTheme(SoundTheme.chimes);
     await store.setSelectedLanguage(Language.urdu);
     await store.setUrduConnectedFormIntroShown(true);
     await store.setLoginPromptDismissed(true);
@@ -167,6 +174,7 @@ void main() {
     expect(prefs.getKeys(), <String>{
       'ui.sound_enabled',
       'ui.haptics_enabled',
+      'ui.sound_theme',
       'ui.selected_language',
       'ui.urdu_connected_form_intro_shown',
       'ui.login_prompt_dismissed',

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:word_search_master/domain/audio/sound_theme.dart';
 import 'package:word_search_master/services/audio/audio_service.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
@@ -12,7 +13,12 @@ final class _FakeAudioService implements AudioService {
   final List<bool> musicHistory = [];
 
   @override
-  Future<void> preload() async => calls.add('preload');
+  Future<void> preload({SoundTheme theme = SoundTheme.defaultTheme}) async =>
+      calls.add('preload');
+
+  @override
+  Future<void> setTheme(SoundTheme theme) async =>
+      calls.add('setTheme:${theme.id}');
 
   @override
   Future<void> playFound({required int combo}) async =>
@@ -54,7 +60,8 @@ void main() {
       'every call is a harmless no-op — the pre-bootstrap-override binding',
       () async {
         const service = NoopAudioService();
-        await service.preload();
+        await service.preload(theme: SoundTheme.chimes);
+        await service.setTheme(SoundTheme.minimal);
         await service.playFound(combo: 4);
         await service.playLevelComplete();
         await service.playChestOpen();
@@ -192,6 +199,47 @@ void main() {
 
       container.read(soundEnabledProvider.notifier).set(true);
       expect(fake.mutedHistory, [false, true, false]);
+    });
+  });
+
+  group('soundThemeSyncProvider', () {
+    ProviderContainer containerWith(AudioService fake, {SoundTheme? theme}) {
+      final container = ProviderContainer(
+        overrides: [
+          audioServiceProvider.overrideWithValue(fake),
+          uiSettingsStoreProvider.overrideWithValue(
+            InMemoryUiSettingsStore(
+              soundTheme: theme ?? SoundTheme.defaultTheme,
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test(
+      'syncs the CURRENT theme the instant it is read — fireImmediately',
+      () {
+        final fake = _FakeAudioService();
+        final container = containerWith(fake, theme: SoundTheme.chimes);
+
+        container.read(soundThemeSyncProvider);
+
+        expect(fake.calls, ['setTheme:chimes']);
+      },
+    );
+
+    test('picking a different theme mid-session calls setTheme again', () {
+      final fake = _FakeAudioService();
+      final container = containerWith(fake, theme: SoundTheme.softBells);
+      container.read(soundThemeSyncProvider);
+
+      container
+          .read(soundThemeSettingProvider.notifier)
+          .set(SoundTheme.minimal);
+
+      expect(fake.calls, ['setTheme:soft_bells', 'setTheme:minimal']);
     });
   });
 }

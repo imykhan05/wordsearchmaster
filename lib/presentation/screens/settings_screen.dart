@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
+import '../../domain/audio/sound_theme.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/audio/sound_settings.dart';
@@ -30,6 +31,7 @@ class SettingsScreen extends ConsumerWidget {
     final tokens = AppTokens.of(context);
     final soundEnabled = ref.watch(soundEnabledProvider);
     final musicEnabled = ref.watch(musicEnabledProvider);
+    final soundTheme = ref.watch(soundThemeSettingProvider);
     final hapticsEnabled = ref.watch(hapticsEnabledProvider);
     final streakRemindersEnabled = ref.watch(streakRemindersEnabledProvider);
 
@@ -91,6 +93,34 @@ class SettingsScreen extends ConsumerWidget {
                         onChanged: (_) =>
                             ref.read(musicEnabledProvider.notifier).toggle(),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppTokens.space8,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(l10n.soundThemeLabel),
+                            const SizedBox(height: AppTokens.space8),
+                            Wrap(
+                              spacing: AppTokens.space8,
+                              children: [
+                                for (final theme in SoundTheme.values)
+                                  ChoiceChip(
+                                    label: Text(_soundThemeName(l10n, theme)),
+                                    selected: soundTheme == theme,
+                                    onSelected: (_) => ref
+                                        .read(
+                                          soundThemeSettingProvider.notifier,
+                                        )
+                                        .set(theme),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.hapticsLabel),
@@ -142,3 +172,14 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 }
+
+/// Localizes a [SoundTheme] for display, the same one-call-site-resolves-it
+/// shape `categoryLabel()` uses for content-pack categories — a switch
+/// rather than a `Map` so a theme added to the enum without a case here is a
+/// compile error, not a runtime fallback string nobody notices.
+String _soundThemeName(AppLocalizations l10n, SoundTheme theme) =>
+    switch (theme) {
+      SoundTheme.softBells => l10n.soundThemeSoftBells,
+      SoundTheme.chimes => l10n.soundThemeChimes,
+      SoundTheme.minimal => l10n.soundThemeMinimal,
+    };

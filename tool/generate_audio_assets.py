@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
-"""Synthesises the five P09 SFX clips as tiny 16-bit mono PCM WAV files.
+"""Synthesises the P09/post-P18 audio set as tiny 16-bit mono PCM WAV files,
+ONE FOLDER PER SoundTheme (lib/domain/audio/sound_theme.dart) under
+assets/audio/{theme_id}/.
 
-No external assets exist for Ch03's juice pass, and the prompt explicitly
-allows synthesised tones instead. Kept intentionally simple (sine partials +
-a short envelope, stdlib only — `wave`, `struct`, `math`) so the whole set
-stays well under the 400KB budget while still reading as five distinct,
-recognisable game sounds rather than five identical beeps.
+No external assets exist for the game's audio, and the prompt explicitly
+allows synthesised tones instead — stdlib only (`wave`, `struct`, `math`).
+
+THE COMPETITOR RECIPE (docs/competitor-analysis.md, measured spectrally
+across three top word games rather than heard): every one of them converges
+on fundamental + octave + fifth partials — the harmonic series' own 1x/2x/3x,
+the same ratios a real handbell's partials approximate — on every bell-like
+SFX, plus a 5-7kHz shimmer layer on celebration moments. `_tone()` below
+takes an explicit HARMONICS dict for exactly this: `{1: 1.0, 2: 0.20, 3: 0.12}`
+is "fundamental, quieter octave, quieter-still fifth" as one mix, and each
+`ThemeProfile` picks its own version of that mix rather than every clip
+repeating magic numbers.
 
 `found.wav` is the one clip runtime-pitched by `ComboPitchLadder`
-(services/audio/combo_pitch_ladder.dart): it MUST be a single clean tone at
-C6 (1046.502 Hz) so multiplying its playback rate by the ladder's ratios
-lands exactly on D6/E6/G6/A6/C7, not on some other combination of partials
-beating against each other.
+(services/audio/combo_pitch_ladder.dart): every theme's `found.wav` MUST be
+built on the SAME fundamental (C6, 1046.502 Hz) so multiplying its playback
+rate by the ladder's ratios lands exactly on D6/E6/G6/A6/C7 regardless of
+which theme is active — a theme is free to vary the HARMONICS mixed onto that
+fundamental (timbre), never the fundamental itself (pitch).
 
 Run with: python3 tool/generate_audio_assets.py
 """
@@ -20,6 +30,7 @@ import math
 import os
 import struct
 import wave
+from dataclasses import dataclass, field
 
 SAMPLE_RATE = 22050
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "audio")
@@ -39,17 +50,53 @@ def _envelope(i, n, attack, decay_power):
     return (1.0 - t) ** decay_power
 
 
-def _tone(freq, duration_s, amplitude=0.55, attack=0.05, decay_power=2.2, harmonic=0.18):
-    """One note: a fundamental sine plus a soft second harmonic for timbre."""
+def _tone(freq, duration_s, amplitude=0.55, attack=0.05, decay_power=2.2, harmonics=None):
+    """One note: [freq] plus every partial in [harmonics] (a {multiplier:
+    relative_amplitude} dict — {1: 1.0} is a bare sine). All partials share
+    the same envelope, so the timbre does not shift shape across the note's
+    own decay."""
+    if harmonics is None:
+        harmonics = {1: 1.0}
     n = int(SAMPLE_RATE * duration_s)
     samples = []
     for i in range(n):
         t = i / SAMPLE_RATE
         env = _envelope(i, n, attack, decay_power)
-        value = math.sin(2 * math.pi * freq * t)
-        value += harmonic * math.sin(2 * math.pi * freq * 2 * t)
+        value = sum(
+            amp * math.sin(2 * math.pi * freq * mult * t)
+            for mult, amp in harmonics.items()
+        )
         samples.append(value * env * amplitude)
     return samples
+
+
+def _shimmer(duration_s, amplitude=0.10, attack=0.01, decay_power=3.0):
+    """A bright 5-7kHz layer, additively mixed onto a celebration clip's
+    final note — the fourth measured element of the competitor recipe,
+    alongside the fundamental/octave/fifth mix. Three closely-spaced high
+    partials rather than one, so it reads as a sparkle/shimmer texture
+    rather than a fourth clean pitch."""
+    n = int(SAMPLE_RATE * duration_s)
+    partials = (5200.0, 6100.0, 7000.0)
+    samples = []
+    for i in range(n):
+        t = i / SAMPLE_RATE
+        env = _envelope(i, n, attack, decay_power)
+        value = sum(math.sin(2 * math.pi * f * t) for f in partials) / len(partials)
+        samples.append(value * env * amplitude)
+    return samples
+
+
+def _mix(*layers):
+    """Sums same-length-or-shorter layers into the first (longest) one,
+    padding nothing — a shimmer layer shorter than its host note simply
+    stops adding once it runs out."""
+    length = max(len(layer) for layer in layers)
+    out = [0.0] * length
+    for layer in layers:
+        for i, value in enumerate(layer):
+            out[i] += value
+    return out
 
 
 def _concat(*parts):
@@ -63,12 +110,13 @@ def _silence(duration_s):
     return [0.0] * int(SAMPLE_RATE * duration_s)
 
 
-def _write_wav(name, samples):
+def _write_wav(name, samples, sample_rate=SAMPLE_RATE):
     path = os.path.join(OUT_DIR, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with wave.open(path, "wb") as f:
         f.setnchannels(1)
         f.setsampwidth(2)
-        f.setframerate(SAMPLE_RATE)
+        f.setframerate(sample_rate)
         frames = b"".join(
             struct.pack("<h", max(-32767, min(32767, int(s * 32767))))
             for s in samples
@@ -77,57 +125,167 @@ def _write_wav(name, samples):
     return path, os.path.getsize(path)
 
 
-def main():
-    os.makedirs(OUT_DIR, exist_ok=True)
+# ---------------------------------------------------------------------------
+# Theme profiles
+#
+# One `ThemeProfile` per `SoundTheme` enum value (Dart), matched by [theme_id]
+# — that string doubles as the assets/audio/{theme_id}/ folder name, so a
+# mismatch between this file and the Dart enum's `id`s cannot happen silently
+# (see `SoundTheme`'s own doc).
+
+@dataclass(frozen=True)
+class ThemeProfile:
+    theme_id: str
+
+    # The bell/chime mix shared by found/coin/chest_open/level_complete —
+    # {1: fundamental, 2: octave, 3: octave+fifth}. found.wav's FUNDAMENTAL
+    # frequency is fixed at C6 across every theme (module docstring); only
+    # this mix, i.e. the relative harmonic amplitudes, varies.
+    bell_harmonics: dict = field(default_factory=lambda: {1: 1.0, 2: 0.20, 3: 0.12})
+
+    found_duration_s: float = 0.11
+    found_amplitude: float = 0.6
+
+    tap_duration_s: float = 0.06
+    tap_attack: float = 0.10
+    tap_decay_power: float = 2.0
+    tap_amplitude: float = 0.42
+    # A soft second harmonic, unlike the ORIGINAL pre-competitor-analysis tap
+    # (a bare single partial) — this is the "every click gets a soft,
+    # interactive sound" half of the brief, not just the celebration clips.
+    tap_harmonic_amplitude: float = 0.14
+
+    # Celebration clips (chest_open, level_complete) get the shimmer layer;
+    # `minimal` turns it off outright rather than shrinking it, matching
+    # every other "skip, don't shorten" treatment this codebase uses for a
+    # deliberately-absent effect (CLAUDE.md's reduce-motion rule, for one).
+    shimmer_enabled: bool = True
+    shimmer_amplitude: float = 0.10
+
+    # Music bed. `note_gap_s` is the spacing between the pentatonic figure's
+    # own notes (smaller = busier); `figure_amplitude` scales the moving
+    # figure alone, separately from the sustained pad underneath it, and
+    # `figure_enabled=False` (minimal) drops the figure entirely rather than
+    # just quieting it — a bed that is JUST a pad reads as "nothing is
+    # happening," which is exactly minimal's brief.
+    note_gap_s: float = 1.0
+    note_decay_s: float = 1.9
+    figure_amplitude: float = 0.115
+    figure_enabled: bool = True
+    pad_amplitude_scale: float = 1.0
+
+
+THEMES = [
+    # Default. The competitor recipe as measured, applied with no further
+    # embellishment: audible-but-quiet octave (0.20) and fifth (0.12) on
+    # every bell clip, the original P09 tempo pentatonic figure, shimmer on.
+    ThemeProfile(theme_id="soft_bells"),
+    # Brighter and busier: a louder fifth partial (more upper-partial energy
+    # reads as "livelier" per the competitor notes), shorter note spacing so
+    # the bed's figure moves more often, and a stronger shimmer.
+    ThemeProfile(
+        theme_id="chimes",
+        bell_harmonics={1: 1.0, 2: 0.22, 3: 0.20},
+        found_duration_s=0.10,
+        tap_duration_s=0.05,
+        tap_harmonic_amplitude=0.18,
+        shimmer_amplitude=0.16,
+        note_gap_s=0.65,
+        note_decay_s=1.2,
+        figure_amplitude=0.13,
+    ),
+    # The quietest option: fundamental plus a faint octave only (no fifth),
+    # shorter clips, no shimmer, and a bed that is JUST the sustained pad —
+    # see [figure_enabled]'s own doc for why that is "no figure," not "a
+    # quiet figure."
+    ThemeProfile(
+        theme_id="minimal",
+        bell_harmonics={1: 1.0, 2: 0.10},
+        found_duration_s=0.09,
+        found_amplitude=0.5,
+        tap_duration_s=0.045,
+        tap_amplitude=0.32,
+        tap_harmonic_amplitude=0.0,
+        shimmer_enabled=False,
+        figure_enabled=False,
+        pad_amplitude_scale=0.6,
+    ),
+]
+
+
+def generate_sfx(profile: ThemeProfile):
     clips = {}
+    h = profile.bell_harmonics
 
     # found.wav — the base tone the combo pitch ladder plays back at C6, D6,
-    # E6, G6, A6, C7. A clean plucky "ding": fast attack, quick decay, 110ms.
-    clips["found.wav"] = _tone(C6, 0.11, amplitude=0.6, attack=0.04, decay_power=2.5)
+    # E6, G6, A6, C7. FUNDAMENTAL FIXED AT C6 ACROSS EVERY THEME — see the
+    # module docstring.
+    clips["found.wav"] = _tone(
+        C6,
+        profile.found_duration_s,
+        amplitude=profile.found_amplitude,
+        attack=0.04,
+        decay_power=2.5,
+        harmonics=h,
+    )
 
-    # button_tap.wav — a soft 40ms UI tock. No harmonic; a click reads better
-    # with a single clean partial.
+    # button_tap.wav — every UI tap, softened relative to the pre-analysis
+    # version (CLAUDE.md → "every click/action has a soft interactive
+    # sound"): a longer, gentler attack than a dry click, plus a soft second
+    # harmonic rather than none.
     clips["button_tap.wav"] = _tone(
-        500, 0.045, amplitude=0.45, attack=0.08, decay_power=1.8, harmonic=0.0
+        500,
+        profile.tap_duration_s,
+        amplitude=profile.tap_amplitude,
+        attack=profile.tap_attack,
+        decay_power=profile.tap_decay_power,
+        harmonics={1: 1.0, 2: profile.tap_harmonic_amplitude},
     )
 
-    # coin.wav — a quick two-note "ding-ding" arcade coin pickup.
-    clips["coin.wav"] = _concat(
-        _tone(A5, 0.07, amplitude=0.55, attack=0.03, decay_power=2.0),
-        _tone(E6, 0.12, amplitude=0.55, attack=0.02, decay_power=2.2),
+    # coin.wav — a quick two-note "ding-ding" arcade coin pickup, in the same
+    # bell mix as found.wav.
+    coin = _concat(
+        _tone(A5, 0.07, amplitude=0.55, attack=0.03, decay_power=2.0, harmonics=h),
+        _tone(E6, 0.12, amplitude=0.55, attack=0.02, decay_power=2.2, harmonics=h),
     )
+    clips["coin.wav"] = coin
 
-    # chest_open.wav — a four-note ascending sparkle (pentatonic-flavoured,
-    # matching the game's musical language): C6 D6 G6 C7.
+    # chest_open.wav — a four-note ascending sparkle (C6 D6 G6 C7), the final
+    # note carrying the shimmer layer when the theme has one.
+    chest_final = _tone(C7, 0.14, amplitude=0.55, attack=0.02, decay_power=1.8, harmonics=h)
+    if profile.shimmer_enabled:
+        chest_final = _mix(chest_final, _shimmer(0.14, amplitude=profile.shimmer_amplitude))
     clips["chest_open.wav"] = _concat(
-        _tone(C6, 0.08, amplitude=0.5, attack=0.02, decay_power=2.0),
-        _tone(D6, 0.08, amplitude=0.5, attack=0.02, decay_power=2.0),
-        _tone(G6, 0.09, amplitude=0.5, attack=0.02, decay_power=2.0),
-        _tone(C7, 0.14, amplitude=0.55, attack=0.02, decay_power=1.8),
+        _tone(C6, 0.08, amplitude=0.5, attack=0.02, decay_power=2.0, harmonics=h),
+        _tone(D6, 0.08, amplitude=0.5, attack=0.02, decay_power=2.0, harmonics=h),
+        _tone(G6, 0.09, amplitude=0.5, attack=0.02, decay_power=2.0, harmonics=h),
+        chest_final,
     )
 
-    # level_complete.wav — a five-note triumphant fanfare with a tiny gap
-    # before the final held note, so it reads as "...and DONE" rather than
-    # one continuous run.
+    # level_complete.wav — a five-note fanfare with a tiny gap before the
+    # final held note ("...and DONE"), which carries the shimmer.
+    lc_final = _tone(E6, 0.22, amplitude=0.6, attack=0.02, decay_power=1.6, harmonics=h)
+    if profile.shimmer_enabled:
+        lc_final = _mix(lc_final, _shimmer(0.22, amplitude=profile.shimmer_amplitude))
     clips["level_complete.wav"] = _concat(
-        _tone(C5, 0.11, amplitude=0.55, attack=0.02, decay_power=2.0),
-        _tone(E5, 0.11, amplitude=0.55, attack=0.02, decay_power=2.0),
-        _tone(G5, 0.11, amplitude=0.55, attack=0.02, decay_power=2.0),
+        _tone(C5, 0.11, amplitude=0.55, attack=0.02, decay_power=2.0, harmonics=h),
+        _tone(E5, 0.11, amplitude=0.55, attack=0.02, decay_power=2.0, harmonics=h),
+        _tone(G5, 0.11, amplitude=0.55, attack=0.02, decay_power=2.0, harmonics=h),
         _silence(0.03),
-        _tone(C6, 0.10, amplitude=0.55, attack=0.02, decay_power=1.8),
-        _tone(E6, 0.22, amplitude=0.6, attack=0.02, decay_power=1.6),
+        _tone(C6, 0.10, amplitude=0.55, attack=0.02, decay_power=1.8, harmonics=h),
+        lc_final,
     )
 
     total = 0
     for name, samples in clips.items():
-        path, size = _write_wav(name, samples)
+        path, size = _write_wav(os.path.join(profile.theme_id, name), samples)
         total += size
-        print(f"{name}: {size / 1024:.1f} KB")
-    print(f"TOTAL: {total / 1024:.1f} KB")
+        print(f"  {name}: {size / 1024:.1f} KB")
+    return total
 
 
 # ---------------------------------------------------------------------------
-# Background music (Ch03's "soft, unobtrusive" bed, added after P09)
+# Background music (Ch03's "soft, unobtrusive" bed)
 #
 # A LOOP, not a clip, which changes the synthesis rules completely: the last
 # sample has to flow into the first with no discontinuity, or every pass round
@@ -143,7 +301,8 @@ def main():
 #
 # 16kHz rather than the SFX 22.05kHz: this is a low, mellow pad with almost no
 # energy above 4kHz, and the rate drops 8 seconds of audio from 353KB to
-# 256KB — which is what keeps the whole audio set inside its 400KB budget.
+# 256KB per theme — which is what keeps three themes' worth of audio inside a
+# still-modest total budget (see this file's own final print for the number).
 
 MUSIC_SAMPLE_RATE = 16000
 MUSIC_LOOP_SECONDS = 8.0
@@ -155,40 +314,56 @@ def _snap(freq):
     return round(freq / fundamental) * fundamental
 
 
-def _music_loop():
+def _music_loop(profile: ThemeProfile):
     n = int(MUSIC_SAMPLE_RATE * MUSIC_LOOP_SECONDS)
     out = [0.0] * n
 
-    # A sustained, barely-there chord. Continuous across the wrap because
-    # each frequency is snapped; no envelope at all, so nothing to line up.
-    for freq, amp in ((130.813, 0.055), (195.998, 0.040), (261.626, 0.030)):
+    # A sustained, barely-there chord, re-voiced onto the SAME
+    # fundamental/octave/fifth idea as the SFX (rather than the original
+    # fundamental-plus-bare-second-harmonic pad) so the bed and the SFX read
+    # as one instrument. Continuous across the wrap because each frequency
+    # is snapped; no envelope at all, so nothing to line up.
+    pad_scale = profile.pad_amplitude_scale
+    for freq, amp in (
+        (130.813, 0.055 * pad_scale),
+        (195.998, 0.040 * pad_scale),
+        (261.626, 0.030 * pad_scale),
+    ):
         f = _snap(freq)
         for i in range(n):
             out[i] += amp * math.sin(2 * math.pi * f * i / MUSIC_SAMPLE_RATE)
 
+    if not profile.figure_enabled:
+        return out
+
     # A slow pentatonic figure over the top (C D E G A — the same scale
     # ComboPitchLadder walks, so the found-word chimes sit in key with the
-    # bed rather than against it). Each note is written with its index taken
-    # modulo n, so a tail running past the end reappears at the start where
-    # the next pass will continue it seamlessly.
+    # bed rather than against it). [note_gap_s] scales how far apart the
+    # figure's own notes fall; the PATTERN (which note follows which) is
+    # unchanged across themes, only its tempo. Each note is written with its
+    # index taken modulo n, so a tail running past the end reappears at the
+    # start where the next pass will continue it seamlessly.
     pattern = [
-        (0.0, 523.251),
-        (1.0, 783.991),
-        (2.0, 659.255),
-        (3.0, 880.000),
-        (4.0, 783.991),
-        (5.0, 587.330),
-        (6.0, 659.255),
-        (7.0, 392.000),
+        (0.0, C5),
+        (1.0, G5),
+        (2.0, E5),
+        (3.0, A5),
+        (4.0, G5),
+        (5.0, D5),
+        (6.0, E5),
+        (7.0, 392.000),  # G4
     ]
-    decay_seconds = 1.9
     attack_seconds = 0.035
-    for start_s, freq in pattern:
+    length = int(profile.note_decay_s * MUSIC_SAMPLE_RATE)
+    attack_n = max(1, int(attack_seconds * MUSIC_SAMPLE_RATE))
+    for beat, freq in pattern:
+        start_s = beat * profile.note_gap_s
+        # A loop this dense (chimes' 0.65s gap) can start past the buffer's
+        # own end before wrapping — take it modulo the loop length up front
+        # so `start` below is always a valid in-buffer index.
+        start = int(start_s * MUSIC_SAMPLE_RATE) % n
         f = _snap(freq)
         f2 = _snap(freq * 2)
-        start = int(start_s * MUSIC_SAMPLE_RATE)
-        length = int(decay_seconds * MUSIC_SAMPLE_RATE)
-        attack_n = max(1, int(attack_seconds * MUSIC_SAMPLE_RATE))
         for j in range(length):
             if j < attack_n:
                 env = j / attack_n
@@ -198,33 +373,22 @@ def _music_loop():
             t = i / MUSIC_SAMPLE_RATE
             value = math.sin(2 * math.pi * f * t)
             value += 0.12 * math.sin(2 * math.pi * f2 * t)
-            out[i] += 0.115 * env * value
+            out[i] += profile.figure_amplitude * env * value
 
     return out
 
 
-def _write_music(name, samples):
-    path = os.path.join(OUT_DIR, name)
-    with wave.open(path, "wb") as f:
-        f.setnchannels(1)
-        f.setsampwidth(2)
-        f.setframerate(MUSIC_SAMPLE_RATE)
-        f.writeframes(
-            b"".join(
-                struct.pack("<h", max(-32767, min(32767, int(s * 32767))))
-                for s in samples
-            )
-        )
-    return path, os.path.getsize(path)
-
-
-def generate_music():
-    samples = _music_loop()
+def generate_music(profile: ThemeProfile):
+    samples = _music_loop(profile)
     peak = max(abs(s) for s in samples)
-    print(f"music peak before headroom: {peak:.3f}")
+
     # Leave real headroom: this plays UNDER the SFX for the whole session,
     # and a bed that competes with the found-word chime is a bed players
-    # switch off.
+    # switch off. `minimal`'s pad has no figure and a lower peak already
+    # (pad_amplitude_scale), so it normalises to the SAME target rather than
+    # ending up louder relative to its own quiet character — the explicit
+    # target, not "whatever this theme's own peak happens to be," is what
+    # keeps every theme's bed at a comparable loudness under the SFX.
     target_peak = 0.30
     samples = [s * (target_peak / peak) for s in samples]
 
@@ -235,13 +399,34 @@ def generate_music():
     biggest_internal = max(
         abs(samples[i + 1] - samples[i]) for i in range(0, len(samples) - 1, 7)
     )
-    print(f"seam step {seam:.5f} vs largest internal step {biggest_internal:.5f}")
-    assert seam <= biggest_internal, "loop seam would click"
+    # A THEME WITH NO MOVING FIGURE (`minimal`) needs an epsilon here that a
+    # busy bed does not: with nothing but the smooth sustained pad, the
+    # seam step and the largest internal step are the SAME mathematical
+    # quantity by the snapping construction above, and the only way they can
+    # differ at all is float rounding in `sin(2*pi*f*t)` at t=0 versus
+    # t=MUSIC_LOOP_SECONDS — not a real discontinuity, which would be many
+    # orders of magnitude larger than this. A busy figure's own attack ramps
+    # dwarf that noise, which is why this only ever bites the pad-only case.
+    assert seam <= biggest_internal + 1e-9, f"{profile.theme_id}: loop seam would click"
 
-    name, size = _write_music("music_loop.wav", samples)
-    print(f"music_loop.wav: {size / 1024:.1f} KB")
+    name, size = _write_wav(
+        os.path.join(profile.theme_id, "music_loop.wav"),
+        samples,
+        sample_rate=MUSIC_SAMPLE_RATE,
+    )
+    print(f"  music_loop.wav: {size / 1024:.1f} KB (peak before headroom {peak:.3f})")
+    return size
+
+
+def main():
+    os.makedirs(OUT_DIR, exist_ok=True)
+    grand_total = 0
+    for profile in THEMES:
+        print(f"{profile.theme_id}/")
+        grand_total += generate_sfx(profile)
+        grand_total += generate_music(profile)
+    print(f"TOTAL across {len(THEMES)} themes: {grand_total / 1024:.1f} KB")
 
 
 if __name__ == "__main__":
     main()
-    generate_music()

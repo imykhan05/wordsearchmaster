@@ -2622,3 +2622,108 @@ achievement popup) rather than inventing a second way to spell "nature" —
 category line), and the category line is skipped outright when `null` rather
 than reserving blank space for it, the same "decorative, not a loading
 state" treatment this file's other optional UI already gets.
+
+### Curated sound themes (SoundTheme)
+
+Task 4 of the competitor-driven polish list started as "regenerate the SFX
+warmer" and grew, on request, into a small PICKER — three hand-designed
+audio palettes rather than a knob for every individual clip. That distinction
+is load-bearing: the competitor teardown found Music/Sound as separate
+toggles converging across all three apps, and NOT ONE of them exposes more
+than that pair — no sound-pack chooser. A free-form "10-12 sounds" picker
+would be choice-fatigue this app's 45+ audience does not want, on top of
+tripling the audio asset budget for options nobody asked for by name. Three
+curated, pre-mixed options is the shape that keeps both costs bounded.
+
+`lib/domain/audio/sound_theme.dart` — `SoundTheme` (`softBells` default,
+`chimes`, `minimal`) — is PURE DART: the enum value is nothing but an [id],
+which doubles as BOTH the persisted preference string and the
+`assets/audio/{id}/` folder name, so a mismatch between what is stored and
+what `tool/generate_audio_assets.py` wrote to disk cannot happen silently.
+`fromId` degrades an unrecognised stored value to `defaultTheme` — the same
+shape `UiSettingsStore.selectedLanguage` already uses for a downgrade.
+
+**The competitor recipe, actually applied.** `docs/competitor-analysis.md`'s
+measured recipe — fundamental + octave + fifth partials (the harmonic
+series' own 1x/2x/3x) plus a 5-7kHz shimmer on celebration moments — was
+recorded but not yet implemented before this task. `tool/generate_audio_
+assets.py`'s `_tone()` now takes an explicit `harmonics` dict
+(`{1: fundamental, 2: octave, 3: fifth}`) instead of a single bare-harmonic
+float, and a new `_shimmer()` layer mixes onto `chest_open`/`level_complete`'s
+final note via `_mix()`. `found.wav`'s FUNDAMENTAL stays fixed at C6 across
+every theme — only the harmonics mixed onto it vary — because
+`ComboPitchLadder` multiplies its playback rate by fixed ratios; moving the
+fundamental per theme would move where those ratios land.
+
+**Every tap got softer, not just the celebrations.** The player's actual
+request ("jo b click ya action krta hai uska b bht soft aur interactive
+awaaz") extends past the SFX the competitor doc named:
+`button_tap.wav` gained a soft second harmonic and a gentler attack across
+all three themes (previously a bare single-partial click), and each
+`ThemeProfile` tunes its own duration/harmonic strength rather than sharing
+one fixed shape.
+
+**`ThemeProfile`** (`generate_audio_assets.py`) is the one dataclass all
+three themes are generated from, so a new theme is new field values, never a
+new code path: `bell_harmonics` (the fundamental/octave/fifth mix shared by
+found/coin/chest_open/level_complete), `tap_*`, `shimmer_enabled`/
+`shimmer_amplitude`, and the music bed's `note_gap_s`/`figure_amplitude`/
+`figure_enabled`/`pad_amplitude_scale`. `minimal` sets `figure_enabled=False`
+— the bed becomes JUST the sustained pad with no moving pentatonic figure at
+all, the same "skip outright, don't shrink" treatment reduce-motion gives a
+disabled animation elsewhere in this codebase, because a bed that is only
+quieter still reads as "something is happening."
+
+**A real edge case the loop-seam assertion did not originally cover.** The
+seamless-loop proof (`generate_music`'s own assertion, documented where it
+lives) checks that the wrap-around step is no bigger than the largest
+internal step. That holds trivially whenever a moving figure's own attack
+ramps dwarf everything else in the buffer — which was every theme until
+`minimal` removed the figure. With NOTHING but the smooth sustained pad, the
+seam step and the largest sampled internal step are the SAME mathematical
+quantity by the snapping construction, and the only way they can differ at
+all is float-rounding noise in `sin(2*pi*f*t)` at t=0 versus
+t=MUSIC_LOOP_SECONDS — not a real discontinuity, which would be orders of
+magnitude larger. The assertion now allows a `1e-9` epsilon for exactly that
+reason, with the reasoning written at the call site so a future reader does
+not mistake it for a loosened correctness check.
+
+**Runtime theme switching without a second preload.** `AudioService` gained
+`setTheme(SoundTheme)`: `AudioPlayersAudioService` re-points every
+already-preloaded pooled `AudioPlayer` (and the music player) at the new
+theme's files via `setSource` alone — no dispose/rebuild, since the players
+and their platform channels are otherwise unchanged. The music player is
+`pause`d before the source change and `resume`d after only if it was already
+playing, so a switch never audibly restarts a bed that was off. `preload`
+itself gained a `{SoundTheme theme = SoundTheme.defaultTheme}` parameter,
+threaded from `bootstrap.dart`'s already-loaded `settings.soundTheme` (step
+5b, well before step 7b's `audio.preload`) — the FIRST preload already loads
+the player's own persisted theme, so `setTheme` only has to handle a
+mid-session change from Settings.
+
+**Persistence and wiring follow the exact `soundEnabled`/`musicEnabled`
+shape**: `UiSettingsStore.soundTheme` (defaults to `SoundTheme.defaultTheme`,
+same "a real preference from first launch" treatment), `SoundThemeSetting`
+(`@riverpod` class, `services/audio/sound_settings.dart`), and
+`soundThemeSyncProvider` (`ref.listen` + `fireImmediately: true`, the same
+shape as `audioMuteSync`/`musicSync`) watched once at the app root next to
+the other two. `SettingsScreen` renders one `ChoiceChip` per `SoundTheme`
+under a new "Sound style" row, localized through a `switch` (compile-error,
+not a silent fallback, if a theme is ever added without a case).
+
+**The asset budget moved on purpose.** Three theme folders instead of one
+flat set is a real ~3x jump (~332KB → ~996KB total, `pubspec.yaml`'s own
+comment records the exact split) — a curated picker is only a picker if more
+than one option actually ships. `pubspec.yaml` lists each `assets/audio/
+{id}/` folder as its own entry rather than the parent `assets/audio/`,
+because a Flutter asset directory entry only bundles the files directly
+inside it, never subdirectories.
+
+**Still not verified here**: the same standing limitation as every earlier
+audio prompt (P09, the post-P17 music bed) — this container has no audio
+device, and `audioplayers_linux` needs GStreamer runtime plugins it does not
+have. The harmonic mix, the shimmer layer, and the three themes' actual
+character are proven only by the generator's own measured assertions (loop
+seam continuity, fixed C6 fundamental, file sizes) and by the wiring tests;
+whether `chimes` genuinely sounds "livelier" than `soft_bells` is a judgement
+only a device can make.

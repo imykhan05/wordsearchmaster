@@ -106,6 +106,22 @@
   "@hapticsLabel": {
     "description": "Label next to the haptics on/off switch on the settings screen — vibration feedback on the grid (Ch03)."
   },
+  "soundThemeLabel": "Sound style",
+  "@soundThemeLabel": {
+    "description": "Heading over the row of sound-theme chips on the settings screen — which curated audio palette (SoundTheme) plays."
+  },
+  "soundThemeSoftBells": "Soft Bells",
+  "@soundThemeSoftBells": {
+    "description": "Name of the default sound theme: warm handbell-like SFX and a mellow music bed."
+  },
+  "soundThemeChimes": "Chimes",
+  "@soundThemeChimes": {
+    "description": "Name of the brighter sound theme: more upper-partial energy and a busier music bed."
+  },
+  "soundThemeMinimal": "Minimal",
+  "@soundThemeMinimal": {
+    "description": "Name of the quietest sound theme: short clips, near-silent bed."
+  },
   "settingsAudioSectionTitle": "Sound & haptics",
   "@settingsAudioSectionTitle": {
     "description": "Heading over the sound/music/haptics toggles on the settings screen."

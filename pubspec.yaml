@@ -99,11 +99,19 @@ flutter:
     # word and level packs alongside these.
     - assets/content/
     # Ch03 SFX plus the looping background bed — synthesised tones, see
-    # tool/generate_audio_assets.py. 61KB of SFX and a 250KB 8-second music
-    # loop, 332KB in all, inside the 400KB budget. The loop is 16kHz mono
-    # (the SFX are 22.05kHz) precisely to buy that headroom, which a low
-    # mellow pad loses nothing audible to.
-    - assets/audio/
+    # tool/generate_audio_assets.py — ONE FOLDER PER SoundTheme
+    # (lib/domain/audio/sound_theme.dart), not a single flat set: a Flutter
+    # asset directory entry only bundles the files directly inside it, never
+    # subdirectories, so each theme's folder needs its own line. ~61KB of
+    # SFX plus a 250KB 8-second music loop per theme, ~933KB across all
+    # three — a deliberate ~3x over the original single-theme 400KB budget,
+    # since a curated sound picker (post-competitor-analysis polish) is only
+    # a picker if more than one option ships. The loop is 16kHz mono (the
+    # SFX are 22.05kHz) precisely to keep that multiplied budget small,
+    # which a low mellow pad loses nothing audible to.
+    - assets/audio/soft_bells/
+    - assets/audio/chimes/
+    - assets/audio/minimal/
 
   # Fonts are BUNDLED, never taken from the device: many budget Android
   # phones in PK/IN ship without a Urdu-capable font, and the result is a

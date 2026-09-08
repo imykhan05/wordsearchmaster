@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../domain/audio/sound_theme.dart';
 import '../settings/ui_settings_store.dart';
 
 part 'sound_settings.g.dart';
@@ -43,6 +44,19 @@ class MusicEnabled extends _$MusicEnabled {
   void _set(bool value) {
     state = value;
     ref.read(uiSettingsStoreProvider).setMusicEnabled(value);
+  }
+}
+
+/// Which curated [SoundTheme] the player has picked — see its own doc for
+/// why this is a small fixed set rather than a free-form sound picker.
+@riverpod
+class SoundThemeSetting extends _$SoundThemeSetting {
+  @override
+  SoundTheme build() => ref.watch(uiSettingsStoreProvider).soundTheme;
+
+  void set(SoundTheme value) {
+    state = value;
+    ref.read(uiSettingsStoreProvider).setSoundTheme(value);
   }
 }
 
