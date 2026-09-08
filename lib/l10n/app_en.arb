@@ -274,9 +274,15 @@
   "@gotItButtonLabel": {
     "description": "Dismiss button on the one-time Urdu connected-form illustration."
   },
-  "saveProgressPromptMessage": "Sign in to save your progress",
+  "saveProgressPromptMessage": "Sign in to save your progress and get {amount} free coins",
   "@saveProgressPromptMessage": {
-    "description": "Ch02: the post-level-8 login offer, framed as saving progress rather than as an account requirement."
+    "description": "Ch02: the post-level-8 login offer, framed as saving progress rather than as an account requirement. [amount] is CoinEconomy.starterGrantCoins, so the number shown always matches what linking actually pays out.",
+    "placeholders": {
+      "amount": {
+        "type": "int",
+        "example": "50"
+      }
+    }
   },
   "saveProgressPromptAction": "Sign in",
   "@saveProgressPromptAction": {

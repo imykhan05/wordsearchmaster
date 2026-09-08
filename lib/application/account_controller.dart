@@ -30,8 +30,10 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../data/remote/cloud_account_repository.dart';
 import '../data/repositories/account_merge_repository.dart';
+import '../data/repositories/coins_repository.dart';
 import '../data/repositories/profile_repository.dart';
 import '../services/auth/auth_service.dart';
+import '../services/remote_config/remote_config.dart';
 
 part 'account_controller.g.dart';
 
@@ -70,6 +72,8 @@ class AccountController extends _$AccountController {
     final cloud = ref.read(cloudAccountRepositoryProvider);
     final mergeRepoFuture = ref.read(accountMergeRepositoryProvider.future);
     final profileRepoFuture = ref.read(profileRepositoryProvider.future);
+    final coinsRepoFuture = ref.read(coinsRepositoryProvider.future);
+    final loginBonus = ref.read(coinEconomyProvider).starterGrantCoins;
     // -------------------------------------------------------------------
 
     final outcome = await auth.linkWithGoogle();
@@ -87,6 +91,7 @@ class AccountController extends _$AccountController {
         // merge anyway would read the account's own cloud copy and credit its
         // balance a second time.
         await _rememberCloudUser(profileRepoFuture, account.uid);
+        await _grantLoginBonusOnce(coinsRepoFuture, loginBonus, account.uid);
         return AccountLinkResult.linked;
 
       case LinkRequiresMerge(:final existingAccount):
@@ -101,6 +106,15 @@ class AccountController extends _$AccountController {
           remoteUid: existingAccount.uid,
         );
         await _rememberCloudUser(profileRepoFuture, existingAccount.uid);
+        // The bonus is for LINKING, independent of whether the merge itself
+        // landed — the player is signed in either way, and re-signing in on
+        // the same uid is exactly what `grantOnce`'s reason guard exists to
+        // make a no-op.
+        await _grantLoginBonusOnce(
+          coinsRepoFuture,
+          loginBonus,
+          existingAccount.uid,
+        );
 
         // A null merge means the transaction rolled back — local data is
         // exactly as it was. Say so honestly rather than reporting success.
@@ -130,5 +144,22 @@ class AccountController extends _$AccountController {
   ) async {
     final repo = await repoFuture;
     await repo.linkCloudUser(uid);
+  }
+
+  /// The one-time reward for linking an account (Ch02: matches the incentive
+  /// the save-progress banner advertises). `CoinsRepository.grantOnce` is
+  /// what actually makes this idempotent per [uid] — this call is safe to
+  /// make on every successful link, including a repeat sign-in into an
+  /// account that already claimed it.
+  Future<void> _grantLoginBonusOnce(
+    Future<CoinsRepository> repoFuture,
+    int amount,
+    String uid,
+  ) async {
+    final repo = await repoFuture;
+    await repo.grantOnce(
+      amount: amount,
+      reason: CoinsRepository.loginBonusReasonFor(uid),
+    );
   }
 }

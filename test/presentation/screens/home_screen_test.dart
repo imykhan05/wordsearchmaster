@@ -6,6 +6,7 @@ import 'package:word_search_master/app/app.dart';
 import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/data/local/app_database.dart';
+import 'package:word_search_master/domain/progression/coin_economy.dart';
 import 'package:word_search_master/domain/progression/streak.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/services/notifications/notification_service.dart';
@@ -98,13 +99,23 @@ void main() {
   testWidgets('hidden before level 8', (tester) async {
     final l10n = await pumpHome(tester, highestCompletedLevel: 7);
 
-    expect(find.text(l10n.saveProgressPromptMessage), findsNothing);
+    expect(
+      find.text(
+        l10n.saveProgressPromptMessage(CoinEconomy.defaults.starterGrantCoins),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('shown once level 8 is completed', (tester) async {
     final l10n = await pumpHome(tester, highestCompletedLevel: 8);
 
-    expect(find.text(l10n.saveProgressPromptMessage), findsOneWidget);
+    expect(
+      find.text(
+        l10n.saveProgressPromptMessage(CoinEconomy.defaults.starterGrantCoins),
+      ),
+      findsOneWidget,
+    );
     expect(find.text(l10n.saveProgressPromptAction), findsOneWidget);
   });
 
@@ -115,12 +126,22 @@ void main() {
       highestCompletedLevel: 10,
       settings: settings,
     );
-    expect(find.text(l10n.saveProgressPromptMessage), findsOneWidget);
+    expect(
+      find.text(
+        l10n.saveProgressPromptMessage(CoinEconomy.defaults.starterGrantCoins),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip(l10n.saveProgressPromptDismiss));
     await tester.pump();
 
-    expect(find.text(l10n.saveProgressPromptMessage), findsNothing);
+    expect(
+      find.text(
+        l10n.saveProgressPromptMessage(CoinEconomy.defaults.starterGrantCoins),
+      ),
+      findsNothing,
+    );
     expect(settings.loginPromptDismissed, isTrue);
   });
 
@@ -134,7 +155,12 @@ void main() {
       settings: settings,
     );
 
-    expect(find.text(l10n.saveProgressPromptMessage), findsNothing);
+    expect(
+      find.text(
+        l10n.saveProgressPromptMessage(CoinEconomy.defaults.starterGrantCoins),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -160,7 +186,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text(l10n.saveProgressPromptMessage),
+        find.text(
+          l10n.saveProgressPromptMessage(
+            CoinEconomy.defaults.starterGrantCoins,
+          ),
+        ),
         findsOneWidget,
         reason: 'the offer stays so the player can try again',
       );

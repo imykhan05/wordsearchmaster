@@ -14,6 +14,7 @@ import '../widgets/sync_status.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
 import '../../services/notifications/notification_service.dart';
+import '../../services/remote_config/remote_config.dart';
 import '../../services/settings/ui_settings_store.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
@@ -344,6 +345,7 @@ class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
     final l10n = AppLocalizations.of(context);
     final tokens = AppTokens.of(context);
     final highest = ref.watch(highestCompletedLevelProvider).value ?? 0;
+    final loginBonus = ref.watch(coinEconomyProvider).starterGrantCoins;
 
     return ValueListenableBuilder<bool>(
       valueListenable: _dismissed,
@@ -359,7 +361,7 @@ class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
                 const SizedBox(width: AppTokens.space12),
                 Expanded(
                   child: Text(
-                    l10n.saveProgressPromptMessage,
+                    l10n.saveProgressPromptMessage(loginBonus),
                     style: AppTypography.uiTextStyle(
                       Language.english,
                       UiRole.body,

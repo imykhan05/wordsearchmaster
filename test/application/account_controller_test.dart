@@ -8,6 +8,7 @@ import 'package:word_search_master/data/repositories/coins_repository.dart';
 import 'package:word_search_master/data/repositories/profile_repository.dart';
 import 'package:word_search_master/data/repositories/progress_repository.dart';
 import 'package:word_search_master/domain/progression/account_merge.dart';
+import 'package:word_search_master/domain/progression/coin_economy.dart';
 import 'package:word_search_master/domain/scoring/score_event.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/auth/auth_service.dart';
@@ -92,7 +93,11 @@ void main() {
         integrity: db.integrity,
         reporter: db.reporter,
       );
-      expect(await coins.watchBalance().first, 0);
+      expect(
+        await coins.watchBalance().first,
+        CoinEconomy.defaults.starterGrantCoins,
+        reason: 'the one-time login bonus, and nothing from the cloud',
+      );
     });
 
     test('cancelling reports cancelled and touches nothing', () async {
@@ -162,7 +167,11 @@ void main() {
         );
         expect(after.levels['en/1']!.stars, 3, reason: 'guest level kept');
         expect(after.levels['en/2']!.stars, 3, reason: 'better cloud row won');
-        expect(after.coinBalance, 250, reason: 'cloud coins credited');
+        expect(
+          after.coinBalance,
+          250 + CoinEconomy.defaults.starterGrantCoins,
+          reason: 'cloud coins credited, plus the one-time login bonus',
+        );
       },
     );
 

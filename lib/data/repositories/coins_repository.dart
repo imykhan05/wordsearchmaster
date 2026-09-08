@@ -91,6 +91,66 @@ final class CoinsRepository extends LocalRepository {
     });
   }
 
+  /// The ledger reason that marks the one-time reward for linking [uid] to a
+  /// Google account — `AccountController.linkWithGoogle`'s only caller.
+  /// Named the same way `AccountMergeRepository.mergeReasonFor` names its own
+  /// guard, and for the identical reason: signing out and back into the SAME
+  /// account must not pay out twice.
+  static String loginBonusReasonFor(String uid) => 'login_bonus:$uid';
+
+  /// Appends [amount] tagged with [reason], UNLESS a row already carries that
+  /// reason — the general form of the idempotency guard
+  /// `AccountMergeRepository._creditCoinsOnce` already uses for its own merge
+  /// credit, here so a second one-time reward (the login bonus) does not have
+  /// to re-implement the same read-then-insert check a third time. Returns
+  /// whether it actually granted anything, so a caller can choose to say
+  /// nothing rather than falsely confirm a reward that was already paid.
+  Future<bool> grantOnce({required int amount, required String reason}) {
+    assert(amount > 0, 'a grant is always positive; use trySpend to deduct');
+
+    return database.transaction(() async {
+      final existing =
+          await (database.select(database.coinsLedger)
+                ..where((row) => row.reason.equals(reason))
+                ..limit(1))
+              .getSingleOrNull();
+      if (existing != null) return false;
+
+      final createdAt = nowMillis;
+      final id = await database.nextRowId(LocalTables.coinsLedger);
+
+      await database
+          .into(database.coinsLedger)
+          .insert(
+            CoinsLedgerCompanion.insert(
+              id: Value(id),
+              delta: amount,
+              reason: reason,
+              createdAt: createdAt,
+              integrityTag: RowTags.coinsLedger(
+                integrity,
+                id: id,
+                delta: amount,
+                reason: reason,
+                createdAt: createdAt,
+              ),
+            ),
+          );
+
+      await enqueue(
+        kind: OutboxKind.coinsDelta,
+        createdAt: createdAt,
+        payload: {
+          'ledgerId': id,
+          'delta': amount,
+          'reason': reason,
+          'createdAt': createdAt,
+        },
+      );
+      return true;
+    });
+  }
+
   /// Spends [amount] (a POSITIVE number) if the balance covers it.
   ///
   /// Returns false and writes nothing when it does not. The balance is read

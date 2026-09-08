@@ -99,7 +99,7 @@
   "ddaHintOfferDismiss": "अभी नहीं",
   "urduLetterFormIntro": "ग्रिड में हर अक्षर अलग दिखता है",
   "gotItButtonLabel": "समझ गया",
-  "saveProgressPromptMessage": "अपनी प्रगति सहेजने के लिए साइन इन करें",
+  "saveProgressPromptMessage": "अपनी प्रगति सहेजने के लिए साइन इन करें और {amount} मुफ़्त सिक्के पाएं",
   "saveProgressPromptAction": "साइन इन",
   "saveProgressPromptDismiss": "खारिज करें",
   "languageSectionTitle": "भाषा",
