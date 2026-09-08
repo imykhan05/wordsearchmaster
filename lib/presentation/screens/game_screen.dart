@@ -34,6 +34,7 @@ import '../game/grid_geometry.dart';
 import '../game/level_complete_card.dart';
 import '../game/particles.dart';
 import '../game/pause_sheet.dart';
+import '../game/word_flight.dart';
 import '../meta/chest_open.dart';
 import '../meta/journey_providers.dart';
 import '../widgets/rolling_counter.dart';
@@ -123,6 +124,13 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   final ParticleController _particles = ParticleController();
   final FoundWordRevealController _reveal = FoundWordRevealController();
 
+  /// The found word's letters lifting off the grid and landing on their chip.
+  /// Unlike every other layer on this screen, its two ends live in DIFFERENT
+  /// subtrees — see `word_flight.dart`'s header — so it needs [_flightAnchors]
+  /// alongside the controller to find them.
+  final WordFlightController _flights = WordFlightController();
+  final WordFlightAnchors _flightAnchors = WordFlightAnchors();
+
   /// Bumped on every match; the praise banner only cares that this changed,
   /// never by how much, so a plain incrementing counter is enough to force a
   /// re-trigger even when two consecutive words land within the same banner's
@@ -207,6 +215,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     _idleTimer?.cancel();
     _particles.dispose();
     _reveal.dispose();
+    _flights.dispose();
     _wordPraiseTrigger.dispose();
     _pulse.dispose();
     _ddaState.dispose();
@@ -415,6 +424,25 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     );
     _wordPraiseTrigger.value++;
 
+    // The letters lift off the grid and land on the word's chip. The
+    // graphemes are recomputed from the matched word rather than read back
+    // out of `state.grid.cells`, and that is load-bearing: on the LAST word
+    // of a journey level the Zeigarnik swap has already replaced `state.grid`
+    // with the NEXT level's, so those cells hold the wrong letters entirely.
+    // `outcome.cells` is oriented to the word (P05), so index i of one really
+    // is index i of the other.
+    _flights.fly(
+      word: outcome.matchedWord!,
+      graphemes: ScriptNormalizer.graphemes(
+        outcome.matchedWord!,
+        state.language,
+      ),
+      cells: outcome.cells,
+      geometry: geometry,
+      language: state.language,
+      color: color,
+    );
+
     // Burst from the middle of the word, per Ch03 — delayed to 90ms so it
     // lands inside the spec's 90–260ms window (the burst's own 170ms
     // lifetime supplies the other end).
@@ -605,6 +633,8 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
               chestDismissed: _chestDismissed,
               particles: _particles,
               foundWordReveal: _reveal,
+              wordFlights: _flights,
+              flightAnchors: _flightAnchors,
               wordPraiseTrigger: _wordPraiseTrigger,
               pulseController: _pulse,
               ddaState: _ddaState,
@@ -737,6 +767,8 @@ class _GameContent extends ConsumerWidget {
     required this.chestDismissed,
     required this.particles,
     required this.foundWordReveal,
+    required this.wordFlights,
+    required this.flightAnchors,
     required this.wordPraiseTrigger,
     required this.pulseController,
     required this.ddaState,
@@ -764,6 +796,13 @@ class _GameContent extends ConsumerWidget {
   final ValueNotifier<bool> chestDismissed;
   final ParticleController particles;
   final FoundWordRevealController foundWordReveal;
+
+  /// The letter flight and the two ends it measures between — see
+  /// `word_flight.dart`. [flightAnchors] is threaded down to both the grid
+  /// (which takes its `gridKey`) and every word chip (which registers itself),
+  /// because those are the only two places that know where either end is.
+  final WordFlightController wordFlights;
+  final WordFlightAnchors flightAnchors;
 
   /// Bumped once per match — see `_GameScreenBodyState._wordPraiseTrigger`.
   final ValueListenable<int> wordPraiseTrigger;
@@ -850,6 +889,11 @@ class _GameContent extends ConsumerWidget {
                         boxShadow: tokens.elevation1.shadows,
                       ),
                       child: GameGrid(
+                        // The flight's origin end: `GridGeometry.cellCenter`
+                        // is expressed in this box's own local space, so this
+                        // is the key that makes a cell centre resolvable as a
+                        // global position.
+                        key: flightAnchors.gridKey,
                         cells: state.grid.cells,
                         language: state.language,
                         foundWordCells: [
@@ -903,6 +947,7 @@ class _GameContent extends ConsumerWidget {
                       key: ValueKey(word),
                       word: word,
                       language: state.language,
+                      anchors: flightAnchors,
                       found: state.foundWords.contains(word),
                       color:
                           tokens.colors.foundWord[state.foundWords.indexOf(
@@ -914,6 +959,18 @@ class _GameContent extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+        // Over BOTH the grid and the word list, because a flight crosses from
+        // one to the other — which is also why it cannot live inside
+        // `GameGrid` the way the particle and reveal layers do. `IgnorePointer`
+        // so a layer spanning the whole screen never eats a drag.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: WordFlightLayer(
+              controller: wordFlights,
+              anchors: flightAnchors,
+            ),
+          ),
         ),
         // Zeigarnik (Ch02): for a journey level, GameController has already
         // generated the NEXT level's grid and word list by the time phase
@@ -1065,6 +1122,7 @@ class _WordChip extends StatefulWidget {
   const _WordChip({
     required this.word,
     required this.language,
+    required this.anchors,
     required this.found,
     required this.color,
     super.key,
@@ -1072,6 +1130,11 @@ class _WordChip extends StatefulWidget {
 
   final String word;
   final Language language;
+
+  /// Where this chip publishes its own position, so a letter flight has
+  /// somewhere to land — see `word_flight.dart`'s [WordFlightAnchors].
+  final WordFlightAnchors anchors;
+
   final bool found;
   final Color color;
 
@@ -1091,8 +1154,23 @@ class _WordChipState extends State<_WordChip> {
   Timer? _delayTimer;
 
   @override
+  void initState() {
+    super.initState();
+    // Registers the CONTEXT, not a measurement: nothing is laid out yet at
+    // this point, and the anchor resolves a render box only when a flight
+    // actually asks — during a pointer event, so always after layout.
+    widget.anchors.registerChip(widget.word, context);
+  }
+
+  @override
   void didUpdateWidget(_WordChip oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // A chip is keyed by its word, so `word` changing means Flutter reused
+    // this element for a different one (a level advance re-keying the Wrap).
+    if (oldWidget.word != widget.word) {
+      widget.anchors.unregisterChip(oldWidget.word, context);
+      widget.anchors.registerChip(widget.word, context);
+    }
     if (oldWidget.found == widget.found) return;
 
     _delayTimer?.cancel();
@@ -1113,6 +1191,7 @@ class _WordChipState extends State<_WordChip> {
 
   @override
   void dispose() {
+    widget.anchors.unregisterChip(widget.word, context);
     _delayTimer?.cancel();
     _displayFound.dispose();
     super.dispose();

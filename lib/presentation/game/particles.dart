@@ -93,6 +93,14 @@ class _ParticleLayerState extends State<ParticleLayer>
     final pending = widget.controller.takePending();
     if (_reduceMotion || pending.isEmpty) return;
 
+    // A `Ticker`'s elapsed restarts at zero on every `start()`, but this
+    // clock still holds the LAST run's final value — so without rezeroing it
+    // while idle, the second burst of a level is stamped into the future and
+    // hangs frozen at its origin for exactly as long as the first burst
+    // lasted, the third for twice that, and so on. Only safe while stopped:
+    // mid-run the value is live and a burst in flight is measured against it.
+    if (!_ticker.isActive) _clockMs.value = 0;
+
     for (final burst in pending) {
       _bursts.add(_LiveBurst.spawn(burst, _clockMs.value));
     }

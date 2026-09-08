@@ -2527,3 +2527,67 @@ the transport is proven only via the injectable fake, matching this
 codebase's existing standard for anything that needs a real device or a real
 external network to confirm (App Check enforcement, the MAX callback, the
 background-music loop's audibility).
+
+## Competitor-driven polish (post-P18)
+
+Driven by `docs/competitor-analysis.md` — a measured teardown of three
+100M+-install word games, from video the player recorded. Shipped one task at
+a time, each its own commit: the grid card, the found-word praise banner and
+ribbon title, the capsule sweep, the login coin bonus, and the letter flight
+below.
+
+### Letter flight — the one animation whose two ends are in different subtrees
+
+`lib/presentation/game/word_flight.dart` follows the established
+Controller + Layer + Ticker + `ValueNotifier<double>` shape exactly
+(`ParticleController`/`ParticleLayer`, `FoundWordRevealController`/
+`FoundWordRevealLayer`) and departs from it in one place, for one reason:
+every other layer draws inside the GRID's own box, from positions
+`GridGeometry` computes. This one starts at a grid cell and lands on the
+word's chip, which lives in the `Wrap` below the grid card — a sibling
+subtree with no shared geometry and a layout that reflows as chips wrap.
+
+So the two ends are MEASURED, not computed, and `WordFlightAnchors` is the
+whole of that: a `GlobalKey` on `GameGrid` (whose local space is exactly the
+one `cellCenter` returns) and a live word→`BuildContext` map that chips
+register themselves into on mount and out of on dispose. Unregistration is
+IDENTITY-CHECKED, because a chip for the same word can dispose AFTER its
+replacement registered and would otherwise delete the live entry. Only the
+contexts are held; render boxes are resolved at flight time, which is always
+inside a pointer callback and therefore always after layout.
+
+- **The layer sits in `_GameContent`'s outer `Stack`, not inside `GameGrid`**
+  — it has to paint over the grid AND the word list — and it is placed BELOW
+  the level-complete `Positioned.fill`, so the card covers a flight still in
+  the air rather than the other way round.
+- **Graphemes are recomputed from the matched word, never read back out of
+  `state.grid.cells`.** On the LAST word of a journey level the Zeigarnik
+  swap has already replaced `state.grid` with the next level's, so those
+  cells hold different letters entirely. `ScriptNormalizer.graphemes(
+  outcome.matchedWord, language)` is the same call `GridGenerator` used to
+  place the word, and `outcome.cells` is oriented to the word (P05), so
+  index i of one really is index i of the other even on a backwards trace.
+- **Opacity is a `saveLayer`, not a colour on the `TextStyle`.**
+  `GraphemePainterCache` keys on the style, so fading by colour would mint a
+  fresh `TextPainter` — and a fresh `layout()` — on every frame of every
+  letter, which is the exact trap P06's cache exists to close. The layer
+  paint's colour is the letter's own token colour with a new alpha; only the
+  alpha is read.
+- Decorative, so reduce-motion SKIPS it outright rather than collapsing it
+  to zero — same rule as particles and confetti.
+
+### A real bug this found: a restarted `Ticker` re-measures elapsed from zero
+
+`ParticleLayer` and `FoundWordRevealLayer` both stamped each new spawn with
+`_clockMs.value` — the clock left holding the PREVIOUS run's final value —
+and then restarted a stopped `Ticker`, whose `elapsed` begins at zero again.
+So the second found word of a level sat frozen at `t = 0` for exactly as long
+as the first animation had lasted, the third for twice that, and so on: by
+the end of a twelve-word level the burst arrived seconds after the word.
+Measured, not inferred — `word_flight_test.dart`'s regression case times both
+runs, and against the unfixed code the second takes 864ms where the first
+takes 432ms, exactly double.
+
+The fix is one line in each of the three layers: rezero the clock when a
+spawn arrives while the ticker is stopped. Only safe there — mid-run the
+value is live and everything in flight is measured against it.
