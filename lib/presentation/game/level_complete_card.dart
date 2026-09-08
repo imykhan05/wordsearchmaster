@@ -59,6 +59,15 @@ class LevelCompleteCard extends StatelessWidget {
   /// `ParticleLayer`'s 8–12 pieces per found word.
   static const int _confettiCount = 24;
 
+  /// The title ribbon pops in over the FIRST star's own stagger window —
+  /// before any star, matching the found-word ribbon's own "arrives first"
+  /// beat (`_WordPraiseBanner` in `game_screen.dart`) rather than adding a
+  /// new slice to the timeline.
+  double _titleProgress(double masterT) {
+    final localT = (masterT * _totalMs / _starStaggerMs).clamp(0.0, 1.0);
+    return Motion.punch.transform(localT);
+  }
+
   double _starProgress(double masterT, int index) {
     final startMs = index * _starStaggerMs;
     final localT = ((masterT * _totalMs - startMs) / _starPopMs).clamp(
@@ -96,6 +105,7 @@ class LevelCompleteCard extends StatelessWidget {
         tween: Tween<double>(begin: 0, end: 1),
         duration: Motion.reduced(context, _totalDuration),
         builder: (context, masterT, child) {
+          final titleT = _titleProgress(masterT);
           final scoreT = _scoreProgress(masterT);
           final displayedScore = (summary.score * scoreT).round();
           final displayedCoins = (coinsEarned * scoreT).round();
@@ -121,14 +131,30 @@ class LevelCompleteCard extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          l10n.levelCompleteTitle,
-                          style: AppTypography.uiTextStyle(
-                            Language.english,
-                            UiRole.display,
-                            color: tokens.colors.onSurface,
+                        Opacity(
+                          opacity: titleT.clamp(0.0, 1.0),
+                          child: Transform.scale(
+                            scale: titleT,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppTokens.space24,
+                                vertical: AppTokens.space8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: tokens.colors.primary,
+                                borderRadius: AppTokens.borderRadius16,
+                              ),
+                              child: Text(
+                                l10n.levelCompleteTitle,
+                                style: AppTypography.uiTextStyle(
+                                  Language.english,
+                                  UiRole.display,
+                                  color: tokens.colors.onPrimary,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                           ),
-                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: AppTokens.space24),
                         Row(

@@ -123,6 +123,13 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   final ParticleController _particles = ParticleController();
   final FoundWordRevealController _reveal = FoundWordRevealController();
 
+  /// Bumped on every match; the praise banner only cares that this changed,
+  /// never by how much, so a plain incrementing counter is enough to force a
+  /// re-trigger even when two consecutive words land within the same banner's
+  /// hold window — the same nonce trick `PulseSignal` uses for the identical
+  /// reason (a `ValueNotifier` only notifies on inequality).
+  final ValueNotifier<int> _wordPraiseTrigger = ValueNotifier<int>(0);
+
   /// Ch02/P12: the FTUE glow and the DDA stuck-pulse share this one
   /// mechanism — see `game_grid.dart`'s [PulseController] header.
   final PulseController _pulse = PulseController();
@@ -200,6 +207,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     _idleTimer?.cancel();
     _particles.dispose();
     _reveal.dispose();
+    _wordPraiseTrigger.dispose();
     _pulse.dispose();
     _ddaState.dispose();
     _urduIntroDismissed.dispose();
@@ -405,6 +413,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
       color: color,
       borderWidth: borderWidth,
     );
+    _wordPraiseTrigger.value++;
 
     // Burst from the middle of the word, per Ch03 — delayed to 90ms so it
     // lands inside the spec's 90–260ms window (the burst's own 170ms
@@ -596,6 +605,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
               chestDismissed: _chestDismissed,
               particles: _particles,
               foundWordReveal: _reveal,
+              wordPraiseTrigger: _wordPraiseTrigger,
               pulseController: _pulse,
               ddaState: _ddaState,
               onAcceptFreeHint: _acceptFreeHint,
@@ -727,6 +737,7 @@ class _GameContent extends ConsumerWidget {
     required this.chestDismissed,
     required this.particles,
     required this.foundWordReveal,
+    required this.wordPraiseTrigger,
     required this.pulseController,
     required this.ddaState,
     required this.onAcceptFreeHint,
@@ -753,6 +764,9 @@ class _GameContent extends ConsumerWidget {
   final ValueNotifier<bool> chestDismissed;
   final ParticleController particles;
   final FoundWordRevealController foundWordReveal;
+
+  /// Bumped once per match — see `_GameScreenBodyState._wordPraiseTrigger`.
+  final ValueListenable<int> wordPraiseTrigger;
 
   /// Ch02/P12: drives the FTUE glow / DDA stuck-pulse on the grid.
   final PulseController pulseController;
@@ -851,6 +865,19 @@ class _GameContent extends ConsumerWidget {
                         showPerfOverlay: isDev,
                       ),
                     ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: _WordPraiseBanner(
+                            trigger: wordPraiseTrigger,
+                            language: state.language,
+                          ),
+                        ),
+                      ),
+                    ),
                     if (isDev && state.session is JourneySession)
                       Positioned(
                         right: AppTokens.space8,
@@ -928,6 +955,98 @@ class _GameContent extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// A brief "Perfect!" pill that appears over the top of the grid card the
+/// instant a word is found, then fades itself away — the found-word half of
+/// the level-complete card's own praise ribbon (`LevelCompleteCard`'s
+/// restyled title).
+///
+/// Purely decorative, not informational (unlike the DDA pulse, which tells
+/// the player WHERE to look): reduce-motion therefore SKIPS it entirely
+/// rather than showing it without a fade, the same treatment particles and
+/// confetti get elsewhere in this file. `IgnorePointer` at the call site
+/// keeps it from ever stealing a drag that starts near the top of the grid.
+class _WordPraiseBanner extends StatefulWidget {
+  const _WordPraiseBanner({required this.trigger, required this.language});
+
+  final ValueListenable<int> trigger;
+  final Language language;
+
+  @override
+  State<_WordPraiseBanner> createState() => _WordPraiseBannerState();
+}
+
+class _WordPraiseBannerState extends State<_WordPraiseBanner> {
+  final ValueNotifier<bool> _visible = ValueNotifier<bool>(false);
+  Timer? _hideTimer;
+
+  /// How long the pill holds at full opacity before fading out — not one of
+  /// `Motion`'s four named transition lengths (those time a MOVE, not a
+  /// hold), so a local constant names it instead, the same shape
+  /// `LevelCompleteCard`'s own stagger constants and `ParticleLayer.lifetime`
+  /// already use for a bespoke duration.
+  static const Duration _holdDuration = Duration(milliseconds: 900);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.trigger.addListener(_onTriggered);
+  }
+
+  void _onTriggered() {
+    // Skipped outright, not shortened — see the class doc.
+    if (MediaQuery.disableAnimationsOf(context)) return;
+
+    _hideTimer?.cancel();
+    _visible.value = true;
+    _hideTimer = Timer(_holdDuration, () {
+      if (mounted) _visible.value = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.trigger.removeListener(_onTriggered);
+    _hideTimer?.cancel();
+    _visible.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _visible,
+      builder: (context, visible, child) => AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: Motion.of(context).base,
+        curve: Motion.fade,
+        child: child,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.space16,
+          vertical: AppTokens.space8,
+        ),
+        decoration: BoxDecoration(
+          color: tokens.colors.success,
+          borderRadius: AppTokens.borderRadius16,
+        ),
+        child: Text(
+          l10n.wordFoundPraise,
+          style: AppTypography.uiTextStyle(
+            widget.language,
+            UiRole.label,
+            color: tokens.colors.onPrimary,
+            weight: FontWeight.w700,
+          ),
+        ),
+      ),
     );
   }
 }

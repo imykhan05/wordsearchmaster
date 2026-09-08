@@ -54,6 +54,10 @@
   "@hintButtonLabel": {
     "description": "Tooltip on the game screen's hint icon button."
   },
+  "wordFoundPraise": "Perfect!",
+  "@wordFoundPraise": {
+    "description": "Brief praise banner shown over the grid the instant a word is found. Same text every time — a fixed, short exclamation, not randomized copy."
+  },
   "levelCompleteTitle": "Level Complete!",
   "@levelCompleteTitle": {
     "description": "Heading on the full-screen result card shown when a level is won."
