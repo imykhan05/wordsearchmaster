@@ -234,7 +234,11 @@ class GameGridState extends State<GameGrid>
                   cells: widget.cells,
                   geometry: geometry,
                   textStyle: textStyle,
-                  cellColor: tokens.colors.surfaceElevated,
+                  // Zero-alpha, not removed: letters sit on the ONE card
+                  // `_GameContent` draws behind the whole grid, never on a
+                  // per-cell box — `cornerRadius` below stays wired so a
+                  // future per-cell treatment has somewhere to plug back in.
+                  cellColor: tokens.colors.surfaceElevated.withValues(alpha: 0),
                   cornerRadius: AppTokens.radius4,
                   cache: _cache,
                   // Cells hold a single isolated grapheme, so the painter's own

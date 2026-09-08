@@ -86,7 +86,7 @@ abstract final class AppTypography {
     Language language, {
     double cellSize = defaultGridCellSize,
     Color? color,
-    FontWeight weight = FontWeight.w500,
+    FontWeight weight = FontWeight.w600,
   }) {
     final metrics = _gridMetrics(language);
     return TextStyle(
@@ -154,19 +154,19 @@ abstract final class AppTypography {
       // Naskh sits comfortably at most of the cell height.
       Language.urdu => const _GridMetrics(
         family: AppFonts.naskh,
-        sizeFactor: 0.56,
+        sizeFactor: 0.60,
         height: 1.30,
       ),
       // Devanagari aksharas carry matras above and below the baseline, so the
       // glyph gets a smaller box and more leading to stay inside the cell.
       Language.hindi => const _GridMetrics(
         family: AppFonts.devanagari,
-        sizeFactor: 0.48,
+        sizeFactor: 0.52,
         height: 1.45,
       ),
       Language.english => const _GridMetrics(
         family: AppFonts.latin,
-        sizeFactor: 0.52,
+        sizeFactor: 0.56,
         height: 1.20,
       ),
     };

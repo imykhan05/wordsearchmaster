@@ -827,20 +827,29 @@ class _GameContent extends ConsumerWidget {
                 padding: const EdgeInsets.all(AppTokens.space16),
                 child: Stack(
                   children: [
-                    GameGrid(
-                      cells: state.grid.cells,
-                      language: state.language,
-                      foundWordCells: [
-                        for (final word in state.foundWords)
-                          state.grid.placements[word]!,
-                      ],
-                      hintedCell: state.hintedCell,
-                      pulseController: pulseController,
-                      onSelectionReleased: onSelectionReleased,
-                      particleController: particles,
-                      foundWordRevealController: foundWordReveal,
-                      hapticsService: ref.watch(hapticsServiceProvider),
-                      showPerfOverlay: isDev,
+                    Container(
+                      padding: const EdgeInsets.all(AppTokens.space12),
+                      decoration: BoxDecoration(
+                        color: tokens.elevation1.surface,
+                        borderRadius: AppTokens.borderRadius16,
+                        border: Border.all(color: tokens.colors.outlineSoft),
+                        boxShadow: tokens.elevation1.shadows,
+                      ),
+                      child: GameGrid(
+                        cells: state.grid.cells,
+                        language: state.language,
+                        foundWordCells: [
+                          for (final word in state.foundWords)
+                            state.grid.placements[word]!,
+                        ],
+                        hintedCell: state.hintedCell,
+                        pulseController: pulseController,
+                        onSelectionReleased: onSelectionReleased,
+                        particleController: particles,
+                        foundWordRevealController: foundWordReveal,
+                        hapticsService: ref.watch(hapticsServiceProvider),
+                        showPerfOverlay: isDev,
+                      ),
                     ),
                     if (isDev && state.session is JourneySession)
                       Positioned(
