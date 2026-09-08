@@ -280,11 +280,21 @@ void paintCapsule({
   required Color border,
   required double borderWidth,
   double scale = 1.0,
+
+  /// 0 draws a dot at [cells].first; 1 (the default) draws the full run —
+  /// the found-word reveal's sweep-in (Ch03) is the only caller that passes
+  /// anything else. Shortening [delta] BEFORE the rotate/translate below,
+  /// rather than clipping the finished capsule, is what keeps the growing
+  /// end correctly rounded and the whole shape aligned to the word's own
+  /// direction at every step — which is also why `sweep: 0` already falls
+  /// out of the existing zero-length-run case two lines down instead of
+  /// needing its own branch.
+  double sweep = 1.0,
 }) {
   final start = geometry.cellCenter(cells.first);
   final end = geometry.cellCenter(cells.last);
 
-  final delta = end - start;
+  final delta = (end - start) * sweep.clamp(0.0, 1.0);
   final thickness = geometry.cellSize * 0.84;
   final rect = Rect.fromCenter(
     center: Offset.zero,
@@ -295,11 +305,11 @@ void paintCapsule({
 
   canvas.save();
   canvas.translate(start.dx + delta.dx / 2, start.dy + delta.dy / 2);
-  // Zero-length runs (a single cell) have no meaningful angle; atan2(0,0) is
-  // 0, which draws a circle — correct.
+  // Zero-length runs — a single cell, or `sweep: 0` on a longer one — have no
+  // meaningful angle; atan2(0,0) is 0, which draws a circle — correct.
   canvas.rotate(atan2(delta.dy, delta.dx));
   // Applied last so it scales the capsule about its own centre — the found-
-  // word reveal's 60–120ms punch (Ch03) is the only caller that passes
+  // word reveal's post-sweep punch (Ch03) is the only caller that passes
   // anything but the default.
   if (scale != 1.0) canvas.scale(scale);
 
