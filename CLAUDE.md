@@ -2727,3 +2727,37 @@ character are proven only by the generator's own measured assertions (loop
 seam continuity, fixed C6 fundamental, file sizes) and by the wiring tests;
 whether `chimes` genuinely sounds "livelier" than `soft_bells` is a judgement
 only a device can make.
+
+### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
+
+Found by a player's own local `flutter build apk --flavor stg --release`
+failing outright — this container has no Android SDK, so it cannot be
+GRADLE-verified here, but the root cause is confirmed from the package
+source itself: `applovin_max` 4.6.4's own `android/build.gradle`
+hardcodes `compileSdkVersion 31`, completely independent of this app's own
+`compileSdk` (36, `android/app/build.gradle.kts`). Modern androidx
+transitives it pulls in — `androidx.fragment:1.7.1`,
+`androidx.lifecycle:*:2.7.0`, `androidx.core-ktx:1.13.1`, and others —
+require compileSdk 34+, so AGP's AAR-metadata check fails the build on
+ANY current Flutter/AGP toolchain, not one machine. `4.6.4` is confirmed
+still the latest published version (checked against the pub.dev package
+API directly), so there is no newer release to upgrade to.
+
+The fix is in `android/build.gradle.kts` (the ROOT one, not
+`android/app/build.gradle.kts`): a `subprojects` block scoped to
+`project.name == "applovin_max"` overrides that one module's
+`LibraryExtension.compileSdk` to 36 inside `afterEvaluate` — late enough
+that it runs AFTER the plugin's own build.gradle has already configured
+the extension, so the override wins rather than being overwritten back.
+Scoped by name rather than applied to every subproject, so a plugin that
+already declares its compileSdk correctly is never second-guessed.
+
+**Not verified here, and worth a second look if it still fails locally**:
+this container's lack of an Android SDK means the fix could not be
+confirmed against a real Gradle sync. The `LibraryExtension` DSL class
+used is AGP's long-standing public API for `com.android.library` modules
+and should resolve under AGP 9.1.0 (the version this repo's
+`android/settings.gradle.kts` pins), but if a future AGP release removes
+or relocates it, the fix needs updating alongside — same class of "this
+needs re-verifying against a specific vendor toolchain" gap as
+`MaxAdGateway`'s own already-documented untested-here status.
