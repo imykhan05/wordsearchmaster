@@ -96,6 +96,15 @@ android {
             signingConfig = signingConfigs.getByName(
                 if (hasReleaseKeystore) "release" else "debug"
             )
+            // applovin_max's bundled IAB Open Measurement SDK references an
+            // Amazon-Appstore-only attestation class that is never on this
+            // app's classpath — see proguard-rules.pro's own header for the
+            // full story. Only this one custom file is added, not AGP's
+            // default optimize file, since minification already ran
+            // successfully without it before this dependency's rule was
+            // needed; widening R8's own default rule set is a separate,
+            // unrelated risk this fix does not need to take.
+            proguardFiles("proguard-rules.pro")
         }
     }
 }

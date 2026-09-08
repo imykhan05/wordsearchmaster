@@ -2761,3 +2761,61 @@ and should resolve under AGP 9.1.0 (the version this repo's
 or relocates it, the fix needs updating alongside — same class of "this
 needs re-verifying against a specific vendor toolchain" gap as
 `MaxAdGateway`'s own already-documented untested-here status.
+
+### `applovin_max`'s bundled Open Measurement SDK breaks R8, one layer further in
+
+The compileSdk fix above got a real local `flutter build apk --flavor stg
+--release` measurably further — past compilation, into
+`:app:minifyStgReleaseWithR8` — where it hit a second, unrelated failure:
+"Missing classes detected while running R8" naming three classes under
+`com.amazon.privacypass` (`PrivacyPass`, `VerificationContext`,
+`callback.AttestAPICallback`), each referenced from
+`com.iab.omid.library.applovin.attestation.i.a(...)`. That namespace is the
+IAB Open Measurement SDK `applovin_max` bundles for ad viewability
+measurement; its attestation path optionally reaches for Amazon's Privacy
+Pass library on an Amazon-Appstore build. This app is never built for the
+Amazon Appstore, so `com.amazon.privacypass.*` is never on the classpath —
+R8's whole-program analysis flags the reference as a class it cannot find
+and fails the build rather than assuming the reference is dead code, unless
+told explicitly that this is expected.
+
+That is the standard, well-documented shape for this exact dependency
+combination, and the fix is the standard one: a `-dontwarn` rule for the
+missing package, in a proguard file R8 actually reads for this module. Two
+things were true before this fix that are worth recording, because neither
+was obvious from `android/app/build.gradle.kts` alone:
+
+- **Minification was already running for release builds with no
+  `proguardFiles` line in this file at all.** `grep`/`find` across
+  `android/` for `minify`/`proguard` turned up nothing except
+  `gradle.properties`'s own comment about a prior R8-related Gradle-daemon
+  OOM crash on a small-RAM Windows machine — proof R8 had already been
+  exercised successfully on this project before, just never against this
+  particular missing-class combination. AGP still aggregates every
+  dependency AAR's own bundled consumer-rules automatically regardless of
+  whether the app module declares `proguardFiles` itself, which is
+  sufficient to get a release build running R8 with zero lines of app-owned
+  proguard config — this repo was in exactly that state.
+- **`proguard-rules.pro` did not exist anywhere under `android/`.** It is
+  now `android/app/proguard-rules.pro`, containing exactly one rule
+  (`-dontwarn com.amazon.privacypass.**`) with a header explaining why, and
+  `android/app/build.gradle.kts`'s `release` block gained
+  `proguardFiles("proguard-rules.pro")` to make R8 actually read it. It is
+  added ALONE — not alongside AGP's own default
+  `getDefaultProguardFile("proguard-android-optimize.txt")` — deliberately:
+  minification was already succeeding (elsewhere) without that default file
+  in the mix, so pulling it in now would change R8's optimization
+  aggressiveness project-wide to fix a problem that needs exactly one
+  targeted rule, trading a known-good baseline for an unrelated, untested
+  risk.
+
+**Not verified here, for the same standing reason as the compileSdk fix**:
+no Android SDK in this container means R8 cannot actually be run here to
+confirm the build now completes. `-dontwarn com.amazon.privacypass.**` is
+the documented fix for this exact IAB-Omid/Amazon-Privacy-Pass "missing
+class" pattern (the same shape widely seen wherever `applovin_max`/other
+MAX-mediated adapters bundle that OM SDK), and the wildcard covers all
+three classes R8 named since they share one package — but if a *different*
+missing-class family surfaces on the next build attempt, it is a new,
+separate `-dontwarn` line in the same file, not evidence this one was
+wrong.
