@@ -2591,3 +2591,34 @@ takes 432ms, exactly double.
 The fix is one line in each of the three layers: rezero the clock when a
 spawn arrives while the ticker is stopped. Only safe there — mid-run the
 value is live and everything in flight is measured against it.
+
+### Level theme in the game header
+
+`levels.json` has always carried a `theme` per row, and nothing displayed it
+— every level looked like an identical grid with a number on it, where all
+three competitor apps show a category for the level a player is on.
+
+`GameState` gained `category` (`String?`), set from
+`LevelDefinition.categoryPool.firstOrNull`, NOT from `.theme` — and that
+distinction matters. `DailyPuzzle.definitionFor`'s own header already
+explains why: a daily's `theme` is deliberately its DATE string, to avoid
+colliding with a journey region header, so reading `.theme` here would have
+put "2026-08-26" under the AppBar title on the one mode that actually has a
+category worth showing. `categoryPool` carries the real answer either way —
+a journey level's single pool entry, or the day's picked category (or
+`null`, for the genuinely-empty-pool degrade `DailyPuzzle` already handles).
+
+It is set in exactly the two places `GameState` is otherwise built:
+`_loadSession` (every fresh mount) and the Zeigarnik swap's `JourneySession`
+branch (the next level's own definition, alongside the next grid and word
+list it already re-derives). No third place needed it — `restart()` reuses
+the current state's `category` unchanged, matching how it already treats
+`language`.
+
+Rendering reuses `categoryLabel()` (P17's own single localization point for
+a content-pack category key, already shared by the collections grid and the
+achievement popup) rather than inventing a second way to spell "nature" —
+`AppBar.title` becomes a two-line `Column` (level line + `UiRole.caption`
+category line), and the category line is skipped outright when `null` rather
+than reserving blank space for it, the same "decorative, not a loading
+state" treatment this file's other optional UI already gets.

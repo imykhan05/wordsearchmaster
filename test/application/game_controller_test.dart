@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/application/game_controller.dart';
+import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/domain/grid/cell.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/grid/selection_resolver.dart';
@@ -58,6 +59,14 @@ void main() {
       expect(state.combo, 0);
       expect(state.hintsUsed, 0);
       expect(state.isLevelWon, isFalse);
+      expect(
+        state.category,
+        isNotNull,
+        reason:
+            "LevelDefinition.categoryPool.firstOrNull, not .theme — see "
+            "GameState.category's own doc for why the daily's raw theme "
+            '(its date string) would be the wrong source here',
+      );
     });
 
     test(
@@ -477,6 +486,14 @@ void main() {
           reason: 'level 2 word list, nothing found in it yet',
         );
         expect(after.allWords, isNotEmpty);
+        final content = container.read(contentRepositoryProvider).value!;
+        expect(
+          after.category,
+          content.getLevel(2, after.language).categoryPool.firstOrNull,
+          reason:
+              'the swap re-derives category from the NEXT level\'s own '
+              'definition, the same as every other already-advanced field',
+        );
       },
     );
 
@@ -635,6 +652,20 @@ void main() {
       expect(state.grid.size, 10);
       expect(state.allWords, hasLength(8));
       expect(state.phase, GamePhase.playing);
+      expect(
+        state.category,
+        isNotNull,
+        reason:
+            "the day's picked category, from categoryPool — never "
+            "LevelDefinition.theme, which DailyPuzzle.definitionFor sets to "
+            "the date string specifically to avoid this field colliding "
+            'with it',
+      );
+      expect(
+        state.category,
+        isNot('2026-08-26'),
+        reason: "never the day's own theme string",
+      );
     });
 
     test('the same day+language always builds the same puzzle', () async {

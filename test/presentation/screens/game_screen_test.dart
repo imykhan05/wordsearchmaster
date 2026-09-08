@@ -266,6 +266,22 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets("the AppBar shows the level's content-pack category, localized", (
+    tester,
+  ) async {
+    // `buildTestContentRepository` (fake_content.dart) gives every fixture
+    // level a single-entry `categoryPool: ['nature']`, so this is really
+    // asserting the wiring end to end: `GameState.category` picked up from
+    // `LevelDefinition.categoryPool.firstOrNull` and rendered through the
+    // same `categoryLabel()` the collections grid and achievement popup
+    // already share, never the raw content-pack key.
+    await pumpGameScreen(tester);
+    final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)));
+
+    expect(find.text(l10n.categoryNature), findsOneWidget);
+    expect(find.text('nature'), findsNothing);
+  });
+
   testWidgets(
     'a found word gets a thin strike-through, not a bar covering the text',
     (tester) async {

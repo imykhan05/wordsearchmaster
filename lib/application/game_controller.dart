@@ -168,6 +168,17 @@ sealed class GameState with _$GameState {
     required Language language,
     required GridResult grid,
 
+    /// The level's content-pack category key ("nature"), or null for a daily
+    /// with an empty category list (`DailyPuzzle.definitionFor`'s own
+    /// degrade-don't-throw case). Deliberately `LevelDefinition.categoryPool
+    /// .firstOrNull`, NOT `.theme` — a daily's `theme` is its date string
+    /// (avoiding a header collision with a journey region), which is exactly
+    /// wrong for a per-level category chip. This is localized through the
+    /// same `categoryLabel()` the collections grid and achievement popup
+    /// already share (CLAUDE.md → P17), so a category is never spelled two
+    /// ways across screens.
+    required String? category,
+
     /// Normalized words found so far, in the order found — the order the
     /// word-list panel assigns found-word colours by (Ch03).
     required List<String> foundWords,
@@ -441,6 +452,7 @@ class GameController extends _$GameController {
         content: content,
         downshift: downshift,
       ),
+      category: definition.categoryPool.firstOrNull,
       foundWords: const [],
       events: const [],
       hintedCell: null,
@@ -500,6 +512,7 @@ class GameController extends _$GameController {
         return wonState.copyWith(
           level: nextLevel,
           grid: _generateGrid(definition: definition, content: content),
+          category: definition.categoryPool.firstOrNull,
           foundWords: const [],
           events: const [],
           hintedCell: null,

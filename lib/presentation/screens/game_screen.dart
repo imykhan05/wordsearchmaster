@@ -35,6 +35,7 @@ import '../game/level_complete_card.dart';
 import '../game/particles.dart';
 import '../game/pause_sheet.dart';
 import '../game/word_flight.dart';
+import '../meta/category_labels.dart';
 import '../meta/chest_open.dart';
 import '../meta/journey_providers.dart';
 import '../widgets/rolling_counter.dart';
@@ -681,11 +682,31 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// [SystemBackHandler] wrapping the Scaffold, through the same callback.
   AppBar _buildAppBar(BuildContext context, GameState state) {
     final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
 
     return AppBar(
       leading: BackButton(onPressed: _leaveGame),
-      title: Text(
-        state.isDaily ? l10n.navDaily : l10n.gameLevel('${state.level}'),
+      // The category line is skipped outright rather than reserving its
+      // space (a daily with an empty content pool, or a fresh state before
+      // GameController has resolved a definition, is a real, valid state —
+      // not a loading gap this line should visibly stall on).
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            state.isDaily ? l10n.navDaily : l10n.gameLevel('${state.level}'),
+          ),
+          if (state.category != null)
+            Text(
+              categoryLabel(l10n, state.category!),
+              style: AppTypography.uiTextStyle(
+                state.language,
+                UiRole.caption,
+                color: tokens.colors.onSurfaceMuted,
+              ),
+            ),
+        ],
       ),
       actions: [
         Center(
