@@ -462,5 +462,21 @@
   "rotateBoardLabel": "Rotate the board",
   "@rotateBoardLabel": {
     "description": "Tooltip on the button that turns the letter grid 180 degrees. Free, unlimited, and never changes the puzzle — only the angle it is read from."
+  },
+  "backgroundLabel": "Background",
+  "@backgroundLabel": {
+    "description": "Heading for the row that chooses what is painted behind the letter grid."
+  },
+  "backgroundCalm": "Calm",
+  "backgroundEmber": "Ember",
+  "backgroundLagoon": "Lagoon",
+  "backgroundChoosePhoto": "Use my photo",
+  "@backgroundChoosePhoto": {
+    "description": "Opens the phone's photo picker to choose a background image."
+  },
+  "backgroundChangePhoto": "Change photo",
+  "backgroundPhotoNote": "Your photo stays on your phone and is removed when you uninstall.",
+  "@backgroundPhotoNote": {
+    "description": "Reassurance under the background picker: the app keeps only a path, never the picture itself."
   }
 }

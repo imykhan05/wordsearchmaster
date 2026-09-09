@@ -208,5 +208,12 @@
   "achievementDailyDevoteeDescription": "10 दैनिक चुनौतियाँ पूरी कीं",
   "achievementCollectorTitle": "संग्रहकर्ता",
   "achievementCollectorDescription": "एक पूरी श्रेणी पूरी की",
-  "rotateBoardLabel": "बोर्ड घुमाएँ"
+  "rotateBoardLabel": "बोर्ड घुमाएँ",
+  "backgroundLabel": "पृष्ठभूमि",
+  "backgroundCalm": "शांत",
+  "backgroundEmber": "अंगार",
+  "backgroundLagoon": "झील",
+  "backgroundChoosePhoto": "मेरी फ़ोटो लगाएँ",
+  "backgroundChangePhoto": "फ़ोटो बदलें",
+  "backgroundPhotoNote": "आपकी फ़ोटो आपके फ़ोन में ही रहती है और ऐप हटाने पर हट जाती है।"
 }

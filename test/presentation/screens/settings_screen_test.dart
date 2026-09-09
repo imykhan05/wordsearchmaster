@@ -8,8 +8,10 @@ import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/audio/sound_theme.dart';
+import 'package:word_search_master/domain/theme/background_style.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
+import 'package:word_search_master/services/background/background_settings.dart';
 import 'package:word_search_master/services/notifications/notification_settings.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
@@ -22,6 +24,16 @@ import '../../support/local_db.dart';
 /// which this file does not repeat.
 void main() {
   Future<ProviderContainer> pumpSettingsScreen(WidgetTester tester) async {
+    // A TALLER SURFACE THAN THE DEFAULT 600dp. This screen is a `ListView`,
+    // so anything below the fold is never built and `findsNothing` would mean
+    // "scrolled past", not "absent" — which the background card pushed the
+    // notifications section into. Sizing the window to fit the whole screen
+    // keeps every assertion below about what EXISTS rather than about what
+    // happens to be on screen.
+    tester.view.physicalSize = const Size(1080, 3200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
     final content = await buildTestContentRepository();
     final testDb = await openMemoryDatabase();
 
@@ -75,10 +87,24 @@ void main() {
   ) async {
     await pumpSettingsScreen(tester);
 
-    final chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip));
-    expect(chips, hasLength(SoundTheme.values.length));
+    // BY NAME, not by counting every chip on the screen: the background
+    // section adds its own swatches, and a bare count would silently start
+    // measuring both.
+    const names = ['Soft Bells', 'Chimes', 'Minimal'];
     expect(
-      chips.where((chip) => chip.selected),
+      names,
+      hasLength(SoundTheme.values.length),
+      reason: 'a new SoundTheme was added without a chip named here',
+    );
+
+    final selected = <String>[];
+    for (final name in names) {
+      final finder = find.widgetWithText(ChoiceChip, name);
+      expect(finder, findsOneWidget, reason: '$name has no chip');
+      if (tester.widget<ChoiceChip>(finder).selected) selected.add(name);
+    }
+    expect(
+      selected,
       hasLength(1),
       reason: 'exactly the current theme, never zero or more than one',
     );
@@ -103,13 +129,51 @@ void main() {
     },
   );
 
+  testWidgets('offers a swatch per gradient plus a photo action', (
+    tester,
+  ) async {
+    await pumpSettingsScreen(tester);
+
+    for (final name in ['Calm', 'Ember', 'Lagoon']) {
+      expect(find.widgetWithText(ChoiceChip, name), findsOneWidget);
+    }
+    // The photo is NOT a swatch — it is a file chooser, and an empty chip for
+    // a player who has never picked an image would be a dead option.
+    expect(find.byType(ActionChip), findsOneWidget);
+  });
+
+  testWidgets('picking a gradient updates the style AND drops the photo', (
+    tester,
+  ) async {
+    final container = await pumpSettingsScreen(tester);
+    expect(
+      container.read(backgroundStyleSettingProvider),
+      BackgroundStyle.defaultStyle,
+    );
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Ember'));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(backgroundStyleSettingProvider),
+      BackgroundStyle.ember,
+    );
+    expect(
+      container.read(backgroundPhotoPathProvider),
+      isNull,
+      reason:
+          'a picture the player stopped using has no business still sitting '
+          'in the cache',
+    );
+  });
+
   testWidgets(
     'toggling streak reminders flips streakRemindersEnabledProvider',
     (tester) async {
       final container = await pumpSettingsScreen(tester);
       expect(container.read(streakRemindersEnabledProvider), isTrue);
 
-      await tester.tap(find.byType(SwitchListTile).last);
+      await tester.tap(find.widgetWithText(SwitchListTile, 'Streak reminders'));
       await tester.pumpAndSettle();
 
       expect(container.read(streakRemindersEnabledProvider), isFalse);

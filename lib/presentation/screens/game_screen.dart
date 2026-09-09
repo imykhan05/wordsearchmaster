@@ -38,6 +38,7 @@ import '../game/word_flight.dart';
 import '../meta/category_labels.dart';
 import '../meta/chest_open.dart';
 import '../meta/journey_providers.dart';
+import '../widgets/app_background.dart';
 import '../widgets/rolling_counter.dart';
 import '../widgets/system_back_handler.dart';
 
@@ -639,41 +640,50 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
 
     return SystemBackHandler(
       onBack: _leaveGame,
-      child: Scaffold(
-        // No banner ad on this screen, ever (CLAUDE.md → Never do).
-        appBar: state == null ? null : _buildAppBar(context, state),
-        body: SafeArea(
-          child: asyncState.when(
-            // A language switch re-runs GameController.build; the previous
-            // grid stays on screen instead of flashing a spinner underneath it.
-            skipLoadingOnReload: true,
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stackTrace) => Center(child: Text('$error')),
-            data: (state) => _GameContent(
-              state: state,
-              rewardListenable: _reward,
-              chestDismissed: _chestDismissed,
-              particles: _particles,
-              foundWordReveal: _reveal,
-              wordFlights: _flights,
-              flightAnchors: _flightAnchors,
-              wordPraiseTrigger: _wordPraiseTrigger,
-              pulseController: _pulse,
-              rotationController: _rotation,
-              onRotateBoard: _rotateBoard,
-              ddaState: _ddaState,
-              onAcceptFreeHint: _acceptFreeHint,
-              onDismissHintOffer: _dismissHintOffer,
-              urduIntroDismissed: _urduIntroDismissed,
-              onDismissUrduIntro: _dismissUrduIntro,
-              onDebugForceDda: _debugForceDda,
-              onSelectionReleased: _onSelectionReleased,
-              onLevelComplete: () {
-                unawaited(_continueFromLevelComplete());
-              },
-              onWatchRewardedAd: () {
-                unawaited(_watchRewardedAd());
-              },
+      child: AppBackground(
+        child: Scaffold(
+          // Transparent so the chosen background shows through — a Scaffold
+          // paints its own opaque colour otherwise, and `AppBackground` would
+          // be a layer nobody ever sees. Expressed through the token rather
+          // than `Colors.transparent`, which `check_no_raw_colors` rejects
+          // (the same `withValues(alpha: 0)` shape `GameGrid` already uses).
+          backgroundColor: AppTokens.of(context).colors.background
+              .withValues(alpha: 0),
+          // No banner ad on this screen, ever (CLAUDE.md → Never do).
+          appBar: state == null ? null : _buildAppBar(context, state),
+          body: SafeArea(
+            child: asyncState.when(
+              // A language switch re-runs GameController.build; the previous
+              // grid stays on screen instead of flashing a spinner underneath it.
+              skipLoadingOnReload: true,
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (error, stackTrace) => Center(child: Text('$error')),
+              data: (state) => _GameContent(
+                state: state,
+                rewardListenable: _reward,
+                chestDismissed: _chestDismissed,
+                particles: _particles,
+                foundWordReveal: _reveal,
+                wordFlights: _flights,
+                flightAnchors: _flightAnchors,
+                wordPraiseTrigger: _wordPraiseTrigger,
+                pulseController: _pulse,
+                rotationController: _rotation,
+                onRotateBoard: _rotateBoard,
+                ddaState: _ddaState,
+                onAcceptFreeHint: _acceptFreeHint,
+                onDismissHintOffer: _dismissHintOffer,
+                urduIntroDismissed: _urduIntroDismissed,
+                onDismissUrduIntro: _dismissUrduIntro,
+                onDebugForceDda: _debugForceDda,
+                onSelectionReleased: _onSelectionReleased,
+                onLevelComplete: () {
+                  unawaited(_continueFromLevelComplete());
+                },
+                onWatchRewardedAd: () {
+                  unawaited(_watchRewardedAd());
+                },
+              ),
             ),
           ),
         ),

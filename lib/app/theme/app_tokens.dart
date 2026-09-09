@@ -111,6 +111,36 @@ final class AppColors {
   /// restyle had to re-run an accessibility search it does not need.
   final List<Color> regionAccent;
 
+  /// The three built-in board backgrounds, indexed by
+  /// `BackgroundStyle.gradientIndex`.
+  ///
+  /// DERIVED, not declared: each one is the page colour blended a little way
+  /// toward a hue this palette already defines, so there is not one new colour
+  /// literal here and the light theme gets its own correct version of "ember"
+  /// for free. It also means a future palette retune moves the backgrounds
+  /// with it instead of leaving three hand-picked stops behind.
+  ///
+  /// A getter rather than a field because [Color.lerp] is not `const` and this
+  /// class is. Cheap enough: it is read when the chosen style changes, not per
+  /// frame — `AppBackground` paints inside a `RepaintBoundary` and rebuilds
+  /// only on that setting.
+  List<AppBackgroundGradient> get backgroundGradients => [
+    AppBackgroundGradient(from: background, to: surfaceHigh),
+    AppBackgroundGradient(
+      from: background,
+      to: Color.lerp(background, primaryDim, _gradientBlend)!,
+    ),
+    AppBackgroundGradient(
+      from: background,
+      to: Color.lerp(background, regionAccent.first, _gradientBlend)!,
+    ),
+  ];
+
+  /// How far a gradient travels from the page colour toward its accent. Low on
+  /// purpose: this sits behind a letter grid all session, and a background a
+  /// player notices twice is one they are still noticing on level 200.
+  static const double _gradientBlend = 0.5;
+
   AppColors lerpTo(AppColors other, double t) {
     return AppColors(
       background: Color.lerp(background, other.background, t)!,
@@ -140,6 +170,26 @@ final class AppColors {
       ],
     );
   }
+}
+
+/// One board background: two stops, painted top to bottom.
+///
+/// A named pair rather than a `List<Color>` so a call site reads `from`/`to`
+/// instead of `[0]`/`[1]`, and so the direction is stated once here rather
+/// than assumed at every use.
+@immutable
+final class AppBackgroundGradient {
+  const AppBackgroundGradient({required this.from, required this.to});
+
+  final Color from;
+  final Color to;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppBackgroundGradient && other.from == from && other.to == to;
+
+  @override
+  int get hashCode => Object.hash(from, to);
 }
 
 /// One elevation step: a tinted surface colour *plus* shadows.

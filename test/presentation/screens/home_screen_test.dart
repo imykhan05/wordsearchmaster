@@ -77,7 +77,15 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(l10n.navSettings), findsWidgets);
-      expect(find.byType(SwitchListTile), findsNWidgets(4));
+      // A NAMED control rather than a count of every switch on the screen.
+      // What this test is about is "the icon reaches the real Settings screen,
+      // not a stub"; a total count also silently measures how much of a
+      // scrolling screen fits in the test viewport, which made it fail the
+      // day Settings grew a section rather than the day navigation broke.
+      expect(
+        find.widgetWithText(SwitchListTile, l10n.soundLabel),
+        findsOneWidget,
+      );
     },
   );
 

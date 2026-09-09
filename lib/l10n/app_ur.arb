@@ -208,5 +208,12 @@
   "achievementDailyDevoteeDescription": "10 روزانہ چیلنجز مکمل کیے",
   "achievementCollectorTitle": "جامع",
   "achievementCollectorDescription": "ایک مکمل زمرہ مکمل کیا",
-  "rotateBoardLabel": "بورڈ گھمائیں"
+  "rotateBoardLabel": "بورڈ گھمائیں",
+  "backgroundLabel": "پس منظر",
+  "backgroundCalm": "پرسکون",
+  "backgroundEmber": "انگارہ",
+  "backgroundLagoon": "جھیل",
+  "backgroundChoosePhoto": "میری تصویر لگائیں",
+  "backgroundChangePhoto": "تصویر بدلیں",
+  "backgroundPhotoNote": "آپ کی تصویر آپ کے فون میں ہی رہتی ہے اور ایپ ہٹانے پر ختم ہو جاتی ہے۔"
 }

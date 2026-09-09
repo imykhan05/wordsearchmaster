@@ -21,6 +21,7 @@ import '../services/ads/max_ad_gateway.dart';
 import '../services/analytics/analytics_service.dart';
 import '../services/app_check/app_check_gateway.dart';
 import '../services/audio/audio_service.dart';
+import '../services/background/background_photo_service.dart';
 import '../services/connectivity/connectivity_service.dart';
 import '../services/auth/auth_service.dart';
 import '../services/diagnostics/error_reporter.dart';
@@ -379,6 +380,12 @@ Future<void> bootstrap(
         ProviderScope(
           overrides: [
             appConfigProvider.overrideWithValue(config),
+            // Synchronous and unable to fail, so it needs no bootstrap step
+            // of its own — unlike audio, there is nothing to preload; the
+            // picker is only touched when a player taps "choose a photo".
+            backgroundPhotoServiceProvider.overrideWithValue(
+              ImagePickerBackgroundPhotoService(),
+            ),
             uiSettingsStoreProvider.overrideWithValue(services.settings),
             errorReporterProvider.overrideWithValue(services.reporter),
             authServiceProvider.overrideWithValue(services.auth),

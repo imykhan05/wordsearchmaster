@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:word_search_master/app/language/selected_language.dart';
 import 'package:word_search_master/domain/audio/sound_theme.dart';
+import 'package:word_search_master/domain/theme/background_style.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
@@ -37,6 +38,16 @@ void main() {
         store.selectedLanguage,
         isNull,
         reason: 'null is what sends a first-run player to the FTUE picker',
+      );
+      expect(
+        store.backgroundStyle,
+        BackgroundStyle.defaultStyle,
+        reason: 'same "a real preference from launch" shape as soundTheme',
+      );
+      expect(
+        store.backgroundPhotoPath,
+        isNull,
+        reason: 'nothing is picked until a player picks it',
       );
       expect(store.urduConnectedFormIntroShown, isFalse);
       expect(store.loginPromptDismissed, isFalse);
@@ -163,6 +174,8 @@ void main() {
     await store.setSoundEnabled(false);
     await store.setHapticsEnabled(false);
     await store.setSoundTheme(SoundTheme.chimes);
+    await store.setBackgroundStyle(BackgroundStyle.ember);
+    await store.setBackgroundPhotoPath('/cache/wsm_background_1.jpg');
     await store.setSelectedLanguage(Language.urdu);
     await store.setUrduConnectedFormIntroShown(true);
     await store.setLoginPromptDismissed(true);
@@ -175,6 +188,11 @@ void main() {
       'ui.sound_enabled',
       'ui.haptics_enabled',
       'ui.sound_theme',
+      'ui.background_style',
+      // THE PATH, never the picture — see `UiSettingsStore`'s own doc. A
+      // background photo must never turn this file into somewhere image data
+      // lives, and this key set is where that stays pinned.
+      'ui.background_photo_path',
       'ui.selected_language',
       'ui.urdu_connected_form_intro_shown',
       'ui.login_prompt_dismissed',

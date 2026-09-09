@@ -10,6 +10,7 @@ import '../../application/account_controller.dart';
 import '../../domain/progression/streak.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../widgets/app_background.dart';
 import '../widgets/sync_status.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
@@ -34,92 +35,98 @@ class HomeScreen extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     final tokens = AppTokens.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.navHome),
-        actions: [
-          // The only entry point into `SettingsRoute` anywhere in the live
-          // app — every other reference to it was either a test driving the
-          // router directly or `StubScreen`'s dev-only route switcher, which
-          // no route has built since P11/P17 gave every screen a real
-          // builder. Without this icon the screen existed but no player
-          // could ever reach it.
-          IconButton(
-            tooltip: l10n.navSettings,
-            onPressed: () => context.go(const SettingsRoute().location),
-            icon: const Icon(Icons.settings_outlined),
-          ),
-          // Ch10's ONE permitted network surface: a small static icon. Never a
-          // dialog, never a banner, never a retry button — see
-          // `SyncStatusIndicator`'s own header.
-          const Padding(
-            padding: EdgeInsets.only(right: AppTokens.space16),
-            child: Center(child: SyncStatusIndicator()),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppTokens.space24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _StreakBanner(),
-              // Invisible — see its own doc for why the streak banner is the
-              // trigger rather than first launch or app resume.
-              const _NotificationPermissionRequester(),
-              const SizedBox(height: AppTokens.space16),
-              const CoinBalanceTile(),
-              // Renders nothing (and no extra gap) until level 8 is
-              // completed and stays dismissible after that — see its own doc.
-              const _SaveProgressBanner(),
-              const SizedBox(height: AppTokens.space32),
-              FilledButton(
-                onPressed: () {
-                  ref.read(audioServiceProvider).playButtonTap();
-                  ref.read(hapticsServiceProvider).buttonTap();
-                  context.go(const JourneyRoute().location);
-                },
-                child: Text(l10n.playButton),
-              ),
-              const SizedBox(height: AppTokens.space12),
-              OutlinedButton(
-                onPressed: () {
-                  ref.read(audioServiceProvider).playButtonTap();
-                  ref.read(hapticsServiceProvider).buttonTap();
-                  context.go(const DailyRoute().location);
-                },
-                child: Text(l10n.navDaily),
-              ),
-              const SizedBox(height: AppTokens.space12),
-              // Same bug class as the Settings gear icon above: `LeaderboardRoute`
-              // rendered fine and every route-level test could reach it by
-              // driving the router directly, but nothing in the live app ever
-              // navigated there.
-              OutlinedButton(
-                onPressed: () {
-                  ref.read(audioServiceProvider).playButtonTap();
-                  ref.read(hapticsServiceProvider).buttonTap();
-                  context.go(const LeaderboardRoute().location);
-                },
-                child: Text(l10n.navLeaderboard),
-              ),
-              const SizedBox(height: AppTokens.space12),
-              TextButton(
-                onPressed: () => context.go(const ProfileRoute().location),
-                child: Text(l10n.collectionsTitle),
-              ),
-              const SizedBox(height: AppTokens.space24),
-              Text(
-                l10n.appTitle,
-                textAlign: TextAlign.center,
-                style: AppTypography.uiTextStyle(
-                  Language.english,
-                  UiRole.caption,
-                  color: tokens.colors.onSurfaceFaint,
+    return AppBackground(
+      child: Scaffold(
+        // Transparent so the chosen background shows through — see
+        // `game_screen.dart`'s matching note for why this is a token at zero
+        // alpha rather than `Colors.transparent`.
+        backgroundColor: tokens.colors.background.withValues(alpha: 0),
+        appBar: AppBar(
+          title: Text(l10n.navHome),
+          actions: [
+            // The only entry point into `SettingsRoute` anywhere in the live
+            // app — every other reference to it was either a test driving the
+            // router directly or `StubScreen`'s dev-only route switcher, which
+            // no route has built since P11/P17 gave every screen a real
+            // builder. Without this icon the screen existed but no player
+            // could ever reach it.
+            IconButton(
+              tooltip: l10n.navSettings,
+              onPressed: () => context.go(const SettingsRoute().location),
+              icon: const Icon(Icons.settings_outlined),
+            ),
+            // Ch10's ONE permitted network surface: a small static icon. Never a
+            // dialog, never a banner, never a retry button — see
+            // `SyncStatusIndicator`'s own header.
+            const Padding(
+              padding: EdgeInsets.only(right: AppTokens.space16),
+              child: Center(child: SyncStatusIndicator()),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppTokens.space24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _StreakBanner(),
+                // Invisible — see its own doc for why the streak banner is the
+                // trigger rather than first launch or app resume.
+                const _NotificationPermissionRequester(),
+                const SizedBox(height: AppTokens.space16),
+                const CoinBalanceTile(),
+                // Renders nothing (and no extra gap) until level 8 is
+                // completed and stays dismissible after that — see its own doc.
+                const _SaveProgressBanner(),
+                const SizedBox(height: AppTokens.space32),
+                FilledButton(
+                  onPressed: () {
+                    ref.read(audioServiceProvider).playButtonTap();
+                    ref.read(hapticsServiceProvider).buttonTap();
+                    context.go(const JourneyRoute().location);
+                  },
+                  child: Text(l10n.playButton),
                 ),
-              ),
-            ],
+                const SizedBox(height: AppTokens.space12),
+                OutlinedButton(
+                  onPressed: () {
+                    ref.read(audioServiceProvider).playButtonTap();
+                    ref.read(hapticsServiceProvider).buttonTap();
+                    context.go(const DailyRoute().location);
+                  },
+                  child: Text(l10n.navDaily),
+                ),
+                const SizedBox(height: AppTokens.space12),
+                // Same bug class as the Settings gear icon above: `LeaderboardRoute`
+                // rendered fine and every route-level test could reach it by
+                // driving the router directly, but nothing in the live app ever
+                // navigated there.
+                OutlinedButton(
+                  onPressed: () {
+                    ref.read(audioServiceProvider).playButtonTap();
+                    ref.read(hapticsServiceProvider).buttonTap();
+                    context.go(const LeaderboardRoute().location);
+                  },
+                  child: Text(l10n.navLeaderboard),
+                ),
+                const SizedBox(height: AppTokens.space12),
+                TextButton(
+                  onPressed: () => context.go(const ProfileRoute().location),
+                  child: Text(l10n.collectionsTitle),
+                ),
+                const SizedBox(height: AppTokens.space24),
+                Text(
+                  l10n.appTitle,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.uiTextStyle(
+                    Language.english,
+                    UiRole.caption,
+                    color: tokens.colors.onSurfaceFaint,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

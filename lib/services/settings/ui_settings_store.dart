@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/audio/sound_theme.dart';
+import '../../domain/theme/background_style.dart';
 import '../../domain/text/language.dart';
 
 part 'ui_settings_store.g.dart';
@@ -40,6 +41,23 @@ abstract interface class UiSettingsStore {
   /// and [musicEnabled] already have.
   SoundTheme get soundTheme;
   Future<void> setSoundTheme(SoundTheme value);
+
+  /// What is painted behind the board. A look, not game data — the same
+  /// carve-out as [soundTheme].
+  BackgroundStyle get backgroundStyle;
+  Future<void> setBackgroundStyle(BackgroundStyle value);
+
+  /// Where the player's chosen background photo sits on disk, or null.
+  ///
+  /// THE PATH, NEVER THE IMAGE. Nothing about the picture is copied into this
+  /// store, into the app bundle, or into the database — this is a filename in
+  /// the app's own cache directory, which Android empties on uninstall and may
+  /// evict at any time on its own. A missing file is therefore an ordinary,
+  /// expected state rather than an error, and `AppBackground` degrades to the
+  /// gradient without telling the player anything (Ch10's rule for a
+  /// background failure, applied to a background in the literal sense).
+  String? get backgroundPhotoPath;
+  Future<void> setBackgroundPhotoPath(String? value);
 
   /// Null until the player picks one on the FTUE language screen.
   Language? get selectedLanguage;
@@ -99,6 +117,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.hapticsEnabled = true,
     this.musicEnabled = true,
     this.soundTheme = SoundTheme.defaultTheme,
+    this.backgroundStyle = BackgroundStyle.defaultStyle,
+    this.backgroundPhotoPath,
     this.selectedLanguage,
     this.urduConnectedFormIntroShown = false,
     this.loginPromptDismissed = false,
@@ -115,6 +135,10 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool musicEnabled;
   @override
   SoundTheme soundTheme;
+  @override
+  BackgroundStyle backgroundStyle;
+  @override
+  String? backgroundPhotoPath;
   @override
   Language? selectedLanguage;
   @override
@@ -136,6 +160,12 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   Future<void> setMusicEnabled(bool value) async => musicEnabled = value;
   @override
   Future<void> setSoundTheme(SoundTheme value) async => soundTheme = value;
+  @override
+  Future<void> setBackgroundStyle(BackgroundStyle value) async =>
+      backgroundStyle = value;
+  @override
+  Future<void> setBackgroundPhotoPath(String? value) async =>
+      backgroundPhotoPath = value;
   @override
   Future<void> setSelectedLanguage(Language value) async =>
       selectedLanguage = value;
@@ -165,6 +195,8 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _hapticsKey = 'ui.haptics_enabled';
   static const String _musicKey = 'ui.music_enabled';
   static const String _soundThemeKey = 'ui.sound_theme';
+  static const String _backgroundStyleKey = 'ui.background_style';
+  static const String _backgroundPhotoKey = 'ui.background_photo_path';
   static const String _languageKey = 'ui.selected_language';
   static const String _urduIntroKey = 'ui.urdu_connected_form_intro_shown';
   static const String _loginPromptKey = 'ui.login_prompt_dismissed';
@@ -206,6 +238,22 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setSoundTheme(SoundTheme value) =>
       _prefs.setString(_soundThemeKey, value.id);
+
+  @override
+  BackgroundStyle get backgroundStyle =>
+      BackgroundStyle.fromId(_prefs.getString(_backgroundStyleKey));
+
+  @override
+  Future<void> setBackgroundStyle(BackgroundStyle value) =>
+      _prefs.setString(_backgroundStyleKey, value.id);
+
+  @override
+  String? get backgroundPhotoPath => _prefs.getString(_backgroundPhotoKey);
+
+  @override
+  Future<void> setBackgroundPhotoPath(String? value) => value == null
+      ? _prefs.remove(_backgroundPhotoKey)
+      : _prefs.setString(_backgroundPhotoKey, value);
 
   @override
   Language? get selectedLanguage {

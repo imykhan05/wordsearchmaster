@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,8 +8,10 @@ import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/audio/sound_theme.dart';
 import '../../domain/text/language.dart';
+import '../../domain/theme/background_style.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/audio/sound_settings.dart';
+import '../../services/background/background_settings.dart';
 import '../../services/notifications/notification_settings.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/language_tile.dart';
@@ -133,6 +137,13 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: AppTokens.space16),
+              const MetaCard(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: _BackgroundSection(),
+                ),
+              ),
+              const SizedBox(height: AppTokens.space16),
               MetaCard(
                 child: Material(
                   type: MaterialType.transparency,
@@ -177,6 +188,84 @@ class SettingsScreen extends ConsumerWidget {
 /// shape `categoryLabel()` uses for content-pack categories — a switch
 /// rather than a `Map` so a theme added to the enum without a case here is a
 /// compile error, not a runtime fallback string nobody notices.
+/// The board background: three swatches plus the player's own photo.
+///
+/// Its own widget rather than more rows inside the sound card, because the
+/// photo half is genuinely different in kind — it is asynchronous (a picker
+/// takes over the screen), it can fail, and it needs the "remove" affordance
+/// a swatch never does.
+class _BackgroundSection extends ConsumerWidget {
+  const _BackgroundSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final style = ref.watch(backgroundStyleSettingProvider);
+    final photoPath = ref.watch(backgroundPhotoPathProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(l10n.backgroundLabel),
+        const SizedBox(height: AppTokens.space8),
+        Wrap(
+          spacing: AppTokens.space8,
+          runSpacing: AppTokens.space8,
+          children: [
+            for (final option in BackgroundStyle.gradients)
+              ChoiceChip(
+                label: Text(_backgroundName(l10n, option)),
+                selected: style == option,
+                // Picking a gradient DELETES the photo copy rather than just
+                // looking away from it: a picture the player has stopped using
+                // has no business still sitting in the cache, and this is the
+                // only moment the app can know they are done with it.
+                onSelected: (_) {
+                  ref.read(backgroundStyleSettingProvider.notifier).set(option);
+                  unawaited(
+                    ref.read(backgroundPhotoPathProvider.notifier).clear(),
+                  );
+                },
+              ),
+            ActionChip(
+              avatar: const Icon(Icons.image_outlined),
+              label: Text(
+                photoPath == null
+                    ? l10n.backgroundChoosePhoto
+                    : l10n.backgroundChangePhoto,
+              ),
+              onPressed: () => unawaited(
+                ref.read(backgroundPhotoPathProvider.notifier).pick(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppTokens.space8),
+        Text(
+          l10n.backgroundPhotoNote,
+          style: AppTypography.uiTextStyle(
+            Language.english,
+            UiRole.caption,
+            color: AppTokens.of(context).colors.onSurfaceMuted,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _backgroundName(AppLocalizations l10n, BackgroundStyle style) =>
+    switch (style) {
+      BackgroundStyle.calm => l10n.backgroundCalm,
+      BackgroundStyle.ember => l10n.backgroundEmber,
+      BackgroundStyle.lagoon => l10n.backgroundLagoon,
+      // Never rendered: `BackgroundStyle.gradients` excludes it, and the photo
+      // is offered as its own action rather than as a swatch. Kept so adding a
+      // future style is a compile error here rather than a silent gap.
+      BackgroundStyle.photo => l10n.backgroundChoosePhoto,
+    };
+
 String _soundThemeName(AppLocalizations l10n, SoundTheme theme) =>
     switch (theme) {
       SoundTheme.softBells => l10n.soundThemeSoftBells,

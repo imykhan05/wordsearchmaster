@@ -2534,8 +2534,8 @@ Driven by `docs/competitor-analysis.md` — a measured teardown of three
 100M+-install word games, from video the player recorded. Shipped one task at
 a time, each its own commit: the grid card, the found-word praise banner and
 ribbon title, the capsule sweep, the login coin bonus, the letter flight, the
-level's category in the header, the curated sound themes, and the rotate
-button below.
+level's category in the header, the curated sound themes, the rotate button,
+and the background picker below.
 
 ### Letter flight — the one animation whose two ends are in different subtrees
 
@@ -2838,6 +2838,88 @@ thumb in English and Hindi and the left in Urdu, following the reading
 direction the screen is already mirrored to. The dev debug panel moved up to
 `space48` rather than the button moving: dev-only tooling is what yields
 when two things want the same corner.
+
+### The background picker — three token-derived gradients, or the player's own photo
+
+`docs/competitor-analysis.md`'s recording shows every competitor floating the
+grid and word list as opaque cards over a full-screen scene, which is what
+makes their boards read as a place rather than a form. This is that, over this
+app's own tokens — plus the one thing none of them offer, a picture from the
+player's own phone. `AppBackground` sits behind the game screen and Home; both
+Scaffolds went transparent (a token at zero alpha, since
+`check_no_raw_colors` rejects `Colors.transparent`).
+
+**THE THREE GRADIENTS ADD NO COLOUR LITERALS AND NO ASSETS.** Each is the page
+colour blended halfway toward a hue the palette already defines —
+`surfaceHigh`, `primaryDim`, `regionAccent.first` — so the light theme gets
+its own correct "ember" for free and a future palette retune moves the
+backgrounds with it instead of stranding three hand-picked stops.
+`AppColors.backgroundGradients` is a GETTER rather than a field only because
+`Color.lerp` is not `const` and that class is; it is read when the chosen
+style changes, not per frame.
+
+`BackgroundStyle` (`lib/domain/theme/`) is pure Dart and names no colour: the
+three gradients are a `gradientIndex`, the same indirection `JourneyRegion`
+already uses for its accent. `photo` carries an index too, and that is not
+redundant — it is the FALLBACK, because the file can go missing on its own.
+
+**The player's constraint was "the photo must not become part of the app", and
+it does not.** Nothing is bundled, nothing reaches the database, the APK is
+byte-identical in size, and what persists is one PATH in `shared_preferences`
+(~100 bytes) — pinned by `ui_settings_store_test.dart`'s key-set test, which
+is where "this file never becomes somewhere image data lives" stays honest.
+
+One qualification that cannot be engineered away, and is written into
+`BackgroundPhotoService`'s header rather than glossed: Android's photo picker
+hands back a COPY in the app's own cache directory, not a live handle on the
+gallery file. That is the platform API. So exactly one copy exists at a time,
+and it is deleted on uninstall by Android along with everything else the app
+stored (the player's "uninstall ke baad chala jaye", satisfied by the OS
+rather than by code that could get it wrong), deleted whenever the system
+wants the cache space, and deleted here the moment a different photo is picked
+or a gradient is chosen instead. The alternative — keeping a URI and re-reading
+the gallery each launch — is not reliable under scoped storage: the picker's
+grant is not persistable, so the background would vanish at an unpredictable
+moment and read as a bug.
+
+**A missing file is an ordinary state, resolved at the EDGE.**
+`BackgroundPhotoPath.build` stats the path once, where the value enters the
+app, and answers null if it is gone — so everything downstream is a plain
+"photo or no photo" question with no I/O in it, and the gradient is on screen
+from the very first frame rather than after a failed async load. This also
+made the test deterministic: an `errorBuilder` firing on real disk I/O never
+completes under `flutter_test`'s fake clock (the trap `sync_inspector_test.dart`
+already records for Drift), so a test written against it hung rather than
+failed. The `errorBuilder` stays for the one case the edge check cannot cover —
+an eviction WHILE the app is on screen.
+
+Two things the photo half needs that a gradient does not:
+
+- **A downscale ceiling, applied by the picker before a byte reaches Dart**
+  (1080x2400, quality 85). A 12MP photo is ~48MB decoded, on the 2GB-RAM phone
+  this game targets; the loss is invisible on an image that is dimmed and sits
+  behind opaque cards. `Image.file` caps decode again at the screen's own pixel
+  width, for a device narrower than the stored copy.
+- **A scrim, which is legibility rather than decoration.** A photo is
+  arbitrary — a white sky or a black night — and behind it sit the top bar's
+  score and the word chips, which are plain text with no card of their own. The
+  scrim makes those readable against ANY picture rather than against the ones
+  that happened to be tried, which matters more for a 45+ audience often
+  running a large system font.
+
+**A fresh filename per pick, never one fixed name.** Flutter's image cache keys
+a `FileImage` on its PATH, not on contents or mtime, so overwriting one name in
+place would leave the PREVIOUS photo on screen and tell a player who just
+picked a new one, convincingly, that the picker is broken. The old copies are
+swept by prefix rather than by one remembered path, so a file orphaned by a
+crash between the copy and the preference write cannot sit in the cache
+forever.
+
+`image_picker` was checked for the trap `applovin_max` sprang twice
+(`compileSdk = flutter.compileSdkVersion`, `minSdk 24` — it inherits correctly),
+and its manifest declares NO `uses-permission`: the modern Android photo picker
+needs none, which is the same "a permission scares this audience" reasoning
+P17 used to rule out a contacts picker for friends.
 
 ### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
 
