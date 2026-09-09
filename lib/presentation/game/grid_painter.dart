@@ -55,8 +55,9 @@ final class GridLettersPainter extends CustomPainter {
     required this.cornerRadius,
     required this.cache,
     required this.textDirection,
+    this.spin,
     this.stats,
-  });
+  }) : super(repaint: spin);
 
   /// `cells[row][col]`, one grapheme cluster each.
   final List<List<String>> cells;
@@ -66,6 +67,21 @@ final class GridLettersPainter extends CustomPainter {
   final double cornerRadius;
   final GraphemePainterCache cache;
   final TextDirection textDirection;
+
+  /// The rotate button's half-turn in flight, `-1` → `0`; null (or a settled
+  /// `0`) the rest of the time.
+  ///
+  /// This is the ONE thing that makes pass 1 repaint per frame, and only for
+  /// the ~360ms of a spin the player asked for by tapping. The rest of P06's
+  /// bargain is unchanged: no widget rebuilds (the value arrives through
+  /// `repaint:`, never `setState`), and no re-`layout()` either — the spin
+  /// moves each glyph's POSITION and scales the canvas, so every
+  /// [GraphemePainterCache] entry stays valid at the same [textStyle]. Baking
+  /// the dip into `cellSize` instead would mint a new font size per frame and
+  /// miss the cache 144 times a frame, which is the exact trap that cache
+  /// exists to close.
+  final ValueListenable<double>? spin;
+
   final GridPaintStats? stats;
 
   /// Fraction of the cell a glyph may occupy before it is scaled down.
@@ -78,10 +94,24 @@ final class GridLettersPainter extends CustomPainter {
     final background = Paint()..color = cellColor;
     final radius = Radius.circular(cornerRadius);
 
-    for (var row = 0; row < geometry.size; row++) {
-      for (var col = 0; col < geometry.size; col++) {
+    final turn = spin?.value ?? 0;
+    final spun = turn == 0
+        ? geometry
+        : geometry.withPaintSpin(GridGeometry.spinRadians(turn));
+
+    canvas.save();
+    if (turn != 0) {
+      final center = geometry.center;
+      final scale = GridGeometry.spinScale(turn);
+      canvas.translate(center.dx, center.dy);
+      canvas.scale(scale);
+      canvas.translate(-center.dx, -center.dy);
+    }
+
+    for (var row = 0; row < spun.size; row++) {
+      for (var col = 0; col < spun.size; col++) {
         final cell = Cell(row, col);
-        final rect = geometry.cellRect(cell);
+        final rect = spun.cellRect(cell);
         canvas.drawRRect(RRect.fromRectAndRadius(rect, radius), background);
 
         // Cached and already laid out — paint() never calls layout() for a
@@ -95,6 +125,8 @@ final class GridLettersPainter extends CustomPainter {
         _paintFitted(canvas, painter, rect);
       }
     }
+
+    canvas.restore();
   }
 
   /// Draws [painter] centred in [rect], shrinking it if it would overflow.
@@ -141,6 +173,7 @@ final class GridLettersPainter extends CustomPainter {
         old.cellColor != cellColor ||
         old.cornerRadius != cornerRadius ||
         old.textDirection != textDirection ||
+        !identical(old.spin, spin) ||
         !identical(old.cache, cache);
   }
 }
@@ -169,33 +202,58 @@ final class FoundWordsPainter extends CustomPainter {
   FoundWordsPainter({
     required this.highlights,
     required this.geometry,
+    this.spin,
     this.stats,
-  });
+  }) : super(repaint: spin);
 
   final List<FoundWordHighlight> highlights;
   final GridGeometry geometry;
+
+  /// Same half-turn as [GridLettersPainter.spin]. A capsule is defined by the
+  /// centres of its first and last cell, so rotating those two points swings
+  /// the whole shape with the letters it covers — no separate handling, and no
+  /// frame where a found word has come loose from its own letters.
+  final ValueListenable<double>? spin;
+
   final GridPaintStats? stats;
 
   @override
   void paint(Canvas canvas, Size size) {
     stats?.foundWords++;
 
+    final turn = spin?.value ?? 0;
+    final spun = turn == 0
+        ? geometry
+        : geometry.withPaintSpin(GridGeometry.spinRadians(turn));
+
+    canvas.save();
+    if (turn != 0) {
+      final center = geometry.center;
+      final scale = GridGeometry.spinScale(turn);
+      canvas.translate(center.dx, center.dy);
+      canvas.scale(scale);
+      canvas.translate(-center.dx, -center.dy);
+    }
+
     for (final highlight in highlights) {
       if (highlight.cells.isEmpty) continue;
       paintCapsule(
         canvas: canvas,
-        geometry: geometry,
+        geometry: spun,
         cells: highlight.cells,
         fill: highlight.color.withValues(alpha: 0.28),
         border: highlight.color,
         borderWidth: highlight.borderWidth,
       );
     }
+
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(FoundWordsPainter old) {
     if (old.geometry != geometry) return true;
+    if (!identical(old.spin, spin)) return true;
     if (old.highlights.length != highlights.length) return true;
 
     for (var i = 0; i < highlights.length; i++) {

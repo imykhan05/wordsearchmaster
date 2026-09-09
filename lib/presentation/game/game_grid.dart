@@ -38,6 +38,7 @@ class GameGrid extends StatefulWidget {
     required this.onSelectionReleased,
     this.hintedCell,
     this.pulseController,
+    this.rotationController,
     this.particleController,
     this.foundWordRevealController,
     this.hapticsService = const NoopHapticsService(),
@@ -71,6 +72,10 @@ class GameGrid extends StatefulWidget {
   /// the time).
   final PulseController? pulseController;
 
+  /// Drives the rotate button's 180° view flip. Null in tests and anywhere
+  /// the board is shown without the control (the Style Gallery).
+  final GridRotationController? rotationController;
+
   /// Fires on pointer-up with the finished drag and the geometry it was drawn
   /// against, and returns whether it matched a word. P07's GameController
   /// matches the drag against the remaining words; the geometry comes along
@@ -103,8 +108,10 @@ class GameGrid extends StatefulWidget {
   State<GameGrid> createState() => GameGridState();
 }
 
-class GameGridState extends State<GameGrid>
-    with SingleTickerProviderStateMixin {
+// Two tickers, not one: the wrong-selection fade and the rotate spin are
+// independent and can overlap (a released miss, then a tap on rotate), and
+// `SingleTickerProviderStateMixin` throws outright on the second `createTicker`.
+class GameGridState extends State<GameGrid> with TickerProviderStateMixin {
   late GraphemePainterCache _cache = widget.cache ?? GraphemePainterCache();
   late final GridPaintStats _stats = widget.stats ?? GridPaintStats();
 
@@ -126,6 +133,26 @@ class GameGridState extends State<GameGrid>
   /// sound, no buzz, no shake, no colour change, only this.
   static const Duration _missFadeDuration = Duration(milliseconds: 180);
 
+  /// Whether the board is currently being viewed upside down. Settled state:
+  /// it flips once per tap and is then read by [GridGeometry] for BOTH paint
+  /// and touch.
+  ///
+  /// A [ValueNotifier] read through a builder rather than `setState`, matching
+  /// the idiom the rest of this class already uses — and scoping the rebuild
+  /// to the grid subtree instead of the screen.
+  final ValueNotifier<bool> _rotated = ValueNotifier<bool>(false);
+
+  /// How much of the half-turn is still owed, `-1` → `0`. Handed straight to
+  /// the two painters through `CustomPaint.repaint`, so the spin costs no
+  /// widget rebuilds at all — the same bargain the live selection makes.
+  final ValueNotifier<double> _spin = ValueNotifier<double>(0);
+
+  Ticker? _spinTicker;
+
+  /// Long enough to read as the board being turned over, short enough that a
+  /// player tapping twice to compare both views is not waiting on it.
+  static const Duration _spinDuration = Motion.slow;
+
   GridGeometry? _geometry;
 
   /// Exposed for tests and for P07's hint system, which needs to know where a
@@ -139,6 +166,16 @@ class GameGridState extends State<GameGrid>
   /// only observable by eye.
   ValueListenable<double> get fadeAlpha => _fadeAlpha;
 
+  /// Exposed for tests: the settled view flip, and the spin still in flight.
+  ValueListenable<bool> get rotated => _rotated;
+  ValueListenable<double> get spin => _spin;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.rotationController?.requests.addListener(_onRotationRequested);
+  }
+
   @override
   void didUpdateWidget(GameGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -146,13 +183,34 @@ class GameGridState extends State<GameGrid>
     if (oldWidget.language != widget.language) {
       _cache = widget.cache ?? GraphemePainterCache();
     }
+    if (!identical(oldWidget.rotationController, widget.rotationController)) {
+      oldWidget.rotationController?.requests.removeListener(
+        _onRotationRequested,
+      );
+      widget.rotationController?.requests.addListener(_onRotationRequested);
+    }
+    // A NEW BOARD ALWAYS ARRIVES UPRIGHT. P07's Zeigarnik swap advances the
+    // level in place, without remounting this widget, so nothing else would
+    // ever clear the flip and the player would land on the next level already
+    // upside down. `cells` is compared by identity for the same reason
+    // `GridLettersPainter.shouldRepaint` does: `GridResult` hands out a fresh
+    // grid per level, so a new identity IS "this is a different board".
+    if (!identical(oldWidget.cells, widget.cells)) {
+      _stopSpin();
+      _rotated.value = false;
+      _spin.value = 0;
+    }
   }
 
   @override
   void dispose() {
+    widget.rotationController?.requests.removeListener(_onRotationRequested);
     _selection.dispose();
     _fadeAlpha.dispose();
+    _rotated.dispose();
+    _spin.dispose();
     _fadeTicker?.dispose();
+    _spinTicker?.dispose();
     super.dispose();
   }
 
@@ -193,146 +251,211 @@ class GameGridState extends State<GameGrid>
     }
   }
 
+  /// The rotate button was tapped: flip the settled view, then play the board
+  /// swinging into it.
+  ///
+  /// The flip lands FIRST and the animation runs backwards from it — [_spin]
+  /// starts at `-1` (a half-turn still owed, which is exactly where the board
+  /// was a moment ago) and eases to `0`. Written this way round because the
+  /// settled state is the one everything else reads: the instant this returns,
+  /// [GridGeometry] already answers for the new orientation, so a touch that
+  /// arrives mid-spin is resolved against where the letters are LANDING rather
+  /// than against a layout that is about to stop existing.
+  void _onRotationRequested() {
+    // A live capsule would be left pointing through cells that just moved, and
+    // a miss-fade would finish somewhere the player never dragged.
+    _fadeTicker?.stop();
+    _fadeAlpha.value = 1.0;
+    _selection.value = SelectionState.empty;
+
+    _rotated.value = !_rotated.value;
+
+    _stopSpin();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      // Reduce-motion drops the SWING, never the rotation: the board really
+      // has turned over, and a player who asked for that still needs to see
+      // it. Same call this file's `_PulseHighlight` already makes for the same
+      // reason — remove the movement, keep the information.
+      _spin.value = 0;
+      return;
+    }
+    _spin.value = -1;
+    (_spinTicker ??= createTicker(_onSpinTick)).start();
+  }
+
+  void _onSpinTick(Duration elapsed) {
+    final t = (elapsed.inMicroseconds / 1000.0 / _spinDuration.inMilliseconds)
+        .clamp(0.0, 1.0);
+    // Eased on the way in AND out: a half-turn that starts at full speed reads
+    // as a glitch rather than as the board being turned by a hand.
+    _spin.value = Motion.fade.transform(t) - 1;
+
+    if (t >= 1.0) {
+      _stopSpin();
+      _spin.value = 0;
+    }
+  }
+
+  /// `Ticker.start()` throws on an already-active ticker, and a second tap
+  /// mid-spin is exactly what a player comparing the two views does. Stopping
+  /// first also rewinds `elapsed`, which is what makes each spin measure its
+  /// own `t` from zero.
+  void _stopSpin() {
+    if (_spinTicker?.isActive ?? false) _spinTicker!.stop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppTokens.of(context);
     final size = widget.cells.length;
 
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final geometry = GridGeometry.fit(
-          size: size,
-          available: constraints.biggest,
-          gap: AppTokens.space4 / 2,
-        );
-        _geometry = geometry;
+      builder: (context, constraints) => ValueListenableBuilder<bool>(
+        valueListenable: _rotated,
+        builder: (context, rotated, child) {
+          return _buildBoard(context, constraints, size, tokens, rotated);
+        },
+      ),
+    );
+  }
 
-        final textStyle = AppTypography.gridTextStyle(
-          widget.language,
-          cellSize: geometry.cellSize,
-          color: tokens.colors.onSurface,
-        );
+  Widget _buildBoard(
+    BuildContext context,
+    BoxConstraints constraints,
+    int size,
+    AppTokens tokens,
+    bool rotated,
+  ) {
+    final geometry = GridGeometry.fit(
+      size: size,
+      available: constraints.biggest,
+      gap: AppTokens.space4 / 2,
+      rotated: rotated,
+    );
+    _geometry = geometry;
 
-        final highlights = [
-          for (var i = 0; i < widget.foundWordCells.length; i++)
-            FoundWordHighlight(
-              cells: widget.foundWordCells[i],
-              color:
-                  tokens.colors.foundWord[i % tokens.colors.foundWord.length],
-              borderWidth:
-                  AppTokens.foundWordBorderWidths[i %
-                      AppTokens.foundWordBorderWidths.length],
-            ),
-        ];
+    final textStyle = AppTypography.gridTextStyle(
+      widget.language,
+      cellSize: geometry.cellSize,
+      color: tokens.colors.onSurface,
+    );
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            RepaintBoundary(
-              child: CustomPaint(
-                painter: GridLettersPainter(
-                  cells: widget.cells,
-                  geometry: geometry,
-                  textStyle: textStyle,
-                  // Zero-alpha, not removed: letters sit on the ONE card
-                  // `_GameContent` draws behind the whole grid, never on a
-                  // per-cell box — `cornerRadius` below stays wired so a
-                  // future per-cell treatment has somewhere to plug back in.
-                  cellColor: tokens.colors.surfaceElevated.withValues(alpha: 0),
-                  cornerRadius: AppTokens.radius4,
-                  cache: _cache,
-                  // Cells hold a single isolated grapheme, so the painter's own
-                  // direction never mirrors anything; the RTL-ness of the grid
-                  // lives in where the generator PUT the letters (Ch04).
-                  textDirection: TextDirection.ltr,
-                  stats: _stats,
-                ),
-              ),
-            ),
-            RepaintBoundary(
-              child: CustomPaint(
-                painter: FoundWordsPainter(
-                  highlights: highlights,
-                  geometry: geometry,
-                  stats: _stats,
-                ),
-              ),
-            ),
-            if (widget.foundWordRevealController != null)
-              FoundWordRevealLayer(
-                controller: widget.foundWordRevealController!,
-                geometry: geometry,
-                flashColor: tokens.colors.foundWordFlash,
-                stats: _stats,
-              ),
-            if (widget.hintedCell != null)
-              // Positioned must be a direct Stack child — RepaintBoundary
-              // goes INSIDE it, not around it, or Positioned's parent data
-              // never applies and it silently expands to fill the Stack.
-              Positioned.fromRect(
-                rect: geometry.cellRect(widget.hintedCell!).inflate(4),
-                child: RepaintBoundary(
-                  // Keyed on the cell so a hint that MOVES to a new word (a
-                  // second `useHint` call) restarts the appear animation at
-                  // the new location instead of silently jumping there.
-                  child: _HintHighlight(
-                    key: ValueKey(widget.hintedCell),
-                    color: tokens.colors.info,
-                  ),
-                ),
-              ),
-            if (widget.pulseController != null)
-              ValueListenableBuilder<PulseSignal?>(
-                valueListenable: widget.pulseController!.signal,
-                builder: (context, signal, child) {
-                  if (signal == null) return const SizedBox.shrink();
-                  // Positioned must stay a direct Stack child — the
-                  // RepaintBoundary goes INSIDE it, matching the hint ring
-                  // below and the P07 gotcha CLAUDE.md documents.
-                  // ValueListenableBuilder itself creates no RenderObject, so
-                  // it does not break that chain.
-                  return Positioned.fromRect(
-                    rect: geometry.cellRect(signal.cell).inflate(4),
-                    child: RepaintBoundary(
-                      key: ValueKey(signal.nonce),
-                      child: _PulseHighlight(color: tokens.colors.primary),
-                    ),
-                  );
-                },
-              ),
-            RepaintBoundary(
-              child: CustomPaint(
-                painter: SelectionPainter(
-                  selection: _selection,
-                  geometry: geometry,
-                  color: tokens.colors.primary,
-                  borderWidth: 2.5,
-                  fadeAlpha: _fadeAlpha,
-                  stats: _stats,
-                ),
-              ),
-            ),
-            if (widget.particleController != null)
-              ParticleLayer(
-                controller: widget.particleController!,
-                stats: _stats,
-              ),
-            GestureLayer(
+    final highlights = [
+      for (var i = 0; i < widget.foundWordCells.length; i++)
+        FoundWordHighlight(
+          cells: widget.foundWordCells[i],
+          color: tokens.colors.foundWord[i % tokens.colors.foundWord.length],
+          borderWidth:
+              AppTokens.foundWordBorderWidths[i %
+                  AppTokens.foundWordBorderWidths.length],
+        ),
+    ];
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        RepaintBoundary(
+          child: CustomPaint(
+            painter: GridLettersPainter(
+              cells: widget.cells,
               geometry: geometry,
-              selection: _selection,
-              onReleased: (state) => _onGridReleased(state, geometry),
-              onStarted: _onGridStarted,
-              hapticsService: widget.hapticsService,
+              textStyle: textStyle,
+              // Zero-alpha, not removed: letters sit on the ONE card
+              // `_GameContent` draws behind the whole grid, never on a
+              // per-cell box — `cornerRadius` below stays wired so a
+              // future per-cell treatment has somewhere to plug back in.
+              cellColor: tokens.colors.surfaceElevated.withValues(alpha: 0),
+              cornerRadius: AppTokens.radius4,
+              cache: _cache,
+              // Cells hold a single isolated grapheme, so the painter's own
+              // direction never mirrors anything; the RTL-ness of the grid
+              // lives in where the generator PUT the letters (Ch04).
+              textDirection: TextDirection.ltr,
+              spin: _spin,
+              stats: _stats,
             ),
-            if (widget.showPerfOverlay)
-              Positioned(
-                left: AppTokens.space8,
-                top: AppTokens.space8,
-                child: PerfOverlay(stats: _stats),
+          ),
+        ),
+        RepaintBoundary(
+          child: CustomPaint(
+            painter: FoundWordsPainter(
+              highlights: highlights,
+              geometry: geometry,
+              spin: _spin,
+              stats: _stats,
+            ),
+          ),
+        ),
+        if (widget.foundWordRevealController != null)
+          FoundWordRevealLayer(
+            controller: widget.foundWordRevealController!,
+            geometry: geometry,
+            flashColor: tokens.colors.foundWordFlash,
+            stats: _stats,
+          ),
+        if (widget.hintedCell != null)
+          // Positioned must be a direct Stack child — RepaintBoundary
+          // goes INSIDE it, not around it, or Positioned's parent data
+          // never applies and it silently expands to fill the Stack.
+          Positioned.fromRect(
+            rect: geometry.cellRect(widget.hintedCell!).inflate(4),
+            child: RepaintBoundary(
+              // Keyed on the cell so a hint that MOVES to a new word (a
+              // second `useHint` call) restarts the appear animation at
+              // the new location instead of silently jumping there.
+              child: _HintHighlight(
+                key: ValueKey(widget.hintedCell),
+                color: tokens.colors.info,
               ),
-          ],
-        );
-      },
+            ),
+          ),
+        if (widget.pulseController != null)
+          ValueListenableBuilder<PulseSignal?>(
+            valueListenable: widget.pulseController!.signal,
+            builder: (context, signal, child) {
+              if (signal == null) return const SizedBox.shrink();
+              // Positioned must stay a direct Stack child — the
+              // RepaintBoundary goes INSIDE it, matching the hint ring
+              // below and the P07 gotcha CLAUDE.md documents.
+              // ValueListenableBuilder itself creates no RenderObject, so
+              // it does not break that chain.
+              return Positioned.fromRect(
+                rect: geometry.cellRect(signal.cell).inflate(4),
+                child: RepaintBoundary(
+                  key: ValueKey(signal.nonce),
+                  child: _PulseHighlight(color: tokens.colors.primary),
+                ),
+              );
+            },
+          ),
+        RepaintBoundary(
+          child: CustomPaint(
+            painter: SelectionPainter(
+              selection: _selection,
+              geometry: geometry,
+              color: tokens.colors.primary,
+              borderWidth: 2.5,
+              fadeAlpha: _fadeAlpha,
+              stats: _stats,
+            ),
+          ),
+        ),
+        if (widget.particleController != null)
+          ParticleLayer(controller: widget.particleController!, stats: _stats),
+        GestureLayer(
+          geometry: geometry,
+          selection: _selection,
+          onReleased: (state) => _onGridReleased(state, geometry),
+          onStarted: _onGridStarted,
+          hapticsService: widget.hapticsService,
+        ),
+        if (widget.showPerfOverlay)
+          Positioned(
+            left: AppTokens.space8,
+            top: AppTokens.space8,
+            child: PerfOverlay(stats: _stats),
+          ),
+      ],
     );
   }
 }
@@ -409,6 +532,26 @@ final class PulseController {
   void clear() => _signal.value = null;
 
   void dispose() => _signal.dispose();
+}
+
+/// Asks the board to turn over. Held by `game_screen.dart` and handed to
+/// [GameGrid], the same shape [PulseController] uses — the button lives
+/// outside the grid (it sits in the screen's own corner), the state lives
+/// inside it, and this is the wire between them.
+///
+/// A COUNTER, not a bool: the settled orientation belongs to [GameGridState],
+/// which also owns the animation and the reset-on-new-level. What travels
+/// through here is only "the player tapped", and a fresh value every tap is
+/// what makes a [ValueNotifier] fire on the second one — the same reason
+/// [PulseSignal] carries a nonce.
+final class GridRotationController {
+  final ValueNotifier<int> _requests = ValueNotifier<int>(0);
+
+  ValueListenable<int> get requests => _requests;
+
+  void rotate() => _requests.value++;
+
+  void dispose() => _requests.dispose();
 }
 
 /// The pulse's own visual: a soft, low-alpha glow — deliberately NOT

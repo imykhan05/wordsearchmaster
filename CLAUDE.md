@@ -2533,8 +2533,9 @@ background-music loop's audibility).
 Driven by `docs/competitor-analysis.md` — a measured teardown of three
 100M+-install word games, from video the player recorded. Shipped one task at
 a time, each its own commit: the grid card, the found-word praise banner and
-ribbon title, the capsule sweep, the login coin bonus, and the letter flight
-below.
+ribbon title, the capsule sweep, the login coin bonus, the letter flight, the
+level's category in the header, the curated sound themes, and the rotate
+button below.
 
 ### Letter flight — the one animation whose two ends are in different subtrees
 
@@ -2727,6 +2728,116 @@ character are proven only by the generator's own measured assertions (loop
 seam continuity, fixed C6 fundamental, file sizes) and by the wiring tests;
 whether `chimes` genuinely sounds "livelier" than `soft_bells` is a judgement
 only a device can make.
+
+### The rotate button — a 180° VIEW flip, and why it is in `GridGeometry`
+
+Asked for from a player's own recording of a competitor board (the video is
+where the spec came from, not a guess): an orange circular button under the
+board's corner; tapping it turns the whole grid 180° with the letters
+sweeping around the centre — and each glyph staying UPRIGHT the whole way,
+never appearing upside down. Frame-by-frame against that recording: the
+arrangement is exactly a half turn (checked letter by letter, `G C A K E`'s
+row arriving reversed at the far side), the swing runs ~350ms, and the board
+dips slightly in scale at the midpoint. `Motion.slow` (340ms) and
+`Motion.fade` land inside measurement error of that, so the animation is
+named constants rather than fresh literals.
+
+What it buys is real and cheap: a word running the "wrong" way is the one a
+player stares straight past, and seeing the same grid from the other side
+breaks that. `docs/competitor-analysis.md` already recorded a shuffle/rotate
+tool sitting beside the hint button in a competitor's own anti-frustration
+tutorial; this is that, built.
+
+**It is a VIEW transform and nothing else.** No cell moves, no placement
+changes, no seed is re-rolled, nothing is written. So Ch06's determinism
+("level 47 is identical everywhere"), the Daily's "same board for everyone",
+and P14's server-side replay all stay true by construction rather than by a
+promise — there is no code path from this button to `GameState`, to
+`events`, or to a repository. It is also FREE and unlimited: no coin, no
+hint, no star. `_rotateBoard` deliberately does NOT call `_resetIdleClock`
+either — reaching for rotate is what being stuck looks like, so postponing
+the DDA nudge (Ch02/P12) on it would silence the anti-frustration help for
+exactly the player it was written for.
+
+**The rotation lives in `GridGeometry`, and that placement is the whole
+design.** That class is already the one place pixels and cells meet: every
+painter asks it where a cell is, and `GestureLayer` asks the same object
+which cell a finger is on (P06). Rotating there means touch and paint cannot
+disagree, because there is only one rotation and both read it. A
+`Transform` wrapped around the widget would have rotated the glyphs too —
+wrong per the video — and would have left hit-testing to be fixed
+separately, which is precisely the shape of the bug this codebase already
+shipped once (`GestureLayer`'s `late final` resolver silently made the last
+two rows untouchable).
+
+**Two fields, split on purpose:**
+
+- **`rotated` (bool) — settled, and the only one hit-testing consults.** 180°
+  is a REFLECTION through the grid's centre (`2c - p`), so the settled
+  mapping needs no trigonometry and is its own inverse: one function serves
+  both "where is this cell drawn" and "which cell is under this finger",
+  with no forward/inverse pair to get backwards. Keeping the touch path free
+  of `cos`/`sin` is deliberate — a rounding error there decides a cell index,
+  where on the painting side it is invisible.
+- **`paintSpin` (radians) — transient, and `toGridPoint` IGNORES IT.** During
+  the swing the letters are mid-flight and mean nothing as targets, so
+  hit-testing keeps answering against the settled layout throughout. Built
+  inside `paint()` via `withPaintSpin`, once a frame, so the animation never
+  travels through a widget rebuild.
+
+**The spin rotates POSITIONS, never glyphs.** Each letter is drawn upright at
+a rotated point, and a capsule is defined by its first and last cell centres
+— so rotating those two points swings the whole found-word highlight with
+the letters it covers, with no separate handling and no frame where a found
+word comes loose from its own word. The midpoint scale dip is a
+`canvas.scale`, NOT a change to `cellSize`: baking it into the font size
+would mint a new `TextStyle` per frame and miss `GraphemePainterCache` 144
+times a frame, which is the exact trap that cache exists to close.
+
+**`GameGridState` owns the state; the button does not.**
+`GridRotationController` (`game_grid.dart`) is a bare counter — "the player
+tapped" — following `PulseController`'s shape for the identical reason: the
+control sits in the screen's own corner while the state belongs to the
+board. A counter rather than a bool so a second tap fires the notifier at
+all, the same nonce trick `PulseSignal` uses. `_rotated`/`_spin` are
+`ValueNotifier`s, so a tap rebuilds the grid subtree ONCE and the 340ms
+animation rebuilds nothing at all — it reaches the two painters through
+`CustomPaint.repaint`. Pass 1 (letters) therefore does repaint per frame,
+but only for a spin the player asked for by tapping; P06's bargain outside
+that window is unchanged.
+
+Three things that would otherwise bite:
+
+- **`SingleTickerProviderStateMixin` had to become `TickerProviderStateMixin`.**
+  The wrong-selection fade and the spin are independent and can overlap, and
+  the single-ticker mixin throws outright on the second `createTicker`.
+- **A NEW LEVEL ARRIVES UPRIGHT.** P07's Zeigarnik swap advances the level in
+  place without remounting `GameGrid`, so nothing else would ever clear the
+  flip and the player would land on the next level already upside down.
+  `didUpdateWidget` resets on a new `cells` IDENTITY — the same "a fresh
+  `GridResult` per level is what 'different board' means" test
+  `GridLettersPainter.shouldRepaint` already makes.
+- **A live drag is cleared when the board turns**, or its capsule would be
+  left running through cells that just moved.
+
+Reduce-motion drops the SWING and keeps the ROTATION — the board really has
+turned over, and a player who asked for that still needs to see it. Same
+call `_PulseHighlight` already makes for the same reason: remove the
+movement, keep the information.
+
+`test/presentation/game/grid_rotation_test.dart` asserts the property that
+actually matters — TOUCH FOLLOWS PAINT, over every cell of a 12x12 in both
+orientations — plus an end-to-end widget case that rotates, checks the
+letters genuinely moved, then drags along their NEW screen positions and
+expects the same logical cells back. Both were confirmed to FAIL against a
+deliberately broken `toGridPoint` that rotated paint but not touch, which is
+the one way this feature could have looked perfect and been unplayable.
+
+The button is `PositionedDirectional(end:)`, so it sits under the right
+thumb in English and Hindi and the left in Urdu, following the reading
+direction the screen is already mirrored to. The dev debug panel moved up to
+`space48` rather than the button moving: dev-only tooling is what yields
+when two things want the same corner.
 
 ### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
 

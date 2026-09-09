@@ -143,6 +143,11 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// mechanism — see `game_grid.dart`'s [PulseController] header.
   final PulseController _pulse = PulseController();
 
+  /// The rotate button's wire into the board. Free and unlimited: it costs no
+  /// coin, spends no hint and appends no event, so it can never touch the
+  /// score — see [_rotateBoard].
+  final GridRotationController _rotation = GridRotationController();
+
   /// Which DDA intervention is currently offered, if any. Only
   /// [DdaState.hintOffer] changes what's on screen (the inline banner);
   /// [DdaState.pulse] only drives [_pulse] and never touches this.
@@ -219,6 +224,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     _flights.dispose();
     _wordPraiseTrigger.dispose();
     _pulse.dispose();
+    _rotation.dispose();
     _ddaState.dispose();
     _urduIntroDismissed.dispose();
     _reward.dispose();
@@ -475,6 +481,21 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     ref.read(hapticsServiceProvider).buttonTap();
   }
 
+  /// Turns the board over. A word that reads the "wrong" way round is the one
+  /// a player stares past, and seeing the same grid from the other side is
+  /// what breaks that — for free, which is the point: this spends no coin,
+  /// consumes no hint and appends nothing to `GameState.events`, so a player
+  /// can lean on it as hard as they like and still finish with three stars.
+  ///
+  /// DELIBERATELY DOES NOT CALL [_resetIdleClock]. Reaching for rotate is what
+  /// being stuck looks like, so postponing the DDA nudge (Ch02/P12) on it
+  /// would silence the anti-frustration help for exactly the player it was
+  /// written for. Rotating is not progress; it is a second look.
+  void _rotateBoard() {
+    _tapFeedback();
+    _rotation.rotate();
+  }
+
   Future<void> _openPauseSheet() async {
     _tapFeedback();
     final notifier = ref.read(gameControllerProvider(_session).notifier);
@@ -638,6 +659,8 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
               flightAnchors: _flightAnchors,
               wordPraiseTrigger: _wordPraiseTrigger,
               pulseController: _pulse,
+              rotationController: _rotation,
+              onRotateBoard: _rotateBoard,
               ddaState: _ddaState,
               onAcceptFreeHint: _acceptFreeHint,
               onDismissHintOffer: _dismissHintOffer,
@@ -774,6 +797,41 @@ class _HintButton extends ConsumerWidget {
   }
 }
 
+/// Turns the board over (competitor-driven polish).
+///
+/// A filled circle rather than a bare icon, and docked to the board's own
+/// corner rather than added to the AppBar, because it is a PLAY control — a
+/// thumb reaches for it mid-puzzle, next to what it acts on, the same way the
+/// three apps `docs/competitor-analysis.md` measures place theirs.
+///
+/// Deliberately NOT badged, counted or ever disabled: unlike the hint button
+/// beside it in the top bar, this costs nothing, so there is no budget to show
+/// and no state in which it should refuse.
+class _RotateBoardButton extends StatelessWidget {
+  const _RotateBoardButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTokens.of(context);
+    final l10n = AppLocalizations.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: tokens.colors.primary,
+        boxShadow: tokens.elevation2.shadows,
+      ),
+      child: IconButton(
+        tooltip: l10n.rotateBoardLabel,
+        onPressed: onPressed,
+        icon: Icon(Icons.rotate_right, color: tokens.colors.onPrimary),
+      ),
+    );
+  }
+}
+
 /// Everything below the top bar: the grid (with the dev debug panel docked
 /// over it) and the word-list panel, plus the level-complete overlay when
 /// `state.phase` calls for it.
@@ -792,6 +850,8 @@ class _GameContent extends ConsumerWidget {
     required this.flightAnchors,
     required this.wordPraiseTrigger,
     required this.pulseController,
+    required this.rotationController,
+    required this.onRotateBoard,
     required this.ddaState,
     required this.onAcceptFreeHint,
     required this.onDismissHintOffer,
@@ -830,6 +890,12 @@ class _GameContent extends ConsumerWidget {
 
   /// Ch02/P12: drives the FTUE glow / DDA stuck-pulse on the grid.
   final PulseController pulseController;
+
+  /// The rotate button and the board it turns. The control sits in the screen's
+  /// own corner rather than inside [GameGrid], so the two are wired through a
+  /// controller — see `game_grid.dart`'s [GridRotationController].
+  final GridRotationController rotationController;
+  final VoidCallback onRotateBoard;
 
   /// Ch02/P12: whether the free-hint offer banner is currently shown.
   final ValueListenable<DdaState> ddaState;
@@ -923,6 +989,7 @@ class _GameContent extends ConsumerWidget {
                         ],
                         hintedCell: state.hintedCell,
                         pulseController: pulseController,
+                        rotationController: rotationController,
                         onSelectionReleased: onSelectionReleased,
                         particleController: particles,
                         foundWordRevealController: foundWordReveal,
@@ -943,10 +1010,22 @@ class _GameContent extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    // Bottom-of-the-board and direction-aware: `end` puts it
+                    // under the player's right thumb in English and Hindi and
+                    // their left in Urdu, following the reading direction the
+                    // whole screen is already mirrored to.
+                    PositionedDirectional(
+                      end: AppTokens.space8,
+                      bottom: AppTokens.space8,
+                      child: _RotateBoardButton(onPressed: onRotateBoard),
+                    ),
                     if (isDev && state.session is JourneySession)
+                      // Sits ABOVE the rotate button rather than beside it:
+                      // dev-only tooling is what yields when two things want
+                      // the same corner, never the control players ship with.
                       Positioned(
                         right: AppTokens.space8,
-                        bottom: AppTokens.space8,
+                        bottom: AppTokens.space48,
                         child: GameDebugPanel(
                           level: state.level,
                           onForceDda: onDebugForceDda,

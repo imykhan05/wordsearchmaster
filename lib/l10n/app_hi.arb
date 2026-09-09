@@ -207,5 +207,6 @@
   "achievementDailyDevoteeTitle": "दैनिक समर्पित",
   "achievementDailyDevoteeDescription": "10 दैनिक चुनौतियाँ पूरी कीं",
   "achievementCollectorTitle": "संग्रहकर्ता",
-  "achievementCollectorDescription": "एक पूरी श्रेणी पूरी की"
+  "achievementCollectorDescription": "एक पूरी श्रेणी पूरी की",
+  "rotateBoardLabel": "बोर्ड घुमाएँ"
 }

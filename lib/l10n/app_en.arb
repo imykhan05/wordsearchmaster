@@ -458,5 +458,9 @@
   "achievementDailyDevoteeTitle": "Daily Devotee",
   "achievementDailyDevoteeDescription": "Completed 10 Daily Challenges",
   "achievementCollectorTitle": "Collector",
-  "achievementCollectorDescription": "Completed a full category"
+  "achievementCollectorDescription": "Completed a full category",
+  "rotateBoardLabel": "Rotate the board",
+  "@rotateBoardLabel": {
+    "description": "Tooltip on the button that turns the letter grid 180 degrees. Free, unlimited, and never changes the puzzle — only the angle it is read from."
+  }
 }
