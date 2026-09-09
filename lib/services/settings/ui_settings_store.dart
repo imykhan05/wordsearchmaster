@@ -2,6 +2,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/audio/sound_theme.dart';
+import '../../domain/theme/app_theme_variant.dart';
 import '../../domain/theme/background_style.dart';
 import '../../domain/text/language.dart';
 
@@ -41,6 +42,12 @@ abstract interface class UiSettingsStore {
   /// and [musicEnabled] already have.
   SoundTheme get soundTheme;
   Future<void> setSoundTheme(SoundTheme value);
+
+  /// Which of the eight palettes the app wears, or AUTO to let the local time
+  /// of day decide. A look, not game data — the same carve-out as
+  /// [soundTheme], and stored as one string ([AppThemeSelection.id]).
+  AppThemeSelection get appTheme;
+  Future<void> setAppTheme(AppThemeSelection value);
 
   /// What is painted behind the board. A look, not game data — the same
   /// carve-out as [soundTheme].
@@ -117,6 +124,7 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.hapticsEnabled = true,
     this.musicEnabled = true,
     this.soundTheme = SoundTheme.defaultTheme,
+    this.appTheme = AppThemeSelection.defaultSelection,
     this.backgroundStyle = BackgroundStyle.defaultStyle,
     this.backgroundPhotoPath,
     this.selectedLanguage,
@@ -135,6 +143,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool musicEnabled;
   @override
   SoundTheme soundTheme;
+  @override
+  AppThemeSelection appTheme;
   @override
   BackgroundStyle backgroundStyle;
   @override
@@ -160,6 +170,8 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   Future<void> setMusicEnabled(bool value) async => musicEnabled = value;
   @override
   Future<void> setSoundTheme(SoundTheme value) async => soundTheme = value;
+  @override
+  Future<void> setAppTheme(AppThemeSelection value) async => appTheme = value;
   @override
   Future<void> setBackgroundStyle(BackgroundStyle value) async =>
       backgroundStyle = value;
@@ -195,6 +207,7 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _hapticsKey = 'ui.haptics_enabled';
   static const String _musicKey = 'ui.music_enabled';
   static const String _soundThemeKey = 'ui.sound_theme';
+  static const String _appThemeKey = 'ui.app_theme';
   static const String _backgroundStyleKey = 'ui.background_style';
   static const String _backgroundPhotoKey = 'ui.background_photo_path';
   static const String _languageKey = 'ui.selected_language';
@@ -238,6 +251,14 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   @override
   Future<void> setSoundTheme(SoundTheme value) =>
       _prefs.setString(_soundThemeKey, value.id);
+
+  @override
+  AppThemeSelection get appTheme =>
+      AppThemeSelection.fromId(_prefs.getString(_appThemeKey));
+
+  @override
+  Future<void> setAppTheme(AppThemeSelection value) =>
+      _prefs.setString(_appThemeKey, value.id);
 
   @override
   BackgroundStyle get backgroundStyle =>

@@ -2921,6 +2921,165 @@ and its manifest declares NO `uses-permission`: the modern Android photo picker
 needs none, which is the same "a permission scares this audience" reasoning
 P17 used to rule out a contacts picker for friends.
 
+### Eight themes, and a clock — `AppThemeVariant`
+
+Player-requested, and the request came with its own hard constraint: *"per
+theme esy ho k text b highlight theak ho ... kahin b gap na ho k user ko
+display theak ho."* So the interesting part of this feature is not the eight
+palettes; it is that "readable everywhere" is a CHECKED PROPERTY rather than
+a claim, and that adding a ninth theme cannot quietly stop being one.
+
+**The app was hard-locked to dark until this landed.** `app.dart` carried
+`themeMode: ThemeMode.dark` from P02, so `AppTheme.light()` — a fully written,
+fully tested 29-colour palette — had never once been on screen. Half of this
+feature was already built and unreachable.
+
+#### A theme moves its GROUND, its TEXT and its ACCENT. Nothing else.
+
+`lib/domain/theme/app_theme_variant.dart` is pure Dart and names no colour:
+`AppThemeVariant` carries an `id` (which doubles as the persisted preference
+string, the same discipline `SoundTheme.id` keeps) and an `isDark` bool.
+`Brightness` lives in `dart:ui`, so the translation happens exactly once, in
+`AppTokens.forVariant`, and a variant and its brightness cannot disagree.
+
+The palettes themselves are in `app_tokens.dart` — still the only file in
+`lib/` allowed a colour literal — and every one of the six added ones reuses
+the LIGHTNESS of the corresponding step in its family's shipped ladder. Only
+hue and saturation move. That is what makes them safe to add rather than a
+new accessibility search each: contrast is overwhelmingly a function of
+lightness, so a palette built this way starts within a rounding error of a
+ratio the live app already proved legible.
+
+The found-word six and the region accents are SHARED per family, deliberately.
+Those colours came out of a search maximising minimum pairwise CIE ΔE under
+normal, protanopic and deuteranopic vision; giving each theme its own would
+mean eight such searches having to keep passing forever, for a set of colours
+a player never chooses.
+
+#### The accent bar is measured, not chosen
+
+Every added accent has to sit at least as far from its family's found-word six
+as the SHIPPED marigold already does — ΔE 13.9 on dark, 8.5 on light, under all
+three vision models. That number is not invented: it is the separation the live
+app has always had between the selection capsule under the player's finger and
+the words already found, so the bar reads as "at least as distinguishable as
+the app people are playing today".
+
+It rejected obvious choices. An orange accent on the forest ground and a red
+one on the sand ground both collide with a found-word hue and are not in this
+build; the aqua, rose, new-leaf, steel-blue, deep-teal and terracotta that
+shipped are what cleared it.
+
+#### The palette test grew from two palettes to eight, at the same thresholds
+
+The file's own header already said "if this fails after a palette edit, pick
+different hues; do not lower the threshold." That instruction is what made this
+tractable, so it was obeyed: ΔE > 25 and contrast ≥ 3.0 are untouched, and the
+`palettes` map is now derived from `AppThemeVariant.values` so a theme cannot
+be added without being held to them. Four checks were ADDED, per theme, because
+"text b highlight theak ho" is about more than the found-word six:
+
+- `onSurface` vs `surface` ≥ **4.5** (WCAG AA body text)
+- `onSurfaceMuted` / `onSurfaceFaint` vs `surface` ≥ **3.0**
+- `primary` vs `surface` ≥ **3.0** — an accent that vanishes into its own
+  ground is a selection capsule nobody can see
+- `onPrimary` vs `primary` ≥ **4.5** — button text on the accent
+- and the accent-vs-found-word bar above
+
+Plus one structural check: no two variants may return the same palette. An
+exhaustive `switch` already makes a variant with NO palette a compile error,
+but two variants returning the same one would compile and ship a picker with a
+chip that does nothing.
+
+#### AUTO reads LOCAL time, and this is the one place that does
+
+`DayKey`, `getDailySeed` and `TrustedClock` all count days in UTC because a
+streak and a Daily puzzle have to mean the same thing for every player at once.
+A palette is the opposite kind of question: what matters is the light in the
+room the player is actually sitting in, which only their own wall clock knows.
+There is also nothing to cheat — a player who sets their clock forward gets an
+evening palette early and has taken nothing from anyone.
+
+Six slots, `TimeOfDaySlot`: morning 05-08 (Morning Mint), day 08-12 (Daylight),
+afternoon 12-16 (Desert Sand), evening 16-19 (Twilight), night 19-23
+(Midnight), lateNight 23-05 (Deep Sea). Forest and Slate are manual-only —
+eight palettes, six slots. The slot is named `lateNight` rather than `midnight`
+because `AppThemeVariant.midnight` is the palette the NIGHT slot wears; the two
+words genuinely mean different things here.
+
+#### Two ways a boundary is crossed, and it takes both to cover them
+
+`ResolvedThemeVariant` arms **one** `Timer` for the next boundary — not a poll.
+A per-minute tick would rebuild the entire `MaterialApp` theme forever to
+discover that nothing had changed, which is the same mistake P12 refused to
+make when it kept the DDA idle clock out of `GameState`. And the app is not
+always in the foreground when a boundary passes, where timers do not reliably
+fire, so `AppLifecycleListener.onShow` re-resolves on the way back in. Neither
+alone is enough.
+
+**The timer is only ever a HINT.** Every resolution re-reads the clock, so a
+timer that fires early — a clock change, a long doze, a 23- or 25-hour local
+day — costs one redundant recomputation rather than a wrong palette.
+`AutoTheme.timeUntilNextSlot` is floored at one minute so a clock that moves
+backwards cannot produce a zero-delay timer that spins, and its test asserts
+the property that actually matters: from every hour and minute sampled across
+a day, the moment the timer wakes at is in a DIFFERENT slot.
+
+The whole switch is proven against a clock the test moves itself
+(`themeClockProvider`, injectable for exactly that reason) rather than by
+waiting for 19:00. Reverting `_arm(clock())` was confirmed to fail three of
+those cases, including the one that catches a timer which fires once and then
+stops.
+
+#### AUTO is the default, and that DISAGREES with `BackgroundStyle`
+
+`background_style_test.dart` pins `defaultStyle` the other way, with the reason
+written into it: an existing player's screen must not change under them on an
+upgrade that only ADDED the ability to change it. This one defaults to AUTO
+anyway, and the difference is the point — there the picker added a choice
+nobody had asked to have moved; here **the moving IS the feature**. A theme
+system shipped defaulted to one fixed palette would be invisible to every
+player who never opens Settings. Any of the eight, including the exact palette
+the app shipped with (`Midnight`, unchanged to the byte), is one tap away.
+
+#### `theme` and `darkTheme` are the SAME object, and `themeMode` is gone
+
+Material's light/dark pair exists to follow the OS setting, and that is exactly
+the vote this app does not give it: the player picked this palette, or picked
+AUTO, which follows the time of day rather than the system switch. Filling both
+slots identically makes `themeMode` unable to change anything, whatever it is
+set to. `app_theme_wiring_test.dart` pumps the real app root under both
+`platformBrightness` values and asserts the palette does not move.
+
+#### The picker shows swatches, not nine words
+
+Each chip carries a miniature of the palette it names — that palette's own
+`surfaceHigh`, ringed by its own `outline`, with a dot of its own `primary`,
+read through `AppTokens.colorsFor(variant)` rather than from the ambient theme
+(the whole point is showing a palette that is NOT the one on screen). Nine
+identical chips differing only in a word would make a player tap through all of
+them to find out what they do, and the names are the half of this screen a
+native speaker has not reviewed yet. AUTO's swatch is whatever it resolves to
+right now, which is the honest preview: picking it gives you that, for now.
+
+The Style Gallery's dark/light toggle became a NEXT-THEME button for the same
+reason its own test rewrite states: a two-state control could only ever reach
+two of eight palettes, leaving six with no way to be eyeballed across all three
+scripts, which is the entire job of that screen.
+
+#### Free consequences worth knowing
+
+`AppBackground`'s three gradients are already derived from `background`/
+`surfaceHigh`/`primaryDim`/`regionAccent.first` through `Color.lerp`, so all
+three re-tint per theme with zero extra work — pick Forest and Ember becomes a
+forest ember. That is the same "derived, not declared" property the background
+picker was built on, collecting its interest.
+
+**Not verified here**: whether the eight actually look good. Contrast ratios,
+ΔE margins and the wiring are all proven; "professional and stylish" is a
+judgement only a device can make, the same standing limit this file already
+records for the audio themes and the music bed.
+
 ### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
 
 Found by a player's own local `flutter build apk --flavor stg --release`

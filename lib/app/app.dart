@@ -8,6 +8,7 @@ import '../application/sync_controller.dart';
 import '../presentation/meta/achievement_unlock_card.dart';
 import '../services/audio/audio_service.dart';
 import '../services/haptics/haptics_service.dart';
+import '../services/theme/theme_settings.dart';
 import 'language/language_x.dart';
 import 'language/selected_language.dart';
 import 'router.dart';
@@ -23,6 +24,10 @@ class WordSearchMasterApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final language = ref.watch(selectedLanguageProvider);
+    // The look on screen: the player's pinned palette, or — under AUTO — the
+    // one the local time of day resolves to. `ResolvedThemeVariant` owns the
+    // boundary timer and the lifecycle re-check, so this is a plain watch.
+    final themeVariant = ref.watch(resolvedThemeVariantProvider);
 
     // Ch03: master mute/haptics toggles must reach the audio and haptics
     // services instantly. Watched once, here, rather than per-screen — both
@@ -52,12 +57,20 @@ class WordSearchMasterApp extends ConsumerWidget {
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
 
-      // Dark is the product default; light is offered for players who prefer
-      // it and doubles as the high-contrast option (Ch03). The theme takes the
-      // language so its default font family follows the script.
-      theme: AppTheme.light(language: language),
-      darkTheme: AppTheme.dark(language: language),
-      themeMode: ThemeMode.dark,
+      // BOTH SLOTS GET THE SAME THEME, and `themeMode` is deliberately gone.
+      // Material's light/dark pair exists to follow the OS setting, and that
+      // is exactly what must not happen here: the player picked this palette
+      // (or picked AUTO, which follows the time of day rather than the system
+      // switch), and a phone flipping to dark mode at sunset has no business
+      // overriding either answer. Filling both slots identically makes
+      // `themeMode` unable to change anything, whatever it is set to.
+      //
+      // This is also where `themeMode: ThemeMode.dark` — which had made
+      // `AppTheme.light()` unreachable since P02 — finally comes out. The
+      // theme takes the language so its default font family follows the
+      // script.
+      theme: AppTheme.forVariant(themeVariant, language: language),
+      darkTheme: AppTheme.forVariant(themeVariant, language: language),
 
       routerConfig: router,
 

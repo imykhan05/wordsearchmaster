@@ -478,5 +478,30 @@
   "backgroundPhotoNote": "Your photo stays on your phone and is removed when you uninstall.",
   "@backgroundPhotoNote": {
     "description": "Reassurance under the background picker: the app keeps only a path, never the picture itself."
-  }
+  },
+  "themeLabel": "Theme",
+  "@themeLabel": {
+    "description": "Heading over the row of theme chips on the settings screen — which colour palette the whole app wears."
+  },
+  "themeAuto": "Auto",
+  "@themeAuto": {
+    "description": "Theme option that follows the local time of day instead of staying on one palette."
+  },
+  "themeAutoNote": "Follows the time of day on this phone. Showing {theme} now.",
+  "@themeAutoNote": {
+    "description": "Caption under the theme chips while Auto is selected, naming the palette the clock has currently resolved to.",
+    "placeholders": {
+      "theme": {
+        "type": "String"
+      }
+    }
+  },
+  "themeMidnight": "Midnight",
+  "themeDeepSea": "Deep Sea",
+  "themeTwilight": "Twilight",
+  "themeForest": "Forest",
+  "themeSlate": "Slate",
+  "themeDaylight": "Daylight",
+  "themeMorningMint": "Morning Mint",
+  "themeDesertSand": "Desert Sand"
 }

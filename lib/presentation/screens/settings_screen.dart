@@ -8,11 +8,13 @@ import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/audio/sound_theme.dart';
 import '../../domain/text/language.dart';
+import '../../domain/theme/app_theme_variant.dart';
 import '../../domain/theme/background_style.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/audio/sound_settings.dart';
 import '../../services/background/background_settings.dart';
 import '../../services/notifications/notification_settings.dart';
+import '../../services/theme/theme_settings.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/language_tile.dart';
 import '../widgets/system_back_handler.dart';
@@ -140,6 +142,13 @@ class SettingsScreen extends ConsumerWidget {
               const MetaCard(
                 child: Material(
                   type: MaterialType.transparency,
+                  child: _ThemeSection(),
+                ),
+              ),
+              const SizedBox(height: AppTokens.space16),
+              const MetaCard(
+                child: Material(
+                  type: MaterialType.transparency,
                   child: _BackgroundSection(),
                 ),
               ),
@@ -184,10 +193,126 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// Localizes a [SoundTheme] for display, the same one-call-site-resolves-it
-/// shape `categoryLabel()` uses for content-pack categories — a switch
-/// rather than a `Map` so a theme added to the enum without a case here is a
-/// compile error, not a runtime fallback string nobody notices.
+/// The eight palettes, plus AUTO.
+///
+/// Every chip carries a SWATCH of the palette it names, drawn from that
+/// palette's own tokens rather than from anything written here. A row of nine
+/// identical chips differing only in a word would make the player tap through
+/// all of them to find out what they do — and the names are the half of this
+/// screen a native speaker has not reviewed yet.
+class _ThemeSection extends ConsumerWidget {
+  const _ThemeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final selection = ref.watch(appThemeSettingProvider);
+    // What AUTO currently resolves to, so the caption can name it. Watched
+    // rather than recomputed here: this is the same value `app.dart` is
+    // painting with, and deriving a second answer from a second clock read is
+    // how the caption ends up disagreeing with the screen it sits on.
+    final resolved = ref.watch(resolvedThemeVariantProvider);
+
+    void select(AppThemeSelection value) =>
+        ref.read(appThemeSettingProvider.notifier).set(value);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(l10n.themeLabel),
+        const SizedBox(height: AppTokens.space8),
+        Wrap(
+          spacing: AppTokens.space8,
+          runSpacing: AppTokens.space8,
+          children: [
+            ChoiceChip(
+              // AUTO's swatch is whatever it resolves to right now, which is
+              // the honest preview: picking it gives you that, for now.
+              avatar: _ThemeSwatch(variant: resolved),
+              label: Text(l10n.themeAuto),
+              selected: selection.isAuto,
+              onSelected: (_) => select(const AppThemeSelection.auto()),
+            ),
+            for (final variant in AppThemeVariant.values)
+              ChoiceChip(
+                avatar: _ThemeSwatch(variant: variant),
+                label: Text(_themeName(l10n, variant)),
+                selected: selection.variant == variant,
+                onSelected: (_) => select(AppThemeSelection.fixed(variant)),
+              ),
+          ],
+        ),
+        if (selection.isAuto) ...[
+          const SizedBox(height: AppTokens.space8),
+          Text(
+            l10n.themeAutoNote(_themeName(l10n, resolved)),
+            style: AppTypography.uiTextStyle(
+              Language.english,
+              UiRole.caption,
+              color: AppTokens.of(context).colors.onSurfaceMuted,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A palette in miniature: its own ground, ringed by its own outline, with a
+/// dot of its own accent. Reads the tokens for [variant] directly rather than
+/// the ambient theme — the whole point is to show a palette that is NOT the
+/// one currently on screen.
+class _ThemeSwatch extends StatelessWidget {
+  const _ThemeSwatch({required this.variant});
+
+  final AppThemeVariant variant;
+
+  static const double _size = 18;
+  static const double _dot = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppTokens.colorsFor(variant);
+    return SizedBox(
+      width: _size,
+      height: _size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surfaceHigh,
+          shape: BoxShape.circle,
+          border: Border.all(color: colors.outline),
+        ),
+        child: Center(
+          child: SizedBox(
+            width: _dot,
+            height: _dot,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.primary,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Same switch-not-map reasoning as [_soundThemeName] below.
+String _themeName(AppLocalizations l10n, AppThemeVariant variant) =>
+    switch (variant) {
+      AppThemeVariant.midnight => l10n.themeMidnight,
+      AppThemeVariant.deepSea => l10n.themeDeepSea,
+      AppThemeVariant.twilight => l10n.themeTwilight,
+      AppThemeVariant.forest => l10n.themeForest,
+      AppThemeVariant.slate => l10n.themeSlate,
+      AppThemeVariant.daylight => l10n.themeDaylight,
+      AppThemeVariant.morningMint => l10n.themeMorningMint,
+      AppThemeVariant.desertSand => l10n.themeDesertSand,
+    };
+
 /// The board background: three swatches plus the player's own photo.
 ///
 /// Its own widget rather than more rows inside the sound card, because the
@@ -266,6 +391,10 @@ String _backgroundName(AppLocalizations l10n, BackgroundStyle style) =>
       BackgroundStyle.photo => l10n.backgroundChoosePhoto,
     };
 
+/// Localizes a [SoundTheme] for display, the same one-call-site-resolves-it
+/// shape `categoryLabel()` uses for content-pack categories — a switch
+/// rather than a `Map` so a theme added to the enum without a case here is a
+/// compile error, not a runtime fallback string nobody notices.
 String _soundThemeName(AppLocalizations l10n, SoundTheme theme) =>
     switch (theme) {
       SoundTheme.softBells => l10n.soundThemeSoftBells,

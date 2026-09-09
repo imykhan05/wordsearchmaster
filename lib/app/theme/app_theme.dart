@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/text/language.dart';
+import '../../domain/theme/app_theme_variant.dart';
 import 'app_tokens.dart';
 import 'app_typography.dart';
 
@@ -13,6 +14,16 @@ abstract final class AppTheme {
 
   static ThemeData light({Language language = Language.english}) =>
       _build(AppTokens.light, language);
+
+  /// The theme for one of the eight named looks.
+  ///
+  /// [dark] and [light] are this with the two original variants filled in;
+  /// they stay because a test, the Style Gallery and every `AppTheme.dark()`
+  /// call site written before themes existed all read better that way.
+  static ThemeData forVariant(
+    AppThemeVariant variant, {
+    Language language = Language.english,
+  }) => _build(AppTokens.forVariant(variant), language);
 
   static ThemeData _build(AppTokens tokens, Language language) {
     final colors = tokens.colors;

@@ -9,6 +9,7 @@ import 'package:word_search_master/app/router.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/text/language.dart';
+import 'package:word_search_master/domain/theme/app_theme_variant.dart';
 
 import '../support/fake_content.dart';
 import '../support/fake_meta.dart';
@@ -133,13 +134,47 @@ void main() {
       expect(find.text('WATER'), findsOneWidget);
     });
 
-    testWidgets('theme toggle switches brightness', (tester) async {
+    testWidgets('the theme button reaches every palette, then wraps', (
+      tester,
+    ) async {
+      // Was a dark/light toggle. Since the theme picker landed there are eight
+      // palettes, and this screen's whole job is letting a human eyeball each
+      // of them across all three scripts — a control that could only reach two
+      // would leave six unreviewable.
       await openGallery(tester);
 
-      expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.light_mode_outlined));
-      await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
+      final seen = <String>[];
+      for (var i = 0; i < AppThemeVariant.values.length; i++) {
+        final title = tester
+            .widgetList<Text>(
+              find.descendant(
+                of: find.byType(AppBar),
+                matching: find.byType(Text),
+              ),
+            )
+            .map((text) => text.data ?? '')
+            .firstWhere((data) => data.startsWith('Style Gallery'));
+        seen.add(title);
+
+        await tester.tap(find.byTooltip('Next theme'));
+        await tester.pumpAndSettle();
+      }
+
+      expect(
+        seen.toSet(),
+        hasLength(AppThemeVariant.values.length),
+        reason: 'the button did not visit every palette',
+      );
+      for (final variant in AppThemeVariant.values) {
+        expect(
+          seen,
+          contains(contains(variant.id)),
+          reason: '${variant.id} is unreachable from the gallery',
+        );
+      }
+      // One more tap than there are palettes would have wrapped; exactly that
+      // many lands back on the first.
+      expect(find.text(seen.first), findsOneWidget);
     });
 
     test('router registers the gallery route', () {

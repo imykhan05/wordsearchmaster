@@ -8,11 +8,13 @@ import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
 import 'package:word_search_master/domain/audio/sound_theme.dart';
+import 'package:word_search_master/domain/theme/app_theme_variant.dart';
 import 'package:word_search_master/domain/theme/background_style.dart';
 import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
 import 'package:word_search_master/services/background/background_settings.dart';
 import 'package:word_search_master/services/notifications/notification_settings.dart';
+import 'package:word_search_master/services/theme/theme_settings.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 import '../../support/fake_content.dart';
@@ -128,6 +130,98 @@ void main() {
       expect(container.read(soundThemeSettingProvider), SoundTheme.chimes);
     },
   );
+
+  testWidgets('offers AUTO plus one chip per theme, exactly one selected', (
+    tester,
+  ) async {
+    await pumpSettingsScreen(tester);
+
+    // BY NAME, like the sound-theme case above: three ChoiceChip rows now
+    // share this screen, so a bare count would silently measure all of them.
+    const names = [
+      'Auto',
+      'Midnight',
+      'Deep Sea',
+      'Twilight',
+      'Forest',
+      'Slate',
+      'Daylight',
+      'Morning Mint',
+      'Desert Sand',
+    ];
+    expect(
+      names,
+      hasLength(AppThemeVariant.values.length + 1),
+      reason: 'a theme was added to the enum without a chip named here',
+    );
+
+    final selected = <String>[];
+    for (final name in names) {
+      final finder = find.widgetWithText(ChoiceChip, name);
+      expect(finder, findsOneWidget, reason: '$name has no chip');
+      if (tester.widget<ChoiceChip>(finder).selected) selected.add(name);
+    }
+    expect(selected, [
+      'Auto',
+    ], reason: 'a fresh install follows the clock, and says so exactly once');
+  });
+
+  testWidgets('pinning a theme takes it off AUTO and changes the app', (
+    tester,
+  ) async {
+    final container = await pumpSettingsScreen(tester);
+    expect(container.read(appThemeSettingProvider).isAuto, isTrue);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Forest'));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(appThemeSettingProvider),
+      const AppThemeSelection.fixed(AppThemeVariant.forest),
+    );
+    // The setting is only half of it — what the app actually WEARS has to
+    // follow, or the chip is a preference nobody can see.
+    expect(
+      container.read(resolvedThemeVariantProvider),
+      AppThemeVariant.forest,
+    );
+  });
+
+  testWidgets('the AUTO caption names the palette the clock landed on', (
+    tester,
+  ) async {
+    const englishNames = {
+      AppThemeVariant.midnight: 'Midnight',
+      AppThemeVariant.deepSea: 'Deep Sea',
+      AppThemeVariant.twilight: 'Twilight',
+      AppThemeVariant.forest: 'Forest',
+      AppThemeVariant.slate: 'Slate',
+      AppThemeVariant.daylight: 'Daylight',
+      AppThemeVariant.morningMint: 'Morning Mint',
+      AppThemeVariant.desertSand: 'Desert Sand',
+    };
+
+    final container = await pumpSettingsScreen(tester);
+
+    // Asks the app what it resolved to rather than hard-coding an hour, so
+    // this passes at 3am and at 3pm — and still fails if the caption and the
+    // screen it sits on ever disagree.
+    final resolved = container.read(resolvedThemeVariantProvider);
+    expect(
+      find.textContaining('Showing ${englishNames[resolved]} now'),
+      findsOneWidget,
+      reason: 'AUTO has to say which palette it currently landed on',
+    );
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Slate'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Follows the time of day'),
+      findsNothing,
+      reason: 'a pinned palette does not follow anything',
+    );
+  });
 
   testWidgets('offers a swatch per gradient plus a photo action', (
     tester,

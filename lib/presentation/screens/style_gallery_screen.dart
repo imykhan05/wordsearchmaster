@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/theme.dart';
 import '../../domain/text/language.dart';
+import '../../domain/theme/app_theme_variant.dart';
 import '../widgets/grid_cell_text.dart';
 
 /// DEV-FLAVOR ONLY. Registered in `router.dart` only when the running flavor
@@ -19,35 +20,39 @@ class StyleGalleryScreen extends StatefulWidget {
 }
 
 class _StyleGalleryScreenState extends State<StyleGalleryScreen> {
-  Brightness _brightness = Brightness.dark;
+  /// Which of the eight palettes is on show. An INDEX rather than a
+  /// [Brightness]: since the theme picker landed there are five dark looks and
+  /// three light ones, and a two-state toggle could only ever reach two of
+  /// them — leaving six palettes with no way to be eyeballed across all three
+  /// scripts, which is the entire job of this screen.
+  int _variantIndex = AppThemeVariant.values.indexOf(
+    AppThemeVariant.defaultVariant,
+  );
+
+  AppThemeVariant get _variant => AppThemeVariant.values[_variantIndex];
 
   @override
   Widget build(BuildContext context) {
-    final theme = _brightness == Brightness.dark
-        ? AppTheme.dark()
-        : AppTheme.light();
-
     return Theme(
-      data: theme,
+      data: AppTheme.forVariant(_variant),
       child: Builder(
         builder: (context) {
           final tokens = AppTokens.of(context);
           return Scaffold(
             backgroundColor: tokens.colors.background,
             appBar: AppBar(
-              title: const Text('Style Gallery'),
+              title: Text('Style Gallery — ${_variant.id}'),
               actions: [
                 IconButton(
-                  tooltip: 'Toggle theme',
+                  tooltip: 'Next theme',
                   icon: Icon(
-                    _brightness == Brightness.dark
+                    _variant.isDark
                         ? Icons.light_mode_outlined
                         : Icons.dark_mode_outlined,
                   ),
                   onPressed: () => setState(() {
-                    _brightness = _brightness == Brightness.dark
-                        ? Brightness.light
-                        : Brightness.dark;
+                    _variantIndex =
+                        (_variantIndex + 1) % AppThemeVariant.values.length;
                   }),
                 ),
               ],

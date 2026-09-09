@@ -215,5 +215,16 @@
   "backgroundLagoon": "جھیل",
   "backgroundChoosePhoto": "میری تصویر لگائیں",
   "backgroundChangePhoto": "تصویر بدلیں",
-  "backgroundPhotoNote": "آپ کی تصویر آپ کے فون میں ہی رہتی ہے اور ایپ ہٹانے پر ختم ہو جاتی ہے۔"
+  "backgroundPhotoNote": "آپ کی تصویر آپ کے فون میں ہی رہتی ہے اور ایپ ہٹانے پر ختم ہو جاتی ہے۔",
+  "themeLabel": "تھیم",
+  "themeAuto": "خودکار",
+  "themeAutoNote": "اس فون کے وقت کے مطابق بدلتی ہے۔ ابھی {theme} چل رہی ہے۔",
+  "themeMidnight": "آدھی رات",
+  "themeDeepSea": "گہرا سمندر",
+  "themeTwilight": "شام کا دھندلکا",
+  "themeForest": "جنگل",
+  "themeSlate": "سلیٹی",
+  "themeDaylight": "دن کی روشنی",
+  "themeMorningMint": "صبح کی تازگی",
+  "themeDesertSand": "صحرائی ریت"
 }

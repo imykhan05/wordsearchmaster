@@ -15,6 +15,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../domain/theme/app_theme_variant.dart';
+
 /// Per-theme colour set. Spacing/radii/motion do not change between themes,
 /// so they live as static constants on [AppTokens] instead.
 @immutable
@@ -350,6 +352,72 @@ final class AppTokens extends ThemeExtension<AppTokens> {
 
   /// Dark is the product default — a relaxed puzzle played in the evening,
   /// and the palette the Production Bible specifies.
+  // ---- shared between every palette in a family --------------------------
+  //
+  // Extracted from [darkColors]/[lightColors] rather than retyped per theme,
+  // and the sharing is a decision rather than a saving. The found-word six
+  // were not picked by eye: they came out of a search maximising the minimum
+  // pairwise CIE deltaE under normal, protanopic and deuteranopic vision, and
+  // `found_word_palette_test.dart` re-runs that search on every build. Giving
+  // each of the eight themes its own six would mean eight such searches to
+  // keep passing forever, for a set of colours a player never chooses. So a
+  // theme moves its GROUND, its TEXT and its ACCENT; what a found word looks
+  // like is a property of the family, checked once per family surface.
+
+  static const Color _darkSuccess = Color(0xFF5FD4A8);
+  static const Color _darkWarn = Color(0xFFE4685A);
+  static const Color _darkInfo = Color(0xFF6FA8DC);
+  static const Color _darkShadow = Color(0xFF000000);
+
+  static const Color _lightSuccess = Color(0xFF0F6B4A);
+  static const Color _lightWarn = Color(0xFFB03A2E);
+  static const Color _lightInfo = Color(0xFF1F5B92);
+  static const Color _lightShadow = Color(0xFF2A2118);
+
+  /// Ch03 names this literally as "white" on both families — see
+  /// [AppColors.foundWordFlash].
+  static const Color _foundWordFlash = Color(0xFFFFFFFF);
+
+  static const List<Color> _darkFoundWord = [
+    Color(0xFF59A8CF), // sky blue
+    Color(0xFFD2482D), // vermillion
+    Color(0xFF9FDBC7), // mint
+    Color(0xFFD2D22D), // chartreuse
+    Color(0xFF7070E1), // periwinkle
+    Color(0xFFAEE892), // spring green
+  ];
+
+  static const List<Color> _lightFoundWord = [
+    Color(0xFF298FC2), // blue
+    Color(0xFF761919), // deep red
+    Color(0xFF389475), // teal
+    Color(0xFFA87C24), // ochre
+    Color(0xFF68275D), // plum
+    Color(0xFF2929C2), // indigo
+  ];
+
+  static const List<Color> _darkRegionAccent = [
+    Color(0xFF4FA3A5), // teal
+    Color(0xFF8E7CC3), // violet
+    Color(0xFFD98E4A), // amber
+    Color(0xFF5B8DD9), // steel blue
+    Color(0xFFC96A8A), // rose
+    Color(0xFF7FB069), // moss
+  ];
+
+  static const List<Color> _lightRegionAccent = [
+    Color(0xFF2A7F81), // teal
+    Color(0xFF5F4B9B), // violet
+    Color(0xFFA8611C), // amber
+    Color(0xFF2F5FA8), // steel blue
+    Color(0xFF9B3A5C), // rose
+    Color(0xFF4A7A32), // moss
+  ];
+
+  /// Dark is the product default — a relaxed puzzle played in the evening,
+  /// and the palette the Production Bible specifies. Also
+  /// [AppThemeVariant.midnight], unchanged to the byte since P02: a player who
+  /// pins that look gets exactly the app they already had.
   static const AppColors darkColors = AppColors(
     background: Color(0xFF080F0D),
     surface: Color(0xFF0D1917),
@@ -360,30 +428,16 @@ final class AppTokens extends ThemeExtension<AppTokens> {
     primary: Color(0xFFE8A33D),
     primaryDim: Color(0xFF8A6021),
     onPrimary: Color(0xFF080F0D),
-    success: Color(0xFF5FD4A8),
-    warn: Color(0xFFE4685A),
-    info: Color(0xFF6FA8DC),
+    success: _darkSuccess,
+    warn: _darkWarn,
+    info: _darkInfo,
     onSurface: Color(0xFFEDE7D9),
     onSurfaceMuted: Color(0xFFA9B8B0),
     onSurfaceFaint: Color(0xFF6E827A),
-    shadow: Color(0xFF000000),
-    foundWord: [
-      Color(0xFF59A8CF), // sky blue
-      Color(0xFFD2482D), // vermillion
-      Color(0xFF9FDBC7), // mint
-      Color(0xFFD2D22D), // chartreuse
-      Color(0xFF7070E1), // periwinkle
-      Color(0xFFAEE892), // spring green
-    ],
-    foundWordFlash: Color(0xFFFFFFFF),
-    regionAccent: [
-      Color(0xFF4FA3A5), // teal
-      Color(0xFF8E7CC3), // violet
-      Color(0xFFD98E4A), // amber
-      Color(0xFF5B8DD9), // steel blue
-      Color(0xFFC96A8A), // rose
-      Color(0xFF7FB069), // moss
-    ],
+    shadow: _darkShadow,
+    foundWord: _darkFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _darkRegionAccent,
   );
 
   /// Light theme, kept warm rather than clinical white — the same product,
@@ -399,30 +453,197 @@ final class AppTokens extends ThemeExtension<AppTokens> {
     primary: Color(0xFF9A6008),
     primaryDim: Color(0xFFC79433),
     onPrimary: Color(0xFFFFFDF8),
-    success: Color(0xFF0F6B4A),
-    warn: Color(0xFFB03A2E),
-    info: Color(0xFF1F5B92),
+    success: _lightSuccess,
+    warn: _lightWarn,
+    info: _lightInfo,
     onSurface: Color(0xFF14201D),
     onSurfaceMuted: Color(0xFF44554F),
     onSurfaceFaint: Color(0xFF6E827A),
-    shadow: Color(0xFF2A2118),
-    foundWord: [
-      Color(0xFF298FC2), // blue
-      Color(0xFF761919), // deep red
-      Color(0xFF389475), // teal
-      Color(0xFFA87C24), // ochre
-      Color(0xFF68275D), // plum
-      Color(0xFF2929C2), // indigo
-    ],
-    foundWordFlash: Color(0xFFFFFFFF),
-    regionAccent: [
-      Color(0xFF2A7F81), // teal
-      Color(0xFF5F4B9B), // violet
-      Color(0xFFA8611C), // amber
-      Color(0xFF2F5FA8), // steel blue
-      Color(0xFF9B3A5C), // rose
-      Color(0xFF4A7A32), // moss
-    ],
+    shadow: _lightShadow,
+    foundWord: _lightFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _lightRegionAccent,
+  );
+
+  // ---- the six added looks -----------------------------------------------
+  //
+  // MEASURED, NOT PICKED BY EYE. Every ground and text step below reuses the
+  // LIGHTNESS of the corresponding step in its family above; only hue and
+  // saturation move. That is the whole reason these are safe to add: contrast
+  // is overwhelmingly a function of lightness, so a palette built this way
+  // starts within a rounding error of a ratio the shipped app already proved
+  // legible, and `found_word_palette_test.dart` then checks each one rather
+  // than taking it on trust.
+  //
+  // Each accent additionally had to sit at least as far from its family's
+  // found-word six as the shipped marigold already does (deltaE 13.7 on dark,
+  // 8.6 on light, under all three vision models). That bar is not a number
+  // invented here — it is the separation the live app has always had between
+  // the selection capsule under the player's finger and the words already
+  // found, and it is why some obvious accents (an orange on the forest ground,
+  // a red on the sand one) were rejected: they collide with a found-word hue.
+
+  /// Deep navy ground, aqua accent.
+  static const AppColors deepSeaColors = AppColors(
+    background: Color(0xFF070B10),
+    surface: Color(0xFF0C131B),
+    surfaceElevated: Color(0xFF101A25),
+    surfaceHigh: Color(0xFF152333),
+    outline: Color(0xFF1B2B3E),
+    outlineSoft: Color(0xFF141F2C),
+    primary: Color(0xFF6FD2E2),
+    primaryDim: Color(0xFF3493A2),
+    onPrimary: Color(0xFF070B10),
+    success: _darkSuccess,
+    warn: _darkWarn,
+    info: _darkInfo,
+    onSurface: Color(0xFFD9E3ED),
+    onSurfaceMuted: Color(0xFFA9B0B8),
+    onSurfaceFaint: Color(0xFF6E7882),
+    shadow: _darkShadow,
+    foundWord: _darkFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _darkRegionAccent,
+  );
+
+  /// Aubergine ground, rose accent.
+  static const AppColors twilightColors = AppColors(
+    background: Color(0xFF0C080F),
+    surface: Color(0xFF140D19),
+    surfaceElevated: Color(0xFF1C1223),
+    surfaceHigh: Color(0xFF261830),
+    outline: Color(0xFF2E1E3A),
+    outlineSoft: Color(0xFF211629),
+    primary: Color(0xFFDA4B71),
+    primaryDim: Color(0xFF812941),
+    onPrimary: Color(0xFF0C080F),
+    success: _darkSuccess,
+    warn: _darkWarn,
+    info: _darkInfo,
+    onSurface: Color(0xFFE8D9ED),
+    onSurfaceMuted: Color(0xFFB4A9B8),
+    onSurfaceFaint: Color(0xFF7D6E82),
+    shadow: _darkShadow,
+    foundWord: _darkFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _darkRegionAccent,
+  );
+
+  /// Pine ground, new-leaf accent.
+  static const AppColors forestColors = AppColors(
+    background: Color(0xFF071008),
+    surface: Color(0xFF0B1B0D),
+    surfaceElevated: Color(0xFF0F2612),
+    surfaceHigh: Color(0xFF143419),
+    outline: Color(0xFF1A3E1F),
+    outlineSoft: Color(0xFF132C17),
+    primary: Color(0xFFDAEB70),
+    primaryDim: Color(0xFFA0B22F),
+    onPrimary: Color(0xFF071008),
+    success: _darkSuccess,
+    warn: _darkWarn,
+    info: _darkInfo,
+    onSurface: Color(0xFFDCEDD9),
+    onSurfaceMuted: Color(0xFFABB8A9),
+    onSurfaceFaint: Color(0xFF71826E),
+    shadow: _darkShadow,
+    foundWord: _darkFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _darkRegionAccent,
+  );
+
+  /// Neutral graphite ground, steel-blue accent.
+  static const AppColors slateColors = AppColors(
+    background: Color(0xFF0A0B0D),
+    surface: Color(0xFF101216),
+    surfaceElevated: Color(0xFF17191E),
+    surfaceHigh: Color(0xFF1F2229),
+    outline: Color(0xFF262A32),
+    outlineSoft: Color(0xFF1B1E24),
+    primary: Color(0xFF759EF0),
+    primaryDim: Color(0xFF2C5DBE),
+    onPrimary: Color(0xFF0A0B0D),
+    success: _darkSuccess,
+    warn: _darkWarn,
+    info: _darkInfo,
+    onSurface: Color(0xFFD9E0ED),
+    onSurfaceMuted: Color(0xFFA9AEB8),
+    onSurfaceFaint: Color(0xFF6E7582),
+    shadow: _darkShadow,
+    foundWord: _darkFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _darkRegionAccent,
+  );
+
+  /// Pale mint ground, deep teal accent.
+  static const AppColors morningMintColors = AppColors(
+    background: Color(0xFFF2F8F7),
+    surface: Color(0xFFF9FDFD),
+    surfaceElevated: Color(0xFFE7F1EF),
+    surfaceHigh: Color(0xFFDBE8E5),
+    outline: Color(0xFFB7CBC7),
+    outlineSoft: Color(0xFFD0E0DD),
+    primary: Color(0xFF187C79),
+    primaryDim: Color(0xFF41AAA7),
+    onPrimary: Color(0xFFF9FDFD),
+    success: _lightSuccess,
+    warn: _lightWarn,
+    info: _lightInfo,
+    onSurface: Color(0xFF141E20),
+    onSurfaceMuted: Color(0xFF445255),
+    onSurfaceFaint: Color(0xFF6E7F82),
+    shadow: _lightShadow,
+    foundWord: _lightFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _lightRegionAccent,
+  );
+
+  /// Warm sand ground, terracotta accent.
+  static const AppColors desertSandColors = AppColors(
+    background: Color(0xFFFBF4EF),
+    surface: Color(0xFFFFFBF8),
+    surfaceElevated: Color(0xFFF5EBE2),
+    surfaceHigh: Color(0xFFEEE0D5),
+    outline: Color(0xFFD4BFAE),
+    outlineSoft: Color(0xFFE7D6C9),
+    primary: Color(0xFFAE5337),
+    primaryDim: Color(0xFFC08D7E),
+    onPrimary: Color(0xFFFFFBF8),
+    success: _lightSuccess,
+    warn: _lightWarn,
+    info: _lightInfo,
+    onSurface: Color(0xFF201814),
+    onSurfaceMuted: Color(0xFF554A44),
+    onSurfaceFaint: Color(0xFF82756E),
+    shadow: _lightShadow,
+    foundWord: _lightFoundWord,
+    foundWordFlash: _foundWordFlash,
+    regionAccent: _lightRegionAccent,
+  );
+
+  /// Every palette by name, so a test can walk all of them and the Style
+  /// Gallery can show all of them without either one keeping its own list
+  /// that could fall behind this file.
+  ///
+  /// A `switch` rather than a map so that adding an [AppThemeVariant] without
+  /// a palette here is a compile error.
+  static AppColors colorsFor(AppThemeVariant variant) => switch (variant) {
+    AppThemeVariant.midnight => darkColors,
+    AppThemeVariant.deepSea => deepSeaColors,
+    AppThemeVariant.twilight => twilightColors,
+    AppThemeVariant.forest => forestColors,
+    AppThemeVariant.slate => slateColors,
+    AppThemeVariant.daylight => lightColors,
+    AppThemeVariant.morningMint => morningMintColors,
+    AppThemeVariant.desertSand => desertSandColors,
+  };
+
+  /// The tokens for one look. [AppThemeVariant.isDark] is where the domain's
+  /// flutter-free bool becomes a [Brightness] — the one place the translation
+  /// happens, so a variant and its brightness cannot disagree.
+  static AppTokens forVariant(AppThemeVariant variant) => AppTokens(
+    colors: colorsFor(variant),
+    brightness: variant.isDark ? Brightness.dark : Brightness.light,
   );
 
   static const AppTokens dark = AppTokens(

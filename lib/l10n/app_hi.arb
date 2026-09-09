@@ -215,5 +215,16 @@
   "backgroundLagoon": "झील",
   "backgroundChoosePhoto": "मेरी फ़ोटो लगाएँ",
   "backgroundChangePhoto": "फ़ोटो बदलें",
-  "backgroundPhotoNote": "आपकी फ़ोटो आपके फ़ोन में ही रहती है और ऐप हटाने पर हट जाती है।"
+  "backgroundPhotoNote": "आपकी फ़ोटो आपके फ़ोन में ही रहती है और ऐप हटाने पर हट जाती है।",
+  "themeLabel": "थीम",
+  "themeAuto": "स्वतः",
+  "themeAutoNote": "इस फ़ोन के समय के अनुसार बदलती है। अभी {theme} चल रही है।",
+  "themeMidnight": "आधी रात",
+  "themeDeepSea": "गहरा समुद्र",
+  "themeTwilight": "संध्या",
+  "themeForest": "वन",
+  "themeSlate": "स्लेटी",
+  "themeDaylight": "दिन का उजाला",
+  "themeMorningMint": "सुबह की ताज़गी",
+  "themeDesertSand": "रेगिस्तानी रेत"
 }
