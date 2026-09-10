@@ -33,6 +33,26 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Per-platform plugin registrants. `flutter pub get` rewrites these on every
+# machine that runs it, for every platform in pubspec.yaml — not just the one
+# being built. `android/.gitignore` and `ios/.gitignore` already exclude their
+# own copies (Flutter's own default template); `linux/.gitignore` never
+# gained the matching line, so these three were tracked from day one and
+# every dependency addition (applovin_max, image_picker, …) rewrote them,
+# repeatedly conflicting with a local machine's own regenerated copy on the
+# next `git pull` — five times across this repo's history before this line
+# existed. Windows/macOS entries are included even though this repo has no
+# such folders, matching Flutter's own template so adding either platform
+# later does not reopen the same gap.
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+**/linux/flutter/generated_plugins.cmake
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Runner/GeneratedPluginRegistrant.swift
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/generated_plugins.cmake
+
 # Symbolication related
 app.*.symbols
 
