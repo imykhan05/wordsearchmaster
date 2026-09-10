@@ -6,6 +6,7 @@ import '../../application/achievements_controller.dart';
 import '../../domain/progression/achievements.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../widgets/tap_feedback.dart';
 import 'category_labels.dart';
 
 /// The unlock popup (P17), shown for exactly one [AchievementUnlock] at a
@@ -164,9 +165,12 @@ class AchievementPopupOverlay extends StatelessWidget {
               child: AchievementUnlockCard(
                 key: ValueKey(queue.first.popupId),
                 unlock: queue.first,
-                onDismiss: () => ref
-                    .read(achievementPopupQueueProvider.notifier)
-                    .dismissCurrent(),
+                onDismiss: () {
+                  ref.tapFeedback();
+                  ref
+                      .read(achievementPopupQueueProvider.notifier)
+                      .dismissCurrent();
+                },
               ),
             ),
         ],

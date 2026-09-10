@@ -11,6 +11,7 @@ import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../widgets/flavor_badge.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 
 /// FTUE entry point (Ch02): splash lands here directly — no login, no
 /// permission dialog, no ad. Three large cards, each rendered in its own
@@ -51,7 +52,10 @@ class LanguageScreen extends ConsumerWidget {
     // a network call — the same caution applies here a fortiori).
     final content = ref.watch(contentRepositoryProvider).value;
 
-    void goHome() => context.go(const HomeRoute().location);
+    void goHome() {
+      ref.tapFeedback();
+      context.go(const HomeRoute().location);
+    }
 
     final body = SafeArea(
       child: Center(
@@ -74,6 +78,7 @@ class LanguageScreen extends ConsumerWidget {
                   isSelected: language == selected,
                   sampleWords: content?.sampleWords(language) ?? const [],
                   onTap: () {
+                    ref.tapFeedback();
                     ref
                         .read(selectedLanguageProvider.notifier)
                         .select(language);

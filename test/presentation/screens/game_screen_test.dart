@@ -28,71 +28,7 @@ import 'package:word_search_master/services/remote_config/remote_config.dart';
 
 import '../../support/fake_content.dart';
 import '../../support/local_db.dart';
-
-/// A recording double for both services — every call this test cares about
-/// lands in a plain list, not a mock framework.
-final class _RecordingAudioService implements AudioService {
-  final List<String> allCalls = [];
-  final List<int> foundCombos = [];
-
-  @override
-  Future<void> preload() async {}
-
-  @override
-  Future<void> playFound({required int combo}) async {
-    allCalls.add('found:$combo');
-    foundCombos.add(combo);
-  }
-
-  @override
-  Future<void> playWrong() async => allCalls.add('wrong');
-
-  @override
-  Future<void> playLevelComplete() async => allCalls.add('levelComplete');
-
-  @override
-  Future<void> playDailyComplete() async => allCalls.add('dailyComplete');
-
-  @override
-  Future<void> playChestOpen() async => allCalls.add('chestOpen');
-
-  @override
-  Future<void> playButtonTap() async => allCalls.add('buttonTap');
-
-  @override
-  Future<void> playTransition() async => allCalls.add('transition');
-
-  @override
-  Future<void> playShuffle() async => allCalls.add('shuffle');
-
-  @override
-  Future<void> playCoin() async => allCalls.add('coin');
-
-  @override
-  void setMuted(bool muted) {}
-
-  @override
-  Future<void> setMusicPlaying(bool playing) async {}
-}
-
-final class _RecordingHapticsService implements HapticsService {
-  final List<String> allCalls = [];
-
-  @override
-  void selectionTick() => allCalls.add('selectionTick');
-
-  @override
-  void wordFound() => allCalls.add('wordFound');
-
-  @override
-  void levelComplete() => allCalls.add('levelComplete');
-
-  @override
-  void buttonTap() => allCalls.add('buttonTap');
-
-  @override
-  void setEnabled(bool enabled) {}
-}
+import '../../support/recording_services.dart';
 
 /// Records every call rather than mocking — pre-P18's `AdGateway` seam.
 final class _FakeAdGateway implements AdGateway {
@@ -450,7 +386,7 @@ void main() {
 
   group('the player-supplied sound set', () {
     testWidgets('a correct word never plays the wrong clip', (tester) async {
-      final audio = _RecordingAudioService();
+      final audio = RecordingAudioService();
       final container = await pumpGameScreen(tester, audioService: audio);
       final state = container
           .read(gameControllerProvider(JourneySession(1)))
@@ -470,7 +406,7 @@ void main() {
     ) async {
       // Its own sound is the point: the board physically turns over, and a
       // movement that large reading as an ordinary button press undersells it.
-      final audio = _RecordingAudioService();
+      final audio = RecordingAudioService();
       await pumpGameScreen(tester, audioService: audio);
       final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)));
 
@@ -484,7 +420,7 @@ void main() {
     testWidgets('Continue plays the transition clip, not a plain tap', (
       tester,
     ) async {
-      final audio = _RecordingAudioService();
+      final audio = RecordingAudioService();
       final container = await pumpGameScreen(tester, audioService: audio);
       await completeCurrentLevel(tester, container);
       audio.allCalls.clear();
@@ -502,7 +438,7 @@ void main() {
       // than this assertion is worth. The switch is exhaustive over
       // `GameSession`, so the compiler already guarantees the other arm exists;
       // what this pins is that the two are not the same call.
-      final audio = _RecordingAudioService();
+      final audio = RecordingAudioService();
       final container = await pumpGameScreen(tester, audioService: audio);
 
       await completeCurrentLevel(tester, container);
@@ -516,7 +452,7 @@ void main() {
     testWidgets('6 words found consecutively play an AUDIBLY RISING phrase', (
       tester,
     ) async {
-      final audio = _RecordingAudioService();
+      final audio = RecordingAudioService();
       final container = await pumpGameScreen(tester, audioService: audio);
       final state = container
           .read(gameControllerProvider(JourneySession(1)))
@@ -574,8 +510,8 @@ void main() {
         // keeping this test rather than deleting it: "no punishment feedback"
         // survives as no buzz, and a future change that quietly adds one back
         // has to come through this assertion.
-        final audio = _RecordingAudioService();
-        final haptics = _RecordingHapticsService();
+        final audio = RecordingAudioService();
+        final haptics = RecordingHapticsService();
         await pumpGameScreen(
           tester,
           audioService: audio,
@@ -610,8 +546,8 @@ void main() {
     testWidgets(
       'reduce-motion: the word chip flips instantly, audio/haptics still fire',
       (tester) async {
-        final audio = _RecordingAudioService();
-        final haptics = _RecordingHapticsService();
+        final audio = RecordingAudioService();
+        final haptics = RecordingHapticsService();
         final container = await pumpGameScreen(
           tester,
           audioService: audio,
@@ -660,8 +596,8 @@ void main() {
     testWidgets(
       'level complete plays its audio/haptic exactly once, on the transition',
       (tester) async {
-        final audio = _RecordingAudioService();
-        final haptics = _RecordingHapticsService();
+        final audio = RecordingAudioService();
+        final haptics = RecordingHapticsService();
         final container = await pumpGameScreen(
           tester,
           audioService: audio,

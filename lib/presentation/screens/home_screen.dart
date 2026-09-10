@@ -12,8 +12,7 @@ import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../widgets/app_background.dart';
 import '../widgets/sync_status.dart';
-import '../../services/audio/audio_service.dart';
-import '../../services/haptics/haptics_service.dart';
+import '../widgets/tap_feedback.dart';
 import '../../services/notifications/notification_service.dart';
 import '../../services/remote_config/remote_config.dart';
 import '../../services/settings/ui_settings_store.dart';
@@ -52,7 +51,10 @@ class HomeScreen extends ConsumerWidget {
             // could ever reach it.
             IconButton(
               tooltip: l10n.navSettings,
-              onPressed: () => context.go(const SettingsRoute().location),
+              onPressed: () {
+                ref.tapFeedback();
+                context.go(const SettingsRoute().location);
+              },
               icon: const Icon(Icons.settings_outlined),
             ),
             // Ch10's ONE permitted network surface: a small static icon. Never a
@@ -82,8 +84,7 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: AppTokens.space32),
                 FilledButton(
                   onPressed: () {
-                    ref.read(audioServiceProvider).playButtonTap();
-                    ref.read(hapticsServiceProvider).buttonTap();
+                    ref.tapFeedback();
                     context.go(const JourneyRoute().location);
                   },
                   child: Text(l10n.playButton),
@@ -91,8 +92,7 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: AppTokens.space12),
                 OutlinedButton(
                   onPressed: () {
-                    ref.read(audioServiceProvider).playButtonTap();
-                    ref.read(hapticsServiceProvider).buttonTap();
+                    ref.tapFeedback();
                     context.go(const DailyRoute().location);
                   },
                   child: Text(l10n.navDaily),
@@ -104,15 +104,17 @@ class HomeScreen extends ConsumerWidget {
                 // navigated there.
                 OutlinedButton(
                   onPressed: () {
-                    ref.read(audioServiceProvider).playButtonTap();
-                    ref.read(hapticsServiceProvider).buttonTap();
+                    ref.tapFeedback();
                     context.go(const LeaderboardRoute().location);
                   },
                   child: Text(l10n.navLeaderboard),
                 ),
                 const SizedBox(height: AppTokens.space12),
                 TextButton(
-                  onPressed: () => context.go(const ProfileRoute().location),
+                  onPressed: () {
+                    ref.tapFeedback();
+                    context.go(const ProfileRoute().location);
+                  },
                   child: Text(l10n.collectionsTitle),
                 ),
                 const SizedBox(height: AppTokens.space24),
@@ -316,6 +318,7 @@ class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
   }
 
   void _dismiss() {
+    ref.tapFeedback();
     _dismissed.value = true;
     unawaited(ref.read(uiSettingsStoreProvider).setLoginPromptDismissed(true));
   }
@@ -377,7 +380,10 @@ class _SaveProgressBannerState extends ConsumerState<_SaveProgressBanner> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () => unawaited(_accept(l10n)),
+                  onPressed: () {
+                    ref.tapFeedback();
+                    unawaited(_accept(l10n));
+                  },
                   child: Text(l10n.saveProgressPromptAction),
                 ),
                 IconButton(

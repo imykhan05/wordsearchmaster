@@ -7,6 +7,7 @@ import '../../application/friends_controller.dart';
 import '../../data/remote/friends_api.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
+import '../widgets/tap_feedback.dart';
 import 'meta_tiles.dart';
 
 /// The Friends tab of the leaderboard (P17) — invite code, share sheet,
@@ -92,9 +93,12 @@ class _InviteCodeCard extends ConsumerWidget {
               FilledButton(
                 onPressed: code.value == null
                     ? null
-                    : () => SharePlus.instance.share(
-                        ShareParams(text: code.value!),
-                      ),
+                    : () {
+                        ref.tapFeedback();
+                        SharePlus.instance.share(
+                          ShareParams(text: code.value!),
+                        );
+                      },
                 child: Text(l10n.friendsShareButton),
               ),
             ],
@@ -126,6 +130,7 @@ class _RedeemCodeCardState extends ConsumerState<_RedeemCodeCard> {
   Future<void> _redeem() async {
     final code = _controller.text.trim();
     if (code.isEmpty || _busy) return;
+    ref.tapFeedback();
     setState(() {
       _busy = true;
       _status = null;

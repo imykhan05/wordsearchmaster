@@ -17,6 +17,7 @@ import '../../services/theme/theme_settings.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/language_tile.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 
 /// Sound, haptics, music and language, all in one reachable place.
 ///
@@ -42,7 +43,10 @@ class SettingsScreen extends ConsumerWidget {
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes
     // (the same rule every other `.go()`-reached screen already follows).
-    void goHome() => context.go(const HomeRoute().location);
+    void goHome() {
+      ref.tapFeedback();
+      context.go(const HomeRoute().location);
+    }
 
     return SystemBackHandler(
       onBack: goHome,
@@ -87,22 +91,28 @@ class SettingsScreen extends ConsumerWidget {
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.soundLabel),
                         value: soundEnabled,
-                        onChanged: (_) =>
-                            ref.read(soundEnabledProvider.notifier).toggle(),
+                        onChanged: (_) {
+                          ref.tapFeedback();
+                          ref.read(soundEnabledProvider.notifier).toggle();
+                        },
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.musicLabel),
                         value: musicEnabled,
-                        onChanged: (_) =>
-                            ref.read(musicEnabledProvider.notifier).toggle(),
+                        onChanged: (_) {
+                          ref.tapFeedback();
+                          ref.read(musicEnabledProvider.notifier).toggle();
+                        },
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.hapticsLabel),
                         value: hapticsEnabled,
-                        onChanged: (_) =>
-                            ref.read(hapticsEnabledProvider.notifier).toggle(),
+                        onChanged: (_) {
+                          ref.tapFeedback();
+                          ref.read(hapticsEnabledProvider.notifier).toggle();
+                        },
                       ),
                     ],
                   ),
@@ -147,9 +157,12 @@ class SettingsScreen extends ConsumerWidget {
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.streakReminderLabel),
                         value: streakRemindersEnabled,
-                        onChanged: (_) => ref
-                            .read(streakRemindersEnabledProvider.notifier)
-                            .toggle(),
+                        onChanged: (_) {
+                          ref.tapFeedback();
+                          ref
+                              .read(streakRemindersEnabledProvider.notifier)
+                              .toggle();
+                        },
                       ),
                     ],
                   ),
@@ -183,8 +196,10 @@ class _ThemeSection extends ConsumerWidget {
     // how the caption ends up disagreeing with the screen it sits on.
     final resolved = ref.watch(resolvedThemeVariantProvider);
 
-    void select(AppThemeSelection value) =>
-        ref.read(appThemeSettingProvider.notifier).set(value);
+    void select(AppThemeSelection value) {
+      ref.tapFeedback();
+      ref.read(appThemeSettingProvider.notifier).set(value);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,6 +333,7 @@ class _BackgroundSection extends ConsumerWidget {
                 // has no business still sitting in the cache, and this is the
                 // only moment the app can know they are done with it.
                 onSelected: (_) {
+                  ref.tapFeedback();
                   ref.read(backgroundStyleSettingProvider.notifier).set(option);
                   unawaited(
                     ref.read(backgroundPhotoPathProvider.notifier).clear(),
@@ -331,9 +347,12 @@ class _BackgroundSection extends ConsumerWidget {
                     ? l10n.backgroundChoosePhoto
                     : l10n.backgroundChangePhoto,
               ),
-              onPressed: () => unawaited(
-                ref.read(backgroundPhotoPathProvider.notifier).pick(),
-              ),
+              onPressed: () {
+                ref.tapFeedback();
+                unawaited(
+                  ref.read(backgroundPhotoPathProvider.notifier).pick(),
+                );
+              },
             ),
           ],
         ),

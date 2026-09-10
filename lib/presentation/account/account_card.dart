@@ -8,6 +8,7 @@ import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/auth/auth_service.dart';
 import '../meta/meta_tiles.dart';
+import '../widgets/tap_feedback.dart';
 
 /// The account section of the profile screen, and the shared sign-in action
 /// behind the home screen's post-level-8 banner (Ch02 / P13).
@@ -40,6 +41,7 @@ class _AccountCardState extends ConsumerState<AccountCard> {
 
   Future<void> _signIn() async {
     if (_busy.value) return;
+    ref.tapFeedback();
     _busy.value = true;
     final messenger = ScaffoldMessenger.of(context);
     final l10n = AppLocalizations.of(context);
@@ -90,6 +92,7 @@ class _AccountCardState extends ConsumerState<AccountCard> {
 
   Future<void> _signOut() async {
     if (_busy.value) return;
+    ref.tapFeedback();
     _busy.value = true;
     await ref.read(accountControllerProvider.notifier).signOut();
     if (mounted) _busy.value = false;

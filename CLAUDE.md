@@ -3172,6 +3172,133 @@ the folder is unclaimed by the enum, and that the whole set stays under the
 than what it replaced, despite being real recordings, because the saving is
 the picker going away rather than the audio getting worse.
 
+### Four device-reported audio faults, and one root cause behind two of them
+
+Reported after playing the shipped build: the background music was never
+there; it stopped "as soon as the game starts"; the level-complete sound was
+the wrong clip; and several buttons — the back arrow, "Continue with Google" —
+made no sound at all.
+
+#### OUR OWN SFX WERE EVICTING OUR OWN MUSIC, THROUGH ANDROID AUDIO FOCUS
+
+`audioplayers` gives every player it creates `AUDIOFOCUS_GAIN`
+(`AudioContextAndroid`'s own default), requested on each `resume`. Android
+grants focus to the newest requester and sends `AUDIOFOCUS_LOSS` to the
+previous holder — and that holder, inside one app, is our own bed.
+`WrappedPlayer`'s handler treats a non-transient loss as final: it calls
+`pause()` and clears its `playing` flag, and its `onGranted` only restarts a
+player that flag says is playing. So the FIRST sound the app made killed the
+music for the rest of the session, and nothing calls `setMusicPlaying` again
+to bring it back.
+
+That is one bug producing both reports. Launch, hear the bed, tap into a
+level: the tap's own click takes focus and the music never returns — "it
+stops when the game starts". Launch and tap immediately, which is what a
+returning player does: the bed is gone before it registers — "music was off
+by default". **`UiSettingsStore.musicEnabled` has defaulted to `true` the
+whole time**, in both stores; nothing was ever off.
+
+The fix is one call at the top of `preload`:
+`AudioPlayer.global.setAudioContext` with `AndroidAudioFocus.none`, before the
+first `AudioPlayer(...)` is constructed — the Android plugin copies the global
+context into each new player at construction, so setting it once covers all 28
+with no ordering trap. Nothing else about the context moves; `contentType`
+and `usageType` keep their defaults, because only focus was implicated.
+
+**`none` for the BED as well as the SFX**, though silencing only the SFX would
+also have stopped the eviction. Three reasons:
+
+1. With no player anywhere requesting focus, no player can be told to lose it.
+   The bug becomes impossible rather than avoided — Ch10's "a property, not a
+   promise", applied to a vendor default.
+2. `pause` does not abandon focus; only `stop` does, and `setMusicPlaying`
+   deliberately pauses so the loop resumes mid-bar. A bed holding `GAIN` would
+   keep ANOTHER app's music silenced for as long as ours sat in the
+   background — a worse bug than the one being fixed, and a much quieter one.
+3. It is the right manners for this audience. Ch01's player is on a 2GB phone,
+   often with their own music or a radio stream already going; a relaxed
+   offline puzzle has no business interrupting it, and the Music switch in
+   Settings already gives them the other choice.
+
+`focusFreeContext` is a named `@visibleForTesting` getter rather than an
+inline argument at its one call site, and `audio_service_test.dart` asserts
+its focus mode. The regression it guards is someone restoring the plugin
+default while tidying, which produces no error, no warning and no other
+failing test — only silent music on a device, which is exactly how it reached
+a player the first time.
+
+`preload` also now honours a `_musicPlaying` intent recorded before there was
+a player to carry it. `setMusicPlaying` returns early when `_music` is null,
+keeping only the flag — and the NEXT call then returns early too, on
+`playing == _musicPlaying`, so the bed would never start. `bootstrap.dart`
+awaits the preload before `runApp`, so today `musicSync` always fires after
+it; that is an ordering nothing enforces and a failure that is completely
+silent.
+
+#### The level-complete and Daily clips swapped places
+
+The player supplied `4.mp3` a second time to say it belonged on level
+complete rather than on the Daily, where it had first landed. The two files
+were exchanged rather than re-derived: both had gone through the same -3 dB
+role trim, so swapping preserves the processing exactly. Level complete is now
+the ~3.9s clip and the Daily keeps the ~2.1s one — still distinct, so the
+once-a-day moment never sounds like an ordinary one.
+
+#### A GLOBAL TAP LISTENER IS THE RIGHT FIX AND FLUTTER WILL NOT ALLOW IT
+
+P09 wired `playButtonTap` + `buttonTap` inline, three lines per control. By
+the time the build reached a phone, **5 of roughly 65 interactive controls had
+it**, and the player found the gaps immediately. A rule that has to be
+remembered at 65 call sites is not a rule.
+
+So the structural fix was tried first: one `Listener` at the app root that
+plays the click whenever a pointer lands on something tappable, covering every
+present and future control with nothing to remember. It was abandoned on
+evidence, not on taste. Dumping the hit-test path of an ENABLED
+`ElevatedButton` beside a DISABLED one gives **byte-identical lists of render
+objects** — `InkResponse` builds its inner `GestureDetector` with
+`excludeFromSemantics: true`, so no `RenderSemanticsGestureHandler` carrying
+an `onTap` reaches the path, and `RenderSemanticsAnnotations` appears a dozen
+times over even for plain text. A root listener could not tell a live button
+from a greyed-out one and would have clicked at both — worse than the bug it
+fixed. Reading it back out needs `@protected` framework API or private class
+names, neither of which survives a Flutter upgrade. (A probe also has to fire
+on pointer-UP with a slop check, or every scroll started on the journey map's
+300 nodes clicks.)
+
+What shipped instead is `ref.tapFeedback()` — `presentation/widgets/tap_feedback.dart`,
+one call per control. It does not make forgetting impossible; it makes
+forgetting visible, because a handler missing the line reads as different from
+every handler around it. Every non-dev control now has it, including the ones
+the player named.
+
+Two choices inside that sweep worth keeping:
+
+- **The AppBar arrow and the Android system back share one `goHome`**, so the
+  click is in the shared function rather than on the button. That is the same
+  argument `_leaveGame` already made for those two paths: they cannot drift
+  apart if there is only one of them.
+- **The Settings switches are self-consistent by construction.** Turning SOUND
+  off silences its own click through `AudioService.setMuted`; turning HAPTICS
+  off suppresses its own tick. Neither needed a special case.
+
+Deliberately excluded: the grid (P06 owns its selection tick), the rotate
+button and level-complete "Continue" (each has its own sound), and every
+dev-only surface — the debug panel, the Sync Inspector, the Style Gallery.
+
+`tap_feedback_test.dart` pumps the REAL app and taps the real arrows: a screen
+in isolation would let one wired to nothing still pass. Reverting `goHome` on
+the journey screen was confirmed to fail it, naming the route.
+
+#### What could not be verified here
+
+The audio-focus fix is confirmed from the plugin's own Kotlin source — the
+`AUDIOFOCUS_GAIN` default, the loss handler's `pause()`, and the per-player
+context copy are all read directly out of `audioplayers_android` 5.3.0 — but
+this container has no audio device and no Android SDK, so **the bed actually
+surviving a session was not heard**. Same standing limit every audio change in
+this file records.
+
 ### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
 
 Found by a player's own local `flutter build apk --flavor stg --release`

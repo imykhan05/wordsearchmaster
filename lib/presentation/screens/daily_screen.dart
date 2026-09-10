@@ -6,12 +6,11 @@ import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
-import '../../services/audio/audio_service.dart';
-import '../../services/haptics/haptics_service.dart';
 import '../../services/time/trusted_clock.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 
 /// The Daily Challenge's pre-game screen (Ch12): today's date, whether the one
 /// attempt has been used, and the button in.
@@ -38,7 +37,10 @@ class DailyScreen extends ConsumerWidget {
 
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes.
-    void goHome() => context.go(const HomeRoute().location);
+    void goHome() {
+      ref.tapFeedback();
+      context.go(const HomeRoute().location);
+    }
 
     return SystemBackHandler(
       onBack: goHome,
@@ -93,8 +95,7 @@ class DailyScreen extends ConsumerWidget {
                             )
                           : _PlayToday(
                               onPlay: () {
-                                ref.read(audioServiceProvider).playButtonTap();
-                                ref.read(hapticsServiceProvider).buttonTap();
+                                ref.tapFeedback();
                                 context.go(const DailyGameRoute().location);
                               },
                             ),

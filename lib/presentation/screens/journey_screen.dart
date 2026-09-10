@@ -7,10 +7,9 @@ import '../../app/theme/theme.dart';
 import '../../domain/progression/journey_region.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
-import '../../services/audio/audio_service.dart';
-import '../../services/haptics/haptics_service.dart';
 import '../meta/journey_providers.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 
 /// The journey map (Ch02) — a vertically scrolling path of level nodes,
 /// grouped into ten-level regions, replacing a flat level list.
@@ -64,7 +63,10 @@ class JourneyScreen extends ConsumerWidget {
 
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes.
-    void goHome() => context.go(const HomeRoute().location);
+    void goHome() {
+      ref.tapFeedback();
+      context.go(const HomeRoute().location);
+    }
 
     return SystemBackHandler(
       onBack: goHome,
@@ -104,8 +106,7 @@ class _JourneyPathState extends ConsumerState<_JourneyPath> {
   }
 
   void _openLevel(int level) {
-    ref.read(audioServiceProvider).playButtonTap();
-    ref.read(hapticsServiceProvider).buttonTap();
+    ref.tapFeedback();
     context.go(GameRoute('$level').location);
   }
 

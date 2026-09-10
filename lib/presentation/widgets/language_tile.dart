@@ -8,6 +8,7 @@ import '../../app/theme/theme.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../meta/meta_tiles.dart';
+import 'tap_feedback.dart';
 
 /// Opens `LanguageScreen` for a returning player who wants to switch —
 /// `LanguageScreen` itself tells FTUE and this case apart via
@@ -29,7 +30,10 @@ class LanguageTile extends ConsumerWidget {
     return MetaCard(
       child: InkWell(
         borderRadius: AppTokens.borderRadius16,
-        onTap: () => context.go(const LanguageRoute().location),
+        onTap: () {
+          ref.tapFeedback();
+          context.go(const LanguageRoute().location);
+        },
         child: Row(
           children: [
             Icon(Icons.language, color: tokens.colors.onSurfaceMuted),

@@ -146,14 +146,69 @@ final class AudioPlayersAudioService implements AudioService {
   /// Well under the SFX. The bed exists to be noticed only when it stops.
   static const double _musicVolume = 0.35;
 
+  /// The context every player is created with — see [preload]'s header for
+  /// the whole argument. Named and exposed rather than written inline at the
+  /// one call site so a test can assert the focus mode directly: the failure
+  /// this guards against is someone restoring the plugin's own default
+  /// (`AndroidAudioFocus.gain`) while tidying, which produces no error, no
+  /// warning and no failing test anywhere else — only silent background
+  /// music on a real device, which is how it reached a player the first time.
+  ///
+  /// Not `const`: `AudioContext`'s constructor validates in a body, so it is
+  /// not a const constructor even though every argument here is one.
+  @visibleForTesting
+  static AudioContext get focusFreeContext => AudioContext(
+    android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
+  );
+
   final Map<AudioClip, List<AudioPlayer>> _pools = {};
   final Map<AudioClip, int> _nextPlayerIndex = {};
   AudioPlayer? _music;
   bool _musicPlaying = false;
   bool _muted = false;
 
+  /// EVERY PLAYER THIS APP CREATES REQUESTS NO ANDROID AUDIO FOCUS, and that
+  /// one line is what keeps the background bed alive for a whole session.
+  ///
+  /// `audioplayers` defaults each player to `AUDIOFOCUS_GAIN`
+  /// (`AudioContextAndroid`'s own default), requested on every `resume`.
+  /// Android grants it to the newest requester and sends `AUDIOFOCUS_LOSS` to
+  /// the previous holder — which, inside one app, means OUR OWN SFX evicting
+  /// OUR OWN MUSIC. `WrappedPlayer`'s loss handler treats a non-transient
+  /// loss as final (`pause()`, clearing its `playing` flag), so the bed did
+  /// not merely duck: the very first button tap or found-word chime killed it
+  /// permanently, and nothing in this app ever calls `setMusicPlaying` again
+  /// to bring it back. The reported symptom was exactly that shape — music at
+  /// launch, silence from the first tap onward, which reads as "the music
+  /// stops when the game starts".
+  ///
+  /// Set to [AndroidAudioFocus.none] for the bed as well as the SFX, not just
+  /// for the SFX, which would also have fixed the eviction. Three reasons:
+  ///
+  /// 1. With no player anywhere in the app requesting focus, no player can
+  ///    ever be told to lose it. That makes the bug impossible rather than
+  ///    avoided, which is the standard the rest of this codebase holds itself
+  ///    to (Ch10's "a property, not a promise").
+  /// 2. `pause` does not abandon focus — only `stop` does, and
+  ///    [setMusicPlaying] deliberately pauses so the loop resumes mid-bar. A
+  ///    bed holding `GAIN` would therefore keep another app's music silenced
+  ///    for as long as ours sat in the background.
+  /// 3. It is the polite answer for this audience. Ch01's player is on a 2GB
+  ///    phone, often with their own music or a radio stream already playing;
+  ///    a relaxed offline puzzle has no business interrupting it. The player
+  ///    already owns that decision through the Music switch in Settings —
+  ///    turn it off and only the SFX play, over whatever they had on.
+  ///
+  /// This is a GLOBAL default rather than a per-player call because the
+  /// Android plugin hands each newly created player a copy of the global
+  /// context at construction time, so setting it once here — before the first
+  /// `AudioPlayer(...)` below — covers all 28 of them with no ordering trap.
+  /// Nothing else about the context moves: `contentType`/`usageType` keep
+  /// their `music`/`media` defaults, since only focus is implicated.
   @override
   Future<void> preload() async {
+    await AudioPlayer.global.setAudioContext(focusFreeContext);
+
     for (final clip in AudioClip.values) {
       final pool = <AudioPlayer>[];
       for (var i = 0; i < _playersPerClip; i++) {
@@ -171,6 +226,22 @@ final class AudioPlayersAudioService implements AudioService {
     await music.setVolume(_musicVolume);
     await music.setSource(AssetSource(_musicAsset));
     _music = music;
+
+    // Honour an intent recorded before there was a player to carry it.
+    // [setMusicPlaying] returns early when `_music` is null, keeping only the
+    // flag; without this line that flag then sat true forever while the bed
+    // never started, because the next call sees `playing == _musicPlaying`
+    // and returns early too. `bootstrap.dart` awaits this preload before
+    // `runApp`, so today `musicSync` always fires after it — but that is an
+    // ordering nothing here enforces, and the failure it would produce is
+    // silent.
+    if (_musicPlaying) {
+      try {
+        await music.resume();
+      } catch (_) {
+        // Same rule as everywhere else in this file: juice never surfaces.
+      }
+    }
   }
 
   @override

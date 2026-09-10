@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/audio/sound_settings.dart';
+import '../widgets/tap_feedback.dart';
 
 /// What the player chose before [PauseSheet] closed. `null` (the sheet
 /// dismissed by tapping the scrim, with no button pressed) means the same
@@ -35,32 +36,45 @@ class PauseSheet extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             FilledButton(
-              onPressed: () => Navigator.of(context).pop(PauseAction.resume),
+              onPressed: () {
+                ref.tapFeedback();
+                Navigator.of(context).pop(PauseAction.resume);
+              },
               child: Text(l10n.resumeButton),
             ),
             const SizedBox(height: AppTokens.space12),
             OutlinedButton(
-              onPressed: () => Navigator.of(context).pop(PauseAction.restart),
+              onPressed: () {
+                ref.tapFeedback();
+                Navigator.of(context).pop(PauseAction.restart);
+              },
               child: Text(l10n.restartButton),
             ),
             const SizedBox(height: AppTokens.space8),
             SwitchListTile(
               title: Text(l10n.soundLabel),
               value: soundEnabled,
-              onChanged: (_) =>
-                  ref.read(soundEnabledProvider.notifier).toggle(),
+              onChanged: (_) {
+                ref.tapFeedback();
+                ref.read(soundEnabledProvider.notifier).toggle();
+              },
             ),
             // Its own switch, not a sub-setting of sound: the two are wanted
             // independently — see `UiSettingsStore.musicEnabled`.
             SwitchListTile(
               title: Text(l10n.musicLabel),
               value: musicEnabled,
-              onChanged: (_) =>
-                  ref.read(musicEnabledProvider.notifier).toggle(),
+              onChanged: (_) {
+                ref.tapFeedback();
+                ref.read(musicEnabledProvider.notifier).toggle();
+              },
             ),
             const SizedBox(height: AppTokens.space8),
             TextButton(
-              onPressed: () => Navigator.of(context).pop(PauseAction.home),
+              onPressed: () {
+                ref.tapFeedback();
+                Navigator.of(context).pop(PauseAction.home);
+              },
               child: Text(l10n.navHome),
             ),
           ],

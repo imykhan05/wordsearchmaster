@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/services/audio/audio_service.dart';
 import 'package:word_search_master/services/audio/sound_settings.dart';
@@ -208,6 +209,42 @@ void main() {
 
       container.read(soundEnabledProvider.notifier).set(true);
       expect(fake.mutedHistory, [false, true, false]);
+    });
+  });
+
+  group('Android audio focus — the background bed\'s survival', () {
+    test('no player in this app requests audio focus', () {
+      // The bug this fixes: `audioplayers` defaults every player to
+      // AUDIOFOCUS_GAIN, Android grants it to the newest requester and sends
+      // AUDIOFOCUS_LOSS to the previous holder, and the plugin treats a
+      // non-transient loss as final (`pause()`, `playing = false`). Inside one
+      // app that means the first button tap or found-word chime permanently
+      // killed the bed — and nothing calls `setMusicPlaying` again to revive
+      // it, so the music stayed dead for the rest of the session. The player
+      // reported it as "the music stops as soon as the game starts".
+      //
+      // `none` for the BED too, not just the SFX: with no player anywhere
+      // requesting focus, no player can be told to lose it. `pause` never
+      // abandons focus (only `stop` does) and `setMusicPlaying` deliberately
+      // pauses, so a bed holding GAIN would also keep another app's music
+      // silenced for as long as ours sat in the background.
+      expect(
+        AudioPlayersAudioService.focusFreeContext.android.audioFocus,
+        AndroidAudioFocus.none,
+      );
+    });
+
+    test('nothing else about the context is changed', () {
+      // Only focus is implicated, so content/usage keep the plugin defaults —
+      // a broader change would alter routing and volume-slider behaviour on a
+      // real device this sandbox cannot check.
+      const defaults = AudioContextAndroid();
+      final ours = AudioPlayersAudioService.focusFreeContext.android;
+      expect(ours.contentType, defaults.contentType);
+      expect(ours.usageType, defaults.usageType);
+      expect(ours.audioMode, defaults.audioMode);
+      expect(ours.isSpeakerphoneOn, defaults.isSpeakerphoneOn);
+      expect(ours.stayAwake, defaults.stayAwake);
     });
   });
 }

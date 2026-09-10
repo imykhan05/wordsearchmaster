@@ -19,6 +19,7 @@ import '../meta/friends_tab.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/flavor_badge.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 import '../widgets/sync_status.dart';
 
 /// The leaderboard: Global / Urdu / Hindi / English / Weekly / Daily / Friends
@@ -55,7 +56,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
 
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes.
-    void goHome() => context.go(const HomeRoute().location);
+    void goHome() {
+      ref.tapFeedback();
+      context.go(const HomeRoute().location);
+    }
 
     return SystemBackHandler(
       onBack: goHome,
@@ -83,7 +87,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                 const SizedBox(height: AppTokens.space16),
                 _TabStrip(
                   selected: _tab,
-                  onSelect: (tab) => setState(() => _tab = tab),
+                  onSelect: (tab) {
+                    ref.tapFeedback();
+                    setState(() => _tab = tab);
+                  },
                 ),
                 const SizedBox(height: AppTokens.space16),
                 Expanded(
@@ -290,11 +297,17 @@ class _EntryRow extends ConsumerWidget {
         content: Text(l10n.reportNameConfirmMessage),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () {
+              ref.tapFeedback();
+              Navigator.of(dialogContext).pop(false);
+            },
             child: Text(l10n.reportNameCancelAction),
           ),
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
+            onPressed: () {
+              ref.tapFeedback();
+              Navigator.of(dialogContext).pop(true);
+            },
             child: Text(l10n.reportNameConfirmAction),
           ),
         ],
@@ -377,7 +390,10 @@ class _EntryRow extends ConsumerWidget {
             IconButton(
               tooltip: l10n.reportNameAction,
               iconSize: 18,
-              onPressed: () => unawaited(_confirmAndReport(context, ref, l10n)),
+              onPressed: () {
+                ref.tapFeedback();
+                unawaited(_confirmAndReport(context, ref, l10n));
+              },
               icon: Icon(
                 Icons.flag_outlined,
                 color: tokens.colors.onSurfaceFaint,

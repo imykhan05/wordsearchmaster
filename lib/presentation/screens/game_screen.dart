@@ -41,6 +41,7 @@ import '../meta/journey_providers.dart';
 import '../widgets/app_background.dart';
 import '../widgets/rolling_counter.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 
 /// The core gameplay screen. Assembled entirely from [GameController] — see
 /// its file header for the state-machine decisions this screen relies on
@@ -358,11 +359,13 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   }
 
   void _dismissHintOffer() {
+    _tapFeedback();
     _ddaState.value = DdaState.none;
     _resetIdleClock();
   }
 
   void _dismissUrduIntro() {
+    _tapFeedback();
     _urduIntroDismissed.value = true;
     unawaited(
       ref.read(uiSettingsStoreProvider).setUrduConnectedFormIntroShown(true),
@@ -592,6 +595,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// Same before-the-only-await `ref` discipline as
   /// [_continueFromLevelComplete] — the player can back out mid-ad.
   Future<void> _watchRewardedAd() async {
+    _tapFeedback();
     final uid = ref.read(currentAccountProvider).value?.uid;
     if (uid == null) return;
     final gateway = ref.read(adGatewayProvider);
@@ -724,6 +728,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// chosen. Home is one further tap from there. The daily has no map, so it
   /// returns to its own screen instead.
   void _leaveGame() {
+    _tapFeedback();
     _recordAbandonIfNeeded();
     context.go(
       _session is DailySession
@@ -1133,7 +1138,10 @@ class _GameContent extends ConsumerWidget {
                 if (chest != null && !chestDismissed.value) {
                   return ChestOpenCard(
                     reward: chest,
-                    onDismiss: () => chestDismissed.value = true,
+                    onDismiss: () {
+                      ref.tapFeedback();
+                      chestDismissed.value = true;
+                    },
                   );
                 }
                 return LevelCompleteCard(

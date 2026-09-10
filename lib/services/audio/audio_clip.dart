@@ -21,10 +21,15 @@ enum AudioClip {
   /// reason the original rule existed: a miss should register, not sting.
   wrong,
 
+  /// A journey level finished. The longest clip in the set at ~3.9s, which
+  /// is the player's own explicit choice: they supplied this recording a
+  /// second time specifically to say it belonged on level complete rather
+  /// than on the Daily, where it had first landed.
   levelComplete,
 
   /// The Daily Challenge's own finish, distinct from an ordinary level's.
-  /// Once a day, so it can afford to be the longest clip in the set.
+  /// Shorter than [levelComplete] since the two swapped places — still its
+  /// own sound, so the once-a-day moment never sounds like an ordinary one.
   dailyComplete,
 
   chestOpen,

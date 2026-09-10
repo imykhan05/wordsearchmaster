@@ -13,6 +13,7 @@ import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/language_tile.dart';
 import '../widgets/system_back_handler.dart';
+import '../widgets/tap_feedback.dart';
 
 /// Profile, which for P11 is the COLLECTIONS grid (Ch02): one slot per word
 /// category in the selected language, filled when every level of that category
@@ -32,7 +33,10 @@ class ProfileScreen extends ConsumerWidget {
 
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes.
-    void goHome() => context.go(const HomeRoute().location);
+    void goHome() {
+      ref.tapFeedback();
+      context.go(const HomeRoute().location);
+    }
 
     return SystemBackHandler(
       onBack: goHome,
