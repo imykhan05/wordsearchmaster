@@ -100,11 +100,16 @@ flutter:
     # so a native speaker can correct them without touching Dart. P10 adds the
     # word and level packs alongside these.
     - assets/content/
-    # Ch03 SFX plus the looping background bed — synthesised tones, see
-    # tool/generate_audio_assets.py — ONE FOLDER PER SoundTheme
-    # (lib/domain/audio/sound_theme.dart), not a single flat set: a Flutter
-    # asset directory entry only bundles the files directly inside it, never
-    # subdirectories, so each theme's folder needs its own line. ~61KB of
+    # The player's own branded icon (docs/store-listing/assets/icon_512.png),
+    # copied in rather than referenced from docs/ — that folder is never part
+    # of the asset bundle, and the splash screen needs a real Flutter asset it
+    # can `Image.asset`. Same file the Play Store listing and the Android/iOS
+    # launcher icons already use, so the splash shows the identical mark a
+    # player already tapped to open the app.
+    - assets/branding/
+    # Ch03 SFX plus the looping background bed — real recordings, player-
+    # supplied (post-P18; see CLAUDE.md), flat in one folder now that the
+    # three-way SoundTheme picker is gone. ~61KB of
     # ONE flat set: nine one-shot SFX (~218KB) plus a 32-second background
     # loop (~376KB), ~620KB in total. That is LESS than the ~933KB the three
     # synthesized theme folders it replaces cost, even though these are real

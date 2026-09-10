@@ -103,7 +103,7 @@ void main() {
     await pumpOfflineApp(tester);
     expectNoInterruption(tester, 'the language screen');
 
-    // Picking a language routes straight into level 1 (P12's FTUE).
+    // Picking a language lands on Home (splash → language → Home FTUE).
     await tester.tap(find.text('English'));
     await tester.pumpAndSettle();
     expectNoInterruption(tester, 'level 1');

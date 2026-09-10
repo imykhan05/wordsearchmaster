@@ -15,8 +15,13 @@ import '../support/fake_meta.dart';
 import '../support/local_db.dart';
 
 /// Covers the P01 acceptance criterion directly: each flavor must show its
-/// own name starting on the very first screen — plus that every route in the
-/// table still renders after P11 replaced four of them with real screens.
+/// own name starting on the very first INTERACTIVE screen — plus that every
+/// route in the table still renders after P11 replaced four of them with
+/// real screens. The literal first frame is now the splash
+/// (`splash_screen_test.dart`'s own scope), which carries no flavor-specific
+/// content and settles past on its own; `pumpApp`'s `pumpAndSettle()` here
+/// rides that hand-off the same way every other screen-level test in this
+/// file already does.
 void main() {
   Future<void> pumpApp(WidgetTester tester, AppConfig config) async {
     // Content and database are injected already-resolved for the same reason
@@ -53,10 +58,10 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// The FTUE opens on language select, so reaching the rest of the app means
-  /// picking a language first — which now (P12) lands straight on level 1,
-  /// not `HomeRoute`; a test that wants `HomeRoute` itself navigates there
-  /// explicitly afterward via [goTo].
+  /// The splash lands a first-time player on language select, so reaching
+  /// the rest of the app means picking a language first — which now lands on
+  /// `HomeRoute` (the player's own requested splash → language → Home flow),
+  /// not straight into a level.
   Future<void> enterApp(WidgetTester tester, AppConfig config) async {
     await pumpApp(tester, config);
     await tester.tap(find.text(Language.english.endonym));
@@ -74,26 +79,38 @@ void main() {
     );
   }
 
-  testWidgets('initial route is language select, per the FTUE spec', (
-    tester,
-  ) async {
-    await pumpApp(tester, AppConfig.dev());
+  testWidgets(
+    'initial route is language select, per the FTUE spec — after the splash',
+    (tester) async {
+      await pumpApp(tester, AppConfig.dev());
 
-    // No login, no permission dialog, no ad — just the three cards.
-    expect(find.text('Choose your language'), findsOneWidget);
-    for (final language in Language.values) {
-      expect(find.text(language.endonym), findsOneWidget);
-    }
-  });
+      // No login, no permission dialog, no ad — just the three cards.
+      // `pumpApp`'s own `pumpAndSettle()` already carries the test past the
+      // splash's hand-off; `splash_screen_test.dart` is where that screen's
+      // own first frame and timing are pinned directly.
+      expect(find.text('Choose your language'), findsOneWidget);
+      for (final language in Language.values) {
+        expect(find.text(language.endonym), findsOneWidget);
+      }
+    },
+  );
 
   testWidgets(
-    'picking a language enters the app straight into level 1 — Ch02: no '
-    'Play tap required',
+    'picking a language on first launch lands on Home, not straight into a '
+    'level',
     (tester) async {
       await enterApp(tester, AppConfig.dev());
 
-      expect(find.byType(GameGrid), findsOneWidget);
-      expect(find.text('Level 1'), findsOneWidget);
+      // The player's own requested flow: splash → language select → Home,
+      // where Play/Daily/Leaderboard are all one tap away — a deliberate
+      // departure from the shipped P12 rule ("Level 1 auto-loads, no Play
+      // tap required"); see `language_screen.dart`'s header for the reasoning.
+      final context = tester.element(find.byType(Navigator).first);
+      expect(
+        GoRouter.of(context).routeInformationProvider.value.uri.path,
+        '/home',
+      );
+      expect(find.byType(GameGrid), findsNothing);
     },
   );
 

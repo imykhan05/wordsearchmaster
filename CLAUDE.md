@@ -3443,3 +3443,119 @@ three classes R8 named since they share one package — but if a *different*
 missing-class family surfaces on the next build attempt, it is a new,
 separate `-dontwarn` line in the same file, not evidence this one was
 wrong.
+
+## A splash screen, and the FTUE flow it changed (post-R8-fix)
+
+Player-requested, with its own concrete shape: the app's name centred, the
+brand icon at the bottom, the background music already playing underneath —
+and, in the same request, a flow change: splash → language select → **Home**
+(Play/Daily/Leaderboard), rather than splash → language select → straight
+into a level.
+
+### `SplashRoute` is the router's ONLY `initialLocation` now
+
+Every launch — FTUE or returning — opens on `/` (`SplashScreen`). The router
+no longer branches on `hasChosenLanguageProvider` at all: that decision moved
+into the splash screen itself, which reads it ONCE, right before its own
+one-shot navigation to `LanguageRoute` (first-time) or `HomeRoute`
+(returning). This is a strictly STRONGER version of the discipline the
+previous shape needed — `routerProvider` used to read that provider directly
+to build `initialLocation`, and the whole "`read`, not `watch`" comment
+existed to explain why that one read was safe. Now `routerProvider` depends
+on nothing but the flavor, so it cannot be rebuilt out from under a running
+session by ANY change to player state, because it never touches player state
+at all. `router_start_test.dart` asserts this directly rather than merely by
+convention: build the router, flip the language, invalidate the OTHER
+provider, confirm the router instance never moved.
+
+### The FTUE contract deliberately changed: Home, not straight into level 1
+
+P12 shipped "Level 1 auto-loads. No Play tap required" as an explicit Ch02
+decision, and it held until this prompt. The player asked, directly and
+specifically, for splash → language-select → **Home**, where Play/Daily/
+Leaderboard are all one tap away — the same destination a RETURNING player
+already reached. `LanguageScreen`'s card `onTap` no longer branches on
+`returning` at all: both paths land on `HomeRoute` now, which is why the
+branch came out rather than being repointed. Nothing about `GameController`,
+`ProgressionController` or the Zeigarnik swap changed — this is purely which
+route a card's `onTap` resolves to. The cost is honest and worth stating
+plainly: a first-time player now needs one more tap to reach their first
+grid than the shipped P12 design intended. That is a deliberate trade this
+prompt made on the player's explicit, repeated instruction, not an
+accidental regression — `app_smoke_test.dart`, `language_screen_test.dart`
+and `no_network_dialog_test.dart` all had assertions PINNING the old
+straight-to-level-1 behaviour, and all three were rewritten rather than
+patched around, so nothing in the suite still asserts a contract this build
+no longer honours.
+
+### The splash's own animation found a real `pumpAndSettle()` trap
+
+First version: a raw `Timer(1600ms)` for the hand-off, alongside a SHORTER
+(900ms) `TweenAnimationBuilder` for the icon/name entrance. It looked right
+and broke almost every widget test in this repo that pumps the real app
+root — `app_smoke_test.dart`, `style_gallery_test.dart`, `rtl_test.dart`,
+`no_network_dialog_test.dart`, all of it, all at once, with "Found 0 widgets
+with text 'English'" as the symptom, meaning `pumpAndSettle()` never got
+past the splash.
+
+The cause is a real, general `pumpAndSettle()` gotcha, not a splash-specific
+bug: `pumpAndSettle()` stops pumping the instant nothing is scheduling a new
+frame — it does not wait for every pending `Timer` to fire. Once the 900ms
+entrance animation settled, the widget tree went fully static for the
+remaining ~700ms until the separate `Timer` would have fired — and
+`pumpAndSettle()`, seeing no scheduled frame, returned control right there,
+well before the hand-off timer ever got a chance to run.
+
+The fix folds both concerns into ONE `AnimationController`, running for the
+FULL `_displayDuration` (1600ms) rather than a short entrance plus a silent
+tail: `AnimationController(duration: _displayDuration)..forward()`, with
+`addStatusListener` firing the navigation on `AnimationStatus.completed`.
+The icon/name reveals are `Interval`s of that SAME controller's value
+(`[0.0, 0.4]` and `[0.2, 0.55]`) — the identical "one driver, several
+`Interval`s" shape `LevelCompleteCard`'s confetti and `ChestOpenCard` already
+use — so the controller keeps ticking (and therefore keeps a frame
+scheduled) for the entire window even once both reveals have visually
+settled at their end values around 880ms. `pumpAndSettle()` now rides the
+controller straight through to the hand-off, the same way it already rides
+every other P09/P11 choreography animation in this app.
+
+Reduce-motion skips the VISUAL entrance outright (both `Interval`-derived
+opacities render at `1.0` from the first frame — never faded/scaled in) but
+does NOT shorten `_displayDuration`: the hold is a branding beat, not a
+movement, and a player who asked for less motion still needs the same moment
+to register the screen — the identical "remove the movement, keep the
+information" distinction `_PulseHighlight` already draws elsewhere in this
+codebase. The controller's own duration is therefore never reduced; only
+what the builder chooses to RENDER is.
+
+`splash_screen_test.dart` pins all of this directly with `tester.pump(duration)`
+rather than `pumpAndSettle()` — proving the exact hand-off timing for both
+FTUE and returning players, that reduce-motion keeps the same timing while
+skipping the transform, AND, as its own dedicated regression case, that a
+plain `pumpAndSettle()` ride reaches the language picker on its own. That
+last case is the one that would have caught this bug before it ever reached
+every OTHER test file in the repo.
+
+### The brand icon is the existing one, reused rather than redrawn
+
+`assets/branding/app_icon.png` is a bundled copy of
+`docs/store-listing/assets/icon_512.png` — the exact icon already generated
+for the Play Store listing and the Android/iOS launcher icons (P17-adjacent
+work). Copied rather than referenced, because `docs/` is never part of the
+Flutter asset bundle and the splash needs a real `Image.asset` target. Using
+the SAME file means a player sees the identical mark on the splash that they
+just tapped to open the app, and it cost nothing new to generate.
+
+### What could not be verified here
+
+The standing limitation every visual/audio prompt in this file already
+states: no display in this sandbox. Contrast, layout, the reveal timing and
+the FTUE routing are all proven by the test suite (1230 tests, all four CI
+checks, `flutter analyze` clean); whether the splash actually reads as
+"stylish" is a judgement only a device can make. The background music
+question the player asked about is not new wiring — `musicSync` already
+starts the bed the instant `WordSearchMasterApp` builds, which is before the
+splash's own first frame, so nothing here needed to change for the music to
+already be playing when the wordmark appears; that a real device's audio
+survives the whole session is the standing limitation the two most recent
+audio sections of this file already record.

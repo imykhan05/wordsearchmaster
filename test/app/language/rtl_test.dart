@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:word_search_master/app/app.dart';
-import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/app/language/language_x.dart';
 import 'package:word_search_master/app/theme/app_typography.dart';
@@ -17,17 +15,16 @@ import '../../support/fake_meta.dart';
 import '../../support/local_db.dart';
 
 void main() {
-  /// Pumps the app, picks [language] from the FTUE cards, then navigates to
-  /// Home — this suite is about directionality/locale mirroring on a STABLE
-  /// screen, not the P12 auto-advance-into-level-1 behaviour itself (that is
-  /// `app_smoke_test.dart`'s job), so it steps past the game screen
-  /// deliberately rather than asserting anything about it.
+  /// Pumps the app, picks [language] from the FTUE cards, and lands on Home —
+  /// this suite is about directionality/locale mirroring on a STABLE screen,
+  /// not the splash → language → Home flow itself (`app_smoke_test.dart`'s
+  /// job), so it steps past the picker deliberately rather than asserting
+  /// anything about it.
   ///
   /// Content/database are injected already-resolved for the same reason
-  /// `app_smoke_test.dart` does it: since P12, picking a language always
-  /// touches the game route first (`journeyDownshiftProvider` +
-  /// `GameController`), and both providers' defaults hang under
-  /// `flutter_test` — see `fake_content.dart`/`local_db.dart`.
+  /// `app_smoke_test.dart` does it: `LanguageScreen` itself reads
+  /// `contentRepositoryProvider` for each card's sample words, whose default
+  /// hangs under `flutter_test` — see `fake_content.dart`/`local_db.dart`.
   ///
   /// The key is per-language on purpose: without it a second `pumpWidget` in
   /// the same test reuses the existing element (and with it the existing
@@ -52,10 +49,6 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text(language.endonym));
-    await tester.pumpAndSettle();
-
-    final context = tester.element(find.byType(Navigator).first);
-    GoRouter.of(context).go(const HomeRoute().location);
     await tester.pumpAndSettle();
   }
 

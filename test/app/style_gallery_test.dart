@@ -17,11 +17,11 @@ import '../support/local_db.dart';
 
 void main() {
   Future<void> pumpApp(WidgetTester tester, AppConfig config) async {
-    // Since P12, picking a language on `LanguageScreen` lands straight on the
-    // game route (no more `HomeRoute` stopover) — so even a gallery-only test
-    // now needs the same content/database overrides `app_smoke_test.dart`
-    // uses, or `enterApp` below hangs on `ContentRepository`'s real
-    // `rootBundle` read, which never completes under `flutter_test`.
+    // `LanguageScreen` itself reads `contentRepositoryProvider` for each
+    // card's sample words — so even a gallery-only test needs the same
+    // content/database overrides `app_smoke_test.dart` uses, or `enterApp`
+    // below hangs on `ContentRepository`'s real `rootBundle` read, which
+    // never completes under `flutter_test`.
     final content = await buildTestContentRepository();
     final testDb = await openMemoryDatabase();
 
@@ -39,8 +39,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// The FTUE opens on language select, so anything past it is only reachable
-  /// after picking a language — which lands on level 1 (P12), not
+  /// The splash lands a first-time player on language select, so anything
+  /// past it is only reachable after picking a language — which lands on
   /// `HomeRoute`; irrelevant here since [openGallery] navigates by route
   /// immediately afterward regardless of where it lands.
   Future<void> enterApp(WidgetTester tester, AppConfig config) async {

@@ -13,29 +13,33 @@ import '../widgets/flavor_badge.dart';
 import '../widgets/system_back_handler.dart';
 import '../widgets/tap_feedback.dart';
 
-/// FTUE entry point (Ch02): splash lands here directly — no login, no
-/// permission dialog, no ad. Three large cards, each rendered in its own
-/// script, because the player choosing cannot yet read the others — each
-/// card also shows three of that language's own words, from the SAME content
-/// pack the grid itself draws from (P10), rather than a second, hand-curated
-/// list this screen would own.
+/// FTUE entry point (Ch02): the splash lands a first-time player here —
+/// no login, no permission dialog, no ad. Three large cards, each rendered in
+/// its own script, because the player choosing cannot yet read the others —
+/// each card also shows three of that language's own words, from the SAME
+/// content pack the grid itself draws from (P10), rather than a second,
+/// hand-curated list this screen would own.
 ///
-/// Picking a card on FIRST launch goes STRAIGHT into level 1
-/// (`GameRoute('1')`), never `HomeRoute`: Ch02 is explicit — "Level 1
-/// auto-loads. No 'Play' tap required."
+/// Picking a card goes to `HomeRoute` — Play/Journey, Daily Challenge and
+/// Leaderboard are all one tap from there, per the player's own explicit
+/// request for a splash → language-select → Home flow. This is a deliberate
+/// departure from the shipped P12 rule ("Level 1 auto-loads, no Play tap
+/// required"): a first-time player now sees the hub before the first grid,
+/// which costs one extra tap to reach level 1 in exchange for the same
+/// Play/Daily/Leaderboard choice a returning player already gets. Nothing
+/// about `GameController`, `ProgressionController` or the Zeigarnik swap
+/// changed — this is purely which route a card's `onTap` lands on.
 ///
-/// A RETURNING player reaches this same screen a second way now (post-P17):
-/// the Profile screen's language tile, for a player who wants to switch. That
-/// tap routes to `HomeRoute` instead of into a level — a returning player
-/// switching languages wants to land somewhere they can see their new
-/// language's map, not be dropped into a fresh level 1 as if this were their
-/// first launch. `hasChosenLanguageProvider` is what tells the two apart, and
-/// it is READ once at build, not watched — watching would flip the back
-/// arrow on mid-tap, the same hazard `router.dart`'s identical read already
-/// documents. Reached from Profile via `.go()`, which replaces the stack, so
-/// this screen needs its own way out when nothing was picked — the back
-/// arrow only appears for a returning player; the FTUE has nothing valid to
-/// go back to.
+/// A RETURNING player reaches this same screen a second way (post-P17): the
+/// Profile screen's language tile, for a player who wants to switch. Picking
+/// a card there also lands on `HomeRoute` — the same destination as FTUE now,
+/// which is why `onTap` no longer branches on it. `hasChosenLanguageProvider`
+/// still tells the two apart for the ONE thing that still differs — the back
+/// arrow, present only for a returning player, since the FTUE has nothing
+/// valid to go back to — and is still READ once at build, not watched, for
+/// the identical reason this file already documented: watching would flip
+/// the arrow on mid-tap. Reached from Profile via `.go()`, which replaces the
+/// stack, so this screen needs its own way out when nothing was picked.
 class LanguageScreen extends ConsumerWidget {
   const LanguageScreen({super.key});
 
@@ -82,11 +86,11 @@ class LanguageScreen extends ConsumerWidget {
                     ref
                         .read(selectedLanguageProvider.notifier)
                         .select(language);
-                    context.go(
-                      returning
-                          ? const HomeRoute().location
-                          : const GameRoute('1').location,
-                    );
+                    // BOTH paths land on Home now — see this file's own
+                    // header for why, and why `returning` therefore no
+                    // longer branches here even though it still decides the
+                    // back arrow below.
+                    context.go(const HomeRoute().location);
                   },
                 ),
                 const SizedBox(height: AppTokens.space12),

@@ -9,40 +9,38 @@ import '../presentation/screens/language_screen.dart';
 import '../presentation/screens/leaderboard_screen.dart';
 import '../presentation/screens/profile_screen.dart';
 import '../presentation/screens/settings_screen.dart';
+import '../presentation/screens/splash_screen.dart';
 import '../presentation/screens/style_gallery_screen.dart';
 import '../presentation/screens/sync_inspector_screen.dart';
 import 'app_route.dart';
 import 'config/app_config.dart';
-import 'language/selected_language.dart';
 
 part 'router.g.dart';
 
-/// The one and only [GoRouter]. FTUE starts at [LanguageRoute] (Chapter 02:
-/// splash → language select, no login/permission/ad screens first).
+/// The one and only [GoRouter]. Every launch opens on [SplashRoute] —
+/// `splash_screen.dart` is the one place that reads `hasChosenLanguageProvider`
+/// now, and it does so ONCE, right before its own one-shot navigation to
+/// [LanguageRoute] (FTUE) or [HomeRoute] (returning). That is a deliberate
+/// move from the previous shape, where THIS provider built the router's
+/// `initialLocation` directly: reading it here meant `routerProvider` itself
+/// depended on player state, which is exactly the kind of dependency the
+/// removed `read`-not-`watch` comment used to have to justify so carefully.
+/// Now the router depends on nothing but the flavor — it cannot be rebuilt
+/// out from under a running session by ANY change to that provider, because
+/// it never reads it at all.
 @riverpod
 GoRouter router(Ref ref) {
   final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
 
-  // `read`, deliberately NOT `watch`. This decides where the app OPENS, and
-  // nothing more. Watching it would rebuild the entire GoRouter the moment
-  // the FTUE player taps a language card — flipping the provider false→true
-  // mid-session and throwing the player out of the level that tap just
-  // started. Read once, at construction, which is the only moment an
-  // initial location means anything.
-  final returning = ref.read(hasChosenLanguageProvider);
-
   return GoRouter(
-    // Ch02's FTUE opens on the language picker; a player who has already
-    // chosen lands on Home instead, where the journey map (every unlocked
-    // level, forward and back), the daily, and collections are reachable.
-    // Before this, every launch re-ran the picker and then `.go()`'d straight
-    // into level 1 — which left the map and everything else unreachable, and
-    // is why the app looked like it had no level select at all.
-    initialLocation: returning
-        ? const HomeRoute().location
-        : const LanguageRoute().location,
+    initialLocation: const SplashRoute().location,
     debugLogDiagnostics: false,
     routes: [
+      GoRoute(
+        path: const SplashRoute().location,
+        name: SplashRoute.name,
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: const LanguageRoute().location,
         name: LanguageRoute.name,

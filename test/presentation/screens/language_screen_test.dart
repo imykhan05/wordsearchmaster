@@ -15,11 +15,12 @@ import '../../support/fake_content.dart';
 import '../../support/fake_meta.dart';
 import '../../support/local_db.dart';
 
-/// Ch02/P12: `LanguageScreen`'s two new behaviours — a sample of the
-/// language's own words on each card, and "no Play tap required": picking a
-/// card lands straight on level 1. `app_smoke_test.dart` already covers the
-/// route-level proof of the second one end to end; this file is scoped to
-/// what's specific to the screen itself.
+/// `LanguageScreen`'s own behaviours: a sample of the language's own words
+/// on each card, and — per the player's own requested splash → language →
+/// Home flow — picking a card lands on Home, never straight into a level.
+/// `app_smoke_test.dart` already covers the route-level proof of the second
+/// one end to end; this file is scoped to what's specific to the screen
+/// itself.
 void main() {
   Future<void> pumpLanguageScreen(WidgetTester tester) async {
     final content = await buildTestContentRepository();
@@ -107,25 +108,24 @@ void main() {
   });
 
   testWidgets(
-    'picking a language goes straight into level 1 — no Play tap, no Home '
-    'stopover',
+    'picking a language on first launch lands on Home, never straight into '
+    'a level',
     (tester) async {
       await pumpLanguageScreen(tester);
 
       await tester.tap(find.text(Language.english.endonym));
       await tester.pumpAndSettle();
 
-      expect(find.byType(GameGrid), findsOneWidget);
-      expect(find.text('Level 1'), findsOneWidget);
+      final context = tester.element(find.byType(Navigator).first);
       expect(
-        find.text('Home'),
-        findsNothing,
-        reason: 'must not stop on Home on the way in',
+        GoRouter.of(context).routeInformationProvider.value.uri.path,
+        '/home',
       );
+      expect(find.byType(GameGrid), findsNothing);
     },
   );
 
-  testWidgets('the picked language reaches the game screen correctly', (
+  testWidgets('the picked language reaches Home in the correct script', (
     tester,
   ) async {
     await pumpLanguageScreen(tester);
@@ -136,7 +136,7 @@ void main() {
     final context = tester.element(find.byType(Navigator).first);
     expect(
       GoRouter.of(context).routeInformationProvider.value.uri.path,
-      '/game/1',
+      '/home',
     );
     expect(Directionality.of(context), TextDirection.rtl);
   });
