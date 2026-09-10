@@ -3299,6 +3299,50 @@ this container has no audio device and no Android SDK, so **the bed actually
 surviving a session was not heard**. Same standing limit every audio change in
 this file records.
 
+### The audio-focus fix alone was not enough — a self-healing watchdog closes the rest
+
+Tested against the real build carrying the audio-focus fix above: music
+started correctly at launch, then still stopped the instant a level was
+opened from the journey map. The focus fix is correct and stays — no code
+path in this app requests `AudioFocus` any more, confirmed again against the
+plugin source — so the remaining stop is not this app asking Android for
+focus; it is Android, or the device's own OEM power/audio manager, pausing
+the background `MediaPlayer` directly, through no API this app calls. Several
+popular Android skins are documented doing exactly this to a
+non-foreground-service `MediaPlayer` on their own initiative — a doze-adjacent
+heuristic, a "smart" battery saver — and none of it goes through
+`AudioFocusChangeListener`, so there is no callback here to catch it with.
+
+There is no public API to opt out of that behaviour. The only thing left to
+do is notice it happened and undo it, so `preload` now also arms a
+self-healing watchdog on the music player's own state stream:
+`AudioPlayer.onPlayerStateChanged` is watched for the rest of the session,
+and any transition to `paused` or `stopped` while [`_musicPlaying`] still says
+the bed SHOULD be playing calls `resume()` immediately.
+
+**The ordering that makes this safe already existed.** [`setMusicPlaying`]
+flips `_musicPlaying` to `false` BEFORE calling `pause()` — a discipline
+adopted for an unrelated reason (so a concurrent lifecycle change and toggle
+flip agree on the target state) that turns out to be exactly what this needs
+too. An intentional pause (the Music switch, the app backgrounding) is
+already reflected in the flag by the time its state change reaches the
+watchdog, so the listener sees nothing to correct there; only a pause NEITHER
+of those two paths asked for gets fought and reversed.
+
+`hasMusicWatchdog` is a `@visibleForTesting` getter rather than the
+subscription staying entirely private — the same shape `focusFreeContext`
+already took for the same reason: a regression here (someone removing the
+listener while refactoring `preload`) produces no error and no other failing
+test, only silent music on a device that happens to hit this OEM behaviour,
+which is precisely how both bugs in this pair reached a player instead of a
+test run.
+
+**Not verified here, for the standing reason every audio change in this file
+already states**: no audio device in this container. The watchdog's logic is
+sound against the plugin's own documented state-stream API, but whether it
+actually wins the race against a real OEM's pause — and how quickly — can
+only be confirmed by playing the real build.
+
 ### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
 
 Found by a player's own local `flutter build apk --flavor stg --release`

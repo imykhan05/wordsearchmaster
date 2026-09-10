@@ -165,6 +165,7 @@ final class AudioPlayersAudioService implements AudioService {
   final Map<AudioClip, int> _nextPlayerIndex = {};
   AudioPlayer? _music;
   bool _musicPlaying = false;
+  StreamSubscription<PlayerState>? _musicWatchdog;
   bool _muted = false;
 
   /// EVERY PLAYER THIS APP CREATES REQUESTS NO ANDROID AUDIO FOCUS, and that
@@ -242,7 +243,41 @@ final class AudioPlayersAudioService implements AudioService {
         // Same rule as everywhere else in this file: juice never surfaces.
       }
     }
+
+    // SELF-HEALING WATCHDOG. Everything above stops OUR OWN code from ever
+    // pausing the bed for a reason the player did not ask for — but a real
+    // device answers to more than our own code. Some OEM battery/audio
+    // managers (aggressively so on several popular Android skins) pause a
+    // background `MediaPlayer` on their own initiative — a screen-off timer,
+    // a "smart" power-save mode, a doze-adjacent heuristic — through a path
+    // that never touches the public `AudioFocus` API this class already
+    // eliminated every request against. There is no API to opt out of that
+    // behaviour; the only thing to do is notice it happened and undo it.
+    //
+    // So the music player's own state stream is watched for the rest of the
+    // session: any time it lands on `paused` or `stopped` while [_musicPlaying]
+    // still says it SHOULD be playing, resume it immediately. The ordering
+    // that makes this safe is [setMusicPlaying] itself — it flips
+    // [_musicPlaying] to `false` BEFORE calling `pause()`, so an intentional
+    // pause (the Music toggle, the app backgrounding) is already reflected
+    // here by the time the state change arrives, and this listener sees
+    // nothing to correct. Only a pause NEITHER of those two paths asked for
+    // gets fought.
+    _musicWatchdog = music.onPlayerStateChanged.listen((state) {
+      if (_musicPlaying &&
+          (state == PlayerState.paused || state == PlayerState.stopped)) {
+        unawaited(music.resume());
+      }
+    });
   }
+
+  /// Whether the watchdog above is armed. Exists for
+  /// `audio_service_test.dart` to prove [preload] actually wires it up —
+  /// nothing else in this class ever reads [_musicWatchdog] itself, since it
+  /// lives for the rest of the process and there is no dispose path for a
+  /// `keepAlive` singleton to cancel it from.
+  @visibleForTesting
+  bool get hasMusicWatchdog => _musicWatchdog != null;
 
   @override
   Future<void> playFound({required int combo}) {
