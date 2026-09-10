@@ -13,7 +13,7 @@ library;
 ///
 /// [id] doubles as the persisted preference string, so a value stored by one
 /// build and read by another cannot drift from the enum — the same one-string
-/// discipline `SoundTheme.id` keeps between the preference and its asset
+/// discipline `BackgroundStyle.id` keeps between the preference and its
 /// folder.
 enum AppThemeVariant {
   /// The palette the app shipped with: near-black green ground, marigold
@@ -63,7 +63,7 @@ enum AppThemeVariant {
 
   /// Falls back to [defaultVariant] for an unrecognised id — a downgrade, or a
   /// palette retired in a later release. The same degrade-don't-throw shape
-  /// `SoundTheme.fromId` and `BackgroundStyle.fromId` already use.
+  /// `BackgroundStyle.fromId` already uses.
   static AppThemeVariant fromId(String? id) => values.firstWhere(
     (variant) => variant.id == id,
     orElse: () => defaultVariant,

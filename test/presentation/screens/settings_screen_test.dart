@@ -7,7 +7,6 @@ import 'package:word_search_master/app/app_route.dart';
 import 'package:word_search_master/app/config/app_config.dart';
 import 'package:word_search_master/data/content/content_repository.dart';
 import 'package:word_search_master/data/local/app_database.dart';
-import 'package:word_search_master/domain/audio/sound_theme.dart';
 import 'package:word_search_master/domain/theme/app_theme_variant.dart';
 import 'package:word_search_master/domain/theme/background_style.dart';
 import 'package:word_search_master/domain/text/language.dart';
@@ -83,53 +82,6 @@ void main() {
 
     expect(container.read(soundEnabledProvider), isFalse);
   });
-
-  testWidgets('shows one chip per SoundTheme, with the current one selected', (
-    tester,
-  ) async {
-    await pumpSettingsScreen(tester);
-
-    // BY NAME, not by counting every chip on the screen: the background
-    // section adds its own swatches, and a bare count would silently start
-    // measuring both.
-    const names = ['Soft Bells', 'Chimes', 'Minimal'];
-    expect(
-      names,
-      hasLength(SoundTheme.values.length),
-      reason: 'a new SoundTheme was added without a chip named here',
-    );
-
-    final selected = <String>[];
-    for (final name in names) {
-      final finder = find.widgetWithText(ChoiceChip, name);
-      expect(finder, findsOneWidget, reason: '$name has no chip');
-      if (tester.widget<ChoiceChip>(finder).selected) selected.add(name);
-    }
-    expect(
-      selected,
-      hasLength(1),
-      reason: 'exactly the current theme, never zero or more than one',
-    );
-  });
-
-  testWidgets(
-    'picking a different theme chip updates soundThemeSettingProvider',
-    (tester) async {
-      final container = await pumpSettingsScreen(tester);
-      expect(
-        container.read(soundThemeSettingProvider),
-        SoundTheme.defaultTheme,
-      );
-
-      // Tap the chip for a theme that is NOT already selected — the default
-      // is softBells, so chimes is always a distinct, currently-unselected
-      // option regardless of enum ordering.
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Chimes'));
-      await tester.pumpAndSettle();
-
-      expect(container.read(soundThemeSettingProvider), SoundTheme.chimes);
-    },
-  );
 
   testWidgets('offers AUTO plus one chip per theme, exactly one selected', (
     tester,

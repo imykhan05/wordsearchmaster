@@ -35,7 +35,6 @@ class WordSearchMasterApp extends ConsumerWidget {
     // comments), so this just has to keep them alive for the app's life.
     ref.watch(audioMuteSyncProvider);
     ref.watch(musicSyncProvider);
-    ref.watch(soundThemeSyncProvider);
     ref.watch(hapticsEnabledSyncProvider);
     // Ch10's outbox drain triggers: coming online, and returning to the
     // foreground. Watched HERE, once, for the same reason the two above are —

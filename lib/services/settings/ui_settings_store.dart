@@ -1,7 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../domain/audio/sound_theme.dart';
 import '../../domain/theme/app_theme_variant.dart';
 import '../../domain/theme/background_style.dart';
 import '../../domain/text/language.dart';
@@ -35,22 +34,14 @@ abstract interface class UiSettingsStore {
   bool get musicEnabled;
   Future<void> setMusicEnabled(bool value);
 
-  /// Which curated audio palette plays — see [SoundTheme]'s own doc for why
-  /// this is a small fixed set rather than a free-form sound picker.
-  /// Defaults to [SoundTheme.defaultTheme], the same "reads as a real
-  /// preference from the first launch, not an unset gap" shape [soundEnabled]
-  /// and [musicEnabled] already have.
-  SoundTheme get soundTheme;
-  Future<void> setSoundTheme(SoundTheme value);
-
   /// Which of the eight palettes the app wears, or AUTO to let the local time
   /// of day decide. A look, not game data — the same carve-out as
-  /// [soundTheme], and stored as one string ([AppThemeSelection.id]).
+  /// [musicEnabled], and stored as one string ([AppThemeSelection.id]).
   AppThemeSelection get appTheme;
   Future<void> setAppTheme(AppThemeSelection value);
 
   /// What is painted behind the board. A look, not game data — the same
-  /// carve-out as [soundTheme].
+  /// carve-out as [appTheme].
   BackgroundStyle get backgroundStyle;
   Future<void> setBackgroundStyle(BackgroundStyle value);
 
@@ -123,7 +114,6 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
     this.soundEnabled = true,
     this.hapticsEnabled = true,
     this.musicEnabled = true,
-    this.soundTheme = SoundTheme.defaultTheme,
     this.appTheme = AppThemeSelection.defaultSelection,
     this.backgroundStyle = BackgroundStyle.defaultStyle,
     this.backgroundPhotoPath,
@@ -141,8 +131,6 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   bool hapticsEnabled;
   @override
   bool musicEnabled;
-  @override
-  SoundTheme soundTheme;
   @override
   AppThemeSelection appTheme;
   @override
@@ -168,8 +156,6 @@ final class InMemoryUiSettingsStore implements UiSettingsStore {
   Future<void> setHapticsEnabled(bool value) async => hapticsEnabled = value;
   @override
   Future<void> setMusicEnabled(bool value) async => musicEnabled = value;
-  @override
-  Future<void> setSoundTheme(SoundTheme value) async => soundTheme = value;
   @override
   Future<void> setAppTheme(AppThemeSelection value) async => appTheme = value;
   @override
@@ -206,7 +192,6 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
   static const String _soundKey = 'ui.sound_enabled';
   static const String _hapticsKey = 'ui.haptics_enabled';
   static const String _musicKey = 'ui.music_enabled';
-  static const String _soundThemeKey = 'ui.sound_theme';
   static const String _appThemeKey = 'ui.app_theme';
   static const String _backgroundStyleKey = 'ui.background_style';
   static const String _backgroundPhotoKey = 'ui.background_photo_path';
@@ -243,14 +228,6 @@ final class PrefsUiSettingsStore implements UiSettingsStore {
 
   @override
   Future<void> setMusicEnabled(bool value) => _prefs.setBool(_musicKey, value);
-
-  @override
-  SoundTheme get soundTheme =>
-      SoundTheme.fromId(_prefs.getString(_soundThemeKey));
-
-  @override
-  Future<void> setSoundTheme(SoundTheme value) =>
-      _prefs.setString(_soundThemeKey, value.id);
 
   @override
   AppThemeSelection get appTheme =>

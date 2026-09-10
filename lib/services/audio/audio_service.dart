@@ -4,7 +4,6 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/widgets.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../../domain/audio/sound_theme.dart';
 import 'audio_clip.dart';
 import 'combo_pitch_ladder.dart';
 import 'sound_settings.dart';
@@ -17,32 +16,35 @@ part 'audio_service.g.dart';
 /// may import an audio backend directly, and tests need a service they can
 /// assert on rather than a real player.
 abstract interface class AudioService {
-  /// Loads every clip in [AudioClip.values] into memory, from [theme]'s
-  /// asset folder. Call once, before the first frame that could trigger a
-  /// sound — "first-play latency must be imperceptible" (Ch03) means the
-  /// fetch/decode cost has to be paid here, never on the first `playFound`.
-  Future<void> preload({SoundTheme theme = SoundTheme.defaultTheme});
-
-  /// Switches every future SFX/music play to [theme]'s asset set, without
-  /// needing a second [preload]. Called once at bootstrap with whatever
-  /// [theme] was already persisted (folded into that first [preload] call),
-  /// and again whenever the player picks a different one in Settings — see
-  /// `soundThemeSync`.
-  Future<void> setTheme(SoundTheme theme);
+  /// Loads every clip in [AudioClip.values] into memory. Call once, before
+  /// the first frame that could trigger a sound — "first-play latency must
+  /// be imperceptible" (Ch03) means the fetch/decode cost has to be paid
+  /// here, never on the first `playFound`.
+  Future<void> preload();
 
   /// The combo pitch ladder. [combo] is the 1-based streak length exactly as
   /// `GameState.combo` reports it; [ComboPitchLadder.rateForCombo] turns it
   /// into the playback-rate multiplier.
   Future<void> playFound({required int combo});
 
+  /// A traced run that matched nothing — see [AudioClip.wrong] for why this
+  /// exists at all, given Ch03 originally specified silence here.
+  Future<void> playWrong();
+
   Future<void> playLevelComplete();
 
-  /// Not wired to any UI yet (the chest/reward screen is P15/P16 territory),
-  /// but the service exposes it now so those prompts only ever call this
-  /// method and never touch the audio layer itself.
+  /// The Daily Challenge's own finish, distinct from an ordinary level's.
+  Future<void> playDailyComplete();
+
   Future<void> playChestOpen();
 
   Future<void> playButtonTap();
+
+  /// Advancing to the next level from the level-complete card.
+  Future<void> playTransition();
+
+  /// The 180° board flip.
+  Future<void> playShuffle();
 
   Future<void> playCoin();
 
@@ -68,22 +70,31 @@ final class NoopAudioService implements AudioService {
   const NoopAudioService();
 
   @override
-  Future<void> preload({SoundTheme theme = SoundTheme.defaultTheme}) async {}
-
-  @override
-  Future<void> setTheme(SoundTheme theme) async {}
+  Future<void> preload() async {}
 
   @override
   Future<void> playFound({required int combo}) async {}
 
   @override
+  Future<void> playWrong() async {}
+
+  @override
   Future<void> playLevelComplete() async {}
+
+  @override
+  Future<void> playDailyComplete() async {}
 
   @override
   Future<void> playChestOpen() async {}
 
   @override
   Future<void> playButtonTap() async {}
+
+  @override
+  Future<void> playTransition() async {}
+
+  @override
+  Future<void> playShuffle() async {}
 
   @override
   Future<void> playCoin() async {}
@@ -119,13 +130,18 @@ final class NoopAudioService implements AudioService {
 final class AudioPlayersAudioService implements AudioService {
   static const int _playersPerClip = 3;
 
-  /// The looping background bed's file name within a theme's own folder.
-  /// Deliberately NOT an [AudioClip] in the pooled set: it needs
-  /// [ReleaseMode.loop] where every SFX needs [ReleaseMode.stop], it plays
-  /// for the whole session where they last ~100ms, and `preload` would
-  /// otherwise build three players for it.
-  static String _musicAssetFor(SoundTheme theme) =>
-      'audio/${theme.id}/music_loop.wav';
+  /// The looping background bed. Deliberately NOT an [AudioClip] in the
+  /// pooled set: it needs [ReleaseMode.loop] where every SFX needs
+  /// [ReleaseMode.stop], it plays for the whole session where they last
+  /// ~100ms, and `preload` would otherwise build three players for it.
+  ///
+  /// The file is a 32-second segment cut from the supplied track with its
+  /// tail cross-faded onto its head, so the wrap is continuous rather than a
+  /// click. Measured at build time against the same bar the old generated
+  /// loop used: the sample step ACROSS the wrap is 5, where the largest step
+  /// already inside the track is 1353 — a ratio of 0.004, so the seam is far
+  /// below any transient the music itself contains.
+  static const String _musicAsset = 'audio/music_loop.mp3';
 
   /// Well under the SFX. The bed exists to be noticed only when it stops.
   static const double _musicVolume = 0.35;
@@ -135,17 +151,15 @@ final class AudioPlayersAudioService implements AudioService {
   AudioPlayer? _music;
   bool _musicPlaying = false;
   bool _muted = false;
-  SoundTheme _theme = SoundTheme.defaultTheme;
 
   @override
-  Future<void> preload({SoundTheme theme = SoundTheme.defaultTheme}) async {
-    _theme = theme;
+  Future<void> preload() async {
     for (final clip in AudioClip.values) {
       final pool = <AudioPlayer>[];
       for (var i = 0; i < _playersPerClip; i++) {
         final player = AudioPlayer(playerId: 'sfx_${clip.name}_$i');
         await player.setReleaseMode(ReleaseMode.stop);
-        await player.setSource(AssetSource(clip.pathFor(theme)));
+        await player.setSource(AssetSource(clip.assetPath));
         pool.add(player);
       }
       _pools[clip] = pool;
@@ -155,48 +169,8 @@ final class AudioPlayersAudioService implements AudioService {
     final music = AudioPlayer(playerId: 'music_loop');
     await music.setReleaseMode(ReleaseMode.loop);
     await music.setVolume(_musicVolume);
-    await music.setSource(AssetSource(_musicAssetFor(theme)));
+    await music.setSource(AssetSource(_musicAsset));
     _music = music;
-  }
-
-  /// Re-points every already-preloaded player at [theme]'s own files —
-  /// `setSource` alone, not a dispose/rebuild, because the pooled
-  /// [AudioPlayer]s and their platform channels are otherwise unchanged.
-  /// A no-op before [preload] has ever run (nothing in [_pools] yet to
-  /// re-point) — the theme picked before that point is simply the one
-  /// [preload] itself is called with, at bootstrap.
-  @override
-  Future<void> setTheme(SoundTheme theme) async {
-    if (theme == _theme) return;
-    _theme = theme;
-
-    for (final clip in AudioClip.values) {
-      final pool = _pools[clip];
-      if (pool == null) continue;
-      for (final player in pool) {
-        try {
-          await player.setSource(AssetSource(clip.pathFor(theme)));
-        } catch (_) {
-          // Same "juice never crashes or surfaces an error" rule as
-          // `_playPooled` — a clip that fails to re-point keeps playing its
-          // OLD theme's sound rather than going silent or throwing.
-        }
-      }
-    }
-
-    final music = _music;
-    if (music == null) return;
-    try {
-      // The player has to stop pulling from the old source before its
-      // source can change, then resume from the new one if it was playing —
-      // `pause` rather than `stop` so a resume-from-zero (the loop's own
-      // start) is the only thing that changes, not the volume/release-mode
-      // already configured on this same player instance.
-      final wasPlaying = _musicPlaying;
-      if (wasPlaying) await music.pause();
-      await music.setSource(AssetSource(_musicAssetFor(theme)));
-      if (wasPlaying) await music.resume();
-    } catch (_) {}
   }
 
   @override
@@ -208,13 +182,25 @@ final class AudioPlayersAudioService implements AudioService {
   }
 
   @override
+  Future<void> playWrong() => _playPooled(AudioClip.wrong);
+
+  @override
   Future<void> playLevelComplete() => _playPooled(AudioClip.levelComplete);
+
+  @override
+  Future<void> playDailyComplete() => _playPooled(AudioClip.dailyComplete);
 
   @override
   Future<void> playChestOpen() => _playPooled(AudioClip.chestOpen);
 
   @override
   Future<void> playButtonTap() => _playPooled(AudioClip.buttonTap);
+
+  @override
+  Future<void> playTransition() => _playPooled(AudioClip.transition);
+
+  @override
+  Future<void> playShuffle() => _playPooled(AudioClip.shuffle);
 
   @override
   Future<void> playCoin() => _playPooled(AudioClip.coin);
@@ -341,19 +327,5 @@ void musicSync(Ref ref) {
   ref.listen<bool>(musicEnabledProvider, (previous, value) {
     enabled = value;
     apply();
-  }, fireImmediately: true);
-}
-
-/// Keeps [AudioService.setTheme] in sync with the player's picked
-/// [SoundTheme] — the same `ref.listen` + `fireImmediately: true` shape as
-/// [audioMuteSync], and for the identical reason: a provider's `build` stays
-/// free of side effects, so the imperative "tell the service" call lives in
-/// a listener instead.
-///
-/// Watched once, at the app root, next to [audioMuteSync] and [musicSync].
-@Riverpod(keepAlive: true)
-void soundThemeSync(Ref ref) {
-  ref.listen<SoundTheme>(soundThemeSettingProvider, (previous, theme) {
-    ref.read(audioServiceProvider).setTheme(theme);
   }, fireImmediately: true);
 }

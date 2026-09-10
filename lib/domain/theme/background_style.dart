@@ -12,7 +12,7 @@
 /// enum knowing either exists.
 ///
 /// [id] is BOTH the persisted preference string and the enum's identity, the
-/// same one-string-one-truth rule `SoundTheme` keeps.
+/// same one-string-one-truth rule `AppThemeVariant` keeps.
 enum BackgroundStyle {
   /// Default: a quiet wash from the page colour into the highest surface
   /// tint. Closest to the flat ground the app shipped with, so an existing
@@ -53,7 +53,7 @@ enum BackgroundStyle {
       values.where((style) => style != BackgroundStyle.photo).toList();
 
   /// Falls back to [defaultStyle] for an unrecognised id — the same
-  /// degrade-don't-throw shape `SoundTheme.fromId` uses, for the same reason
+  /// degrade-don't-throw shape `AppThemeVariant.fromId` uses, for the same reason
   /// (a downgrade, or a style retired in a later release).
   static BackgroundStyle fromId(String? id) =>
       values.firstWhere((style) => style.id == id, orElse: () => defaultStyle);

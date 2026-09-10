@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:word_search_master/app/language/selected_language.dart';
-import 'package:word_search_master/domain/audio/sound_theme.dart';
 import 'package:word_search_master/domain/theme/app_theme_variant.dart';
 import 'package:word_search_master/domain/theme/background_style.dart';
 import 'package:word_search_master/domain/text/language.dart';
@@ -31,8 +30,8 @@ void main() {
       expect(store.soundEnabled, isTrue);
       expect(store.hapticsEnabled, isTrue);
       expect(
-        store.soundTheme,
-        SoundTheme.defaultTheme,
+        store.musicEnabled,
+        isTrue,
         reason: 'a real preference from the first launch, not an unset gap',
       );
       expect(
@@ -174,7 +173,6 @@ void main() {
     final store = await PrefsUiSettingsStore.open();
     await store.setSoundEnabled(false);
     await store.setHapticsEnabled(false);
-    await store.setSoundTheme(SoundTheme.chimes);
     await store.setAppTheme(
       const AppThemeSelection.fixed(AppThemeVariant.forest),
     );
@@ -191,7 +189,6 @@ void main() {
     expect(prefs.getKeys(), <String>{
       'ui.sound_enabled',
       'ui.haptics_enabled',
-      'ui.sound_theme',
       'ui.app_theme',
       'ui.background_style',
       // THE PATH, never the picture — see `UiSettingsStore`'s own doc. A

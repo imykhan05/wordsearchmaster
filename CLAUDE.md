@@ -3080,6 +3080,98 @@ picker was built on, collecting its interest.
 judgement only a device can make, the same standing limit this file already
 records for the audio themes and the music bed.
 
+### Player-supplied audio, and the sound-theme picker's retirement
+
+The three synthesized `SoundTheme` sets (Soft Bells / Chimes / Minimal) and the
+picker that chose between them are GONE. In their place is one set of real
+recordings the player sourced themselves from Pixabay, plus a background track
+they supplied — nine one-shot clips and a 32-second loop, flat in
+`assets/audio/`, no folder level and no choice to make.
+
+**The picker went because the argument for it did.** It existed so a curated
+sound design could be offered in three flavours; with one definitive set there
+is nothing to pick between, and a chip row that always shows the same single
+selected chip is UI asking a question with one answer. `SoundTheme`,
+`SoundThemeSetting`, `soundThemeSync`, `AudioService.setTheme`,
+`UiSettingsStore.soundTheme` and their ARB strings and tests all came out with
+it. What remains in Settings is what the player asked for: Sound on/off and
+Music on/off, the two switches Ch03 argued for separately and which are
+untouched.
+
+`tool/generate_audio_assets.py` went too. It synthesized every shipped clip
+from sine partials, and nothing it produced is in the app any more.
+
+#### Levels were normalised, not just copied
+
+The supplied clips arrived between -9.5 LUFS (the level-complete fanfare) and
+-70 LUFS (the shuffle clip, so quiet its integrated measure was meaningless at
+0.38s). Shipping those as-is would have made the celebration blast and the
+error cue inaudible. Every clip is peak-normalised through the same chain and
+then trimmed by ROLE rather than to a single target:
+
+| clip | trim | why |
+|---|---|---|
+| `button_tap` | -10 dB | fires hundreds of times a session |
+| `shuffle` | -8 dB | frequent, and a second look is not an event |
+| `wrong`, `transition` | -7 dB | noticed, never punishing |
+| `coin` | -6 dB | |
+| `found` | -5 dB | |
+| `chest_open`, `level_complete`, `daily_complete` | -3 dB | rare, and allowed to land |
+
+A one-shot's RMS is not comparable across a 0.4s click and a 5.8s chest, so a
+single loudness target across all of them would have been a worse answer than
+this table.
+
+#### The background loop is cut and cross-faded, and the seam is measured
+
+The supplied track is 2:52. Embedding all of it would cost 4MB and still seam
+audibly, since nothing about it was written to loop. What ships is a 32-second
+segment (from 0:24, chosen off a nine-point energy scan for a stretch that
+holds a steady level rather than the track's own build) with the three seconds
+that FOLLOW it equal-power cross-faded onto its head — so the wrap lands where
+the material already continued.
+
+**The first attempt clicked, at 3.8x the track's own largest internal step.**
+The cause was `-ss` on an mp3 not being sample-accurate: the two cut points did
+not actually meet at the same sample. Decoding the whole track to wav ONCE and
+cutting from that fixed it, and a 40ms guard fade at both extremes makes the
+wrap silence-to-silence regardless of what the encoder does to the edges. Final
+measurement, against the same bar the old generated loop used: **wrap step 5,
+largest internal step 1353, ratio 0.004.**
+
+#### Four sounds that did not exist before
+
+- **`wrong`** — Ch03 specified SILENCE on a miss (the capsule's 180ms fade and
+  nothing else) so a wrong guess could never feel like a scolding. **That call
+  is deliberately reversed**, on the player's direct request. The half that
+  stands is the haptic: "no buzz" is untouched, and
+  `game_screen_test.dart`'s Ch03 guardian test was REWRITTEN rather than
+  deleted, so it now pins exactly that split — a miss is heard, never felt.
+- **`shuffle`** — the rotate button, which previously played the generic click.
+  A board that physically turns over reading as an ordinary button press
+  undersells it.
+- **`transition`** — Continue, on the level-complete card. A movement sound,
+  because something is being left behind.
+- **`daily_complete`** — the Daily's own finish, distinct from a journey
+  level's. It is the supplied 22-second clip capped at 4 seconds with a
+  600ms tail fade, as asked. Once a day, so it can afford to be the longest
+  thing in the set. The switch on `GameSession` is exhaustive, so the compiler
+  guarantees both arms; only the journey arm is driven by a widget test,
+  because no harness pumps `GameScreen` in daily mode and standing one up is
+  more scaffolding than the assertion is worth — the test says so.
+
+#### `audio_assets_test.dart` exists because the audio stopped being generated
+
+A synthesizer cannot emit a missing file. Hand-placed recordings can, and
+`AudioPlayersAudioService.preload` swallows a failed `setSource` by design
+(juice never surfaces an error), so a misnamed clip would go silent forever
+without a single log line. The test walks `AudioClip.values` and checks each
+file exists and is non-trivial, that no two clips share a file, that nothing in
+the folder is unclaimed by the enum, and that the whole set stays under the
+933KB the three theme folders used to cost. It ships at **620KB** — smaller
+than what it replaced, despite being real recordings, because the saving is
+the picker going away rather than the audio getting worse.
+
 ### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
 
 Found by a player's own local `flutter build apk --flavor stg --release`

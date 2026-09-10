@@ -15,7 +15,6 @@ import '../data/remote/notification_registration_api.dart';
 import '../data/remote/sync_api.dart';
 import '../data/remote/user_stats_api.dart';
 import '../data/repositories/streak_repository.dart';
-import '../domain/audio/sound_theme.dart';
 import '../services/ads/ad_gateway.dart';
 import '../services/ads/max_ad_gateway.dart';
 import '../services/analytics/analytics_service.dart';
@@ -274,7 +273,7 @@ Future<BootstrapServices> initializeServices(
   // assets with no network involved.
   AudioService? audio;
   await _step(config, 'audio.preload', () async {
-    audio = await (loadAudio?.call() ?? _preloadAudio(settings.soundTheme));
+    audio = await (loadAudio?.call() ?? _preloadAudio());
   });
 
   // 7c. The sync courier and its connectivity signal (Ch10 / P16).
@@ -351,9 +350,9 @@ Future<BootstrapServices> initializeServices(
   );
 }
 
-Future<AudioService> _preloadAudio(SoundTheme theme) async {
+Future<AudioService> _preloadAudio() async {
   final service = AudioPlayersAudioService();
-  await service.preload(theme: theme);
+  await service.preload();
   return service;
 }
 

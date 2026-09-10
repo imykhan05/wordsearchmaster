@@ -408,7 +408,16 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     _resetIdleClock();
     final notifier = ref.read(gameControllerProvider(_session).notifier);
     final outcome = notifier.processSelection(selection);
-    if (!outcome.isValid) return false;
+    if (!outcome.isValid) {
+      // Ch03 originally specified SILENCE here — the capsule's 180ms fade was
+      // the whole of the wrong-selection feedback, so a miss never felt like
+      // a scolding. Reversed on the player's own direct request; the fade is
+      // untouched and this sits alongside it, mixed well below the celebration
+      // clips so a miss registers without stinging. No haptic still: Ch03's
+      // "no buzz" is the half of that rule that stands.
+      ref.read(audioServiceProvider).playWrong();
+      return false;
+    }
 
     final state = ref.read(gameControllerProvider(_session)).value;
     if (state == null) return true;
@@ -493,7 +502,11 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// would silence the anti-frustration help for exactly the player it was
   /// written for. Rotating is not progress; it is a second look.
   void _rotateBoard() {
-    _tapFeedback();
+    // Its own sound rather than [_tapFeedback]'s generic click: the board
+    // physically turns over, and a movement this large reading as an ordinary
+    // button press undersells it.
+    ref.read(audioServiceProvider).playShuffle();
+    ref.read(hapticsServiceProvider).buttonTap();
     _rotation.rotate();
   }
 
@@ -546,7 +559,9 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// player can navigate away WHILE a preloaded interstitial is showing, and
   /// re-reading `ref` after that gap would race this widget's own disposal.
   Future<void> _continueFromLevelComplete() async {
-    _tapFeedback();
+    // A movement sound, not a click — something is being left behind.
+    ref.read(audioServiceProvider).playTransition();
+    ref.read(hapticsServiceProvider).buttonTap();
     if (_session is JourneySession) {
       final adRepoFuture = ref.read(adRepositoryProvider.future);
       final policy = ref.read(adFrequencyPolicyProvider);
@@ -609,7 +624,16 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
       final isComplete = next.value?.phase == GamePhase.levelComplete;
       if (wasComplete || !isComplete) return;
 
-      ref.read(audioServiceProvider).playLevelComplete();
+      // The Daily is once a day and cannot be replayed, so it earns a
+      // different — and longer — finish than the level the player will start
+      // another of in four seconds.
+      final audio = ref.read(audioServiceProvider);
+      switch (_session) {
+        case DailySession():
+          audio.playDailyComplete();
+        case JourneySession():
+          audio.playLevelComplete();
+      }
       ref.read(hapticsServiceProvider).levelComplete();
 
       final summary = next.value?.completedSummary;

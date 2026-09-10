@@ -23,7 +23,7 @@ DateTime Function() themeClock(Ref ref) => DateTime.now;
 
 /// What the player picked in Settings — one fixed look, or AUTO.
 ///
-/// State first, disk second, the same shape as [SoundThemeSetting]: a chip
+/// State first, disk second, the same shape as [BackgroundStyleSetting]: a chip
 /// must colour in under the finger, and a preference that fails to write is
 /// not worth blocking a frame over.
 @riverpod

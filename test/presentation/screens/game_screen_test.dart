@@ -13,7 +13,6 @@ import 'package:word_search_master/domain/grid/cell.dart';
 import 'package:word_search_master/domain/grid/grid_result.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/grid/selection_resolver.dart';
-import 'package:word_search_master/domain/audio/sound_theme.dart';
 import 'package:word_search_master/domain/progression/ad_policy.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
@@ -37,10 +36,7 @@ final class _RecordingAudioService implements AudioService {
   final List<int> foundCombos = [];
 
   @override
-  Future<void> preload({SoundTheme theme = SoundTheme.defaultTheme}) async {}
-
-  @override
-  Future<void> setTheme(SoundTheme theme) async {}
+  Future<void> preload() async {}
 
   @override
   Future<void> playFound({required int combo}) async {
@@ -49,13 +45,25 @@ final class _RecordingAudioService implements AudioService {
   }
 
   @override
+  Future<void> playWrong() async => allCalls.add('wrong');
+
+  @override
   Future<void> playLevelComplete() async => allCalls.add('levelComplete');
+
+  @override
+  Future<void> playDailyComplete() async => allCalls.add('dailyComplete');
 
   @override
   Future<void> playChestOpen() async => allCalls.add('chestOpen');
 
   @override
   Future<void> playButtonTap() async => allCalls.add('buttonTap');
+
+  @override
+  Future<void> playTransition() async => allCalls.add('transition');
+
+  @override
+  Future<void> playShuffle() async => allCalls.add('shuffle');
 
   @override
   Future<void> playCoin() async => allCalls.add('coin');
@@ -440,6 +448,70 @@ void main() {
     }
   });
 
+  group('the player-supplied sound set', () {
+    testWidgets('a correct word never plays the wrong clip', (tester) async {
+      final audio = _RecordingAudioService();
+      final container = await pumpGameScreen(tester, audioService: audio);
+      final state = container
+          .read(gameControllerProvider(JourneySession(1)))
+          .value!;
+
+      releaseSelection(tester, selectionFor(state.grid.placementDetails.first));
+      // Past P09's delayed particle/chip choreography, or the binding reports
+      // a pending timer at teardown.
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(audio.allCalls, contains('found:1'));
+      expect(audio.allCalls, isNot(contains('wrong')));
+    });
+
+    testWidgets('the rotate button plays the shuffle clip, not a plain tap', (
+      tester,
+    ) async {
+      // Its own sound is the point: the board physically turns over, and a
+      // movement that large reading as an ordinary button press undersells it.
+      final audio = _RecordingAudioService();
+      await pumpGameScreen(tester, audioService: audio);
+      final l10n = AppLocalizations.of(tester.element(find.byType(GameScreen)));
+
+      await tester.tap(find.byTooltip(l10n.rotateBoardLabel));
+      await tester.pump();
+
+      expect(audio.allCalls, contains('shuffle'));
+      expect(audio.allCalls, isNot(contains('buttonTap')));
+    });
+
+    testWidgets('Continue plays the transition clip, not a plain tap', (
+      tester,
+    ) async {
+      final audio = _RecordingAudioService();
+      final container = await pumpGameScreen(tester, audioService: audio);
+      await completeCurrentLevel(tester, container);
+      audio.allCalls.clear();
+
+      await tapContinue(tester);
+
+      expect(audio.allCalls, contains('transition'));
+      expect(audio.allCalls, isNot(contains('buttonTap')));
+    });
+
+    testWidgets('finishing a JOURNEY level plays levelComplete, never the '
+        "Daily's own finish", (tester) async {
+      // The daily arm of the same switch is not driven here: no widget harness
+      // pumps `GameScreen` in daily mode, and standing one up is more scaffolding
+      // than this assertion is worth. The switch is exhaustive over
+      // `GameSession`, so the compiler already guarantees the other arm exists;
+      // what this pins is that the two are not the same call.
+      final audio = _RecordingAudioService();
+      final container = await pumpGameScreen(tester, audioService: audio);
+
+      await completeCurrentLevel(tester, container);
+
+      expect(audio.allCalls, contains('levelComplete'));
+      expect(audio.allCalls, isNot(contains('dailyComplete')));
+    });
+  });
+
   group('choreography (Ch03) — the three literal acceptance criteria', () {
     testWidgets('6 words found consecutively play an AUDIBLY RISING phrase', (
       tester,
@@ -489,8 +561,19 @@ void main() {
     });
 
     testWidgets(
-      'a wrong selection produces ZERO audio and ZERO haptic feedback',
+      'a wrong selection SOUNDS but never buzzes — half of Ch03 reversed, '
+      'half kept',
       (tester) async {
+        // This test used to assert ZERO audio AND zero haptic: Ch03's rule was
+        // that a miss is answered by the capsule's 180ms fade and nothing
+        // else, so it could never feel like a scolding. The player asked
+        // directly for an audible cue, so the AUDIO half is deliberately
+        // reversed and `AudioClip.wrong` now fires here.
+        //
+        // The HAPTIC half is untouched, and that split is the whole point of
+        // keeping this test rather than deleting it: "no punishment feedback"
+        // survives as no buzz, and a future change that quietly adds one back
+        // has to come through this assertion.
         final audio = _RecordingAudioService();
         final haptics = _RecordingHapticsService();
         await pumpGameScreen(
@@ -499,8 +582,9 @@ void main() {
           hapticsService: haptics,
         );
 
-        // No word in `_demoWords` is 2 letters, so this can never
-        // accidentally match — it is unconditionally a miss.
+        // Two cells can never match: `SelectionResolver` requires a run of at
+        // least two AND a real word, and no word in the pack is 2 graphemes
+        // starting here — this is unconditionally a miss.
         final matched = releaseSelection(
           tester,
           const SelectionState(
@@ -512,7 +596,9 @@ void main() {
         await tester.pump();
 
         expect(matched, isFalse);
-        expect(audio.allCalls, isEmpty, reason: 'no sound on a miss');
+        expect(audio.allCalls, [
+          'wrong',
+        ], reason: 'the miss is heard, and heard as exactly one thing');
         expect(
           haptics.allCalls,
           isEmpty,

@@ -17,7 +17,7 @@ part 'background_settings.g.dart';
 /// means a photo that goes missing does not reset the STYLE — pick the same
 /// picture again and the choice is still where it was.
 ///
-/// Both follow `SoundThemeSetting`'s shape exactly: state first, disk second,
+/// Both follow `SoundEnabled`'s shape exactly: state first, disk second,
 /// because a swatch must colour in under the finger and a preference that
 /// fails to write is not worth blocking a frame over.
 @riverpod

@@ -105,15 +105,14 @@ flutter:
     # (lib/domain/audio/sound_theme.dart), not a single flat set: a Flutter
     # asset directory entry only bundles the files directly inside it, never
     # subdirectories, so each theme's folder needs its own line. ~61KB of
-    # SFX plus a 250KB 8-second music loop per theme, ~933KB across all
-    # three — a deliberate ~3x over the original single-theme 400KB budget,
-    # since a curated sound picker (post-competitor-analysis polish) is only
-    # a picker if more than one option ships. The loop is 16kHz mono (the
-    # SFX are 22.05kHz) precisely to keep that multiplied budget small,
-    # which a low mellow pad loses nothing audible to.
-    - assets/audio/soft_bells/
-    - assets/audio/chimes/
-    - assets/audio/minimal/
+    # ONE flat set: nine one-shot SFX (~218KB) plus a 32-second background
+    # loop (~376KB), ~620KB in total. That is LESS than the ~933KB the three
+    # synthesized theme folders it replaces cost, even though these are real
+    # recordings rather than generated tones — the saving is the picker going
+    # away, not the audio getting worse. Mono 96kbps mp3 throughout; every
+    # clip is preloaded once at startup (`AudioService.preload`), so mp3's
+    # decode cost is paid before the first frame and never per play.
+    - assets/audio/
 
   # Fonts are BUNDLED, never taken from the device: many budget Android
   # phones in PK/IN ship without a Urdu-capable font, and the result is a

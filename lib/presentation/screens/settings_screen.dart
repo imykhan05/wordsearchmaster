@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/app_route.dart';
 import '../../app/theme/theme.dart';
-import '../../domain/audio/sound_theme.dart';
 import '../../domain/text/language.dart';
 import '../../domain/theme/app_theme_variant.dart';
 import '../../domain/theme/background_style.dart';
@@ -37,7 +36,6 @@ class SettingsScreen extends ConsumerWidget {
     final tokens = AppTokens.of(context);
     final soundEnabled = ref.watch(soundEnabledProvider);
     final musicEnabled = ref.watch(musicEnabledProvider);
-    final soundTheme = ref.watch(soundThemeSettingProvider);
     final hapticsEnabled = ref.watch(hapticsEnabledProvider);
     final streakRemindersEnabled = ref.watch(streakRemindersEnabledProvider);
 
@@ -98,34 +96,6 @@ class SettingsScreen extends ConsumerWidget {
                         value: musicEnabled,
                         onChanged: (_) =>
                             ref.read(musicEnabledProvider.notifier).toggle(),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppTokens.space8,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(l10n.soundThemeLabel),
-                            const SizedBox(height: AppTokens.space8),
-                            Wrap(
-                              spacing: AppTokens.space8,
-                              children: [
-                                for (final theme in SoundTheme.values)
-                                  ChoiceChip(
-                                    label: Text(_soundThemeName(l10n, theme)),
-                                    selected: soundTheme == theme,
-                                    onSelected: (_) => ref
-                                        .read(
-                                          soundThemeSettingProvider.notifier,
-                                        )
-                                        .set(theme),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
                       ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -300,7 +270,8 @@ class _ThemeSwatch extends StatelessWidget {
   }
 }
 
-/// Same switch-not-map reasoning as [_soundThemeName] below.
+/// A switch rather than a `Map` so a variant added to the enum without a case
+/// here is a compile error, not a runtime fallback string nobody notices.
 String _themeName(AppLocalizations l10n, AppThemeVariant variant) =>
     switch (variant) {
       AppThemeVariant.midnight => l10n.themeMidnight,
@@ -389,15 +360,4 @@ String _backgroundName(AppLocalizations l10n, BackgroundStyle style) =>
       // is offered as its own action rather than as a swatch. Kept so adding a
       // future style is a compile error here rather than a silent gap.
       BackgroundStyle.photo => l10n.backgroundChoosePhoto,
-    };
-
-/// Localizes a [SoundTheme] for display, the same one-call-site-resolves-it
-/// shape `categoryLabel()` uses for content-pack categories — a switch
-/// rather than a `Map` so a theme added to the enum without a case here is a
-/// compile error, not a runtime fallback string nobody notices.
-String _soundThemeName(AppLocalizations l10n, SoundTheme theme) =>
-    switch (theme) {
-      SoundTheme.softBells => l10n.soundThemeSoftBells,
-      SoundTheme.chimes => l10n.soundThemeChimes,
-      SoundTheme.minimal => l10n.soundThemeMinimal,
     };
