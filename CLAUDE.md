@@ -3343,7 +3343,16 @@ sound against the plugin's own documented state-stream API, but whether it
 actually wins the race against a real OEM's pause — and how quickly — can
 only be confirmed by playing the real build.
 
-### `applovin_max`'s hardcoded compileSdk breaks a release build on a modern toolchain
+### The music bed's volume, raised to full on the player's direct request
+
+`_musicVolume` shipped at 0.35 (post-P17's music-bed section: "well under the
+SFX, the bed exists to be noticed only when it stops") and read as "very
+quiet" ("bht slow") on a real device. The player asked for the DEFAULT level,
+not a specific number — so `_musicVolume` is now `1.0`, `AudioPlayer`'s own
+unattenuated default, rather than a second guessed constant this file could
+get wrong the same way twice. `1.0` means "no reduction on top of whatever
+the player's own phone media-volume slider is already set to," which is the
+literal reading of "default."
 
 Found by a player's own local `flutter build apk --flavor stg --release`
 failing outright — this container has no Android SDK, so it cannot be

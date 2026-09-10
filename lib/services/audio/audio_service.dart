@@ -143,8 +143,13 @@ final class AudioPlayersAudioService implements AudioService {
   /// below any transient the music itself contains.
   static const String _musicAsset = 'audio/music_loop.mp3';
 
-  /// Well under the SFX. The bed exists to be noticed only when it stops.
-  static const double _musicVolume = 0.35;
+  /// FULL — the player's own explicit request, after the previous 0.35
+  /// attenuation read as "very quiet" ("bht slow") on a real device. `1.0`
+  /// is the `AudioPlayer` default (unattenuated relative to the phone's own
+  /// media-volume slider), so this is "no extra reduction on top of
+  /// whatever the player already has their phone set to" rather than a
+  /// literal loudness target this file could get wrong a second time.
+  static const double _musicVolume = 1.0;
 
   /// The context every player is created with — see [preload]'s header for
   /// the whole argument. Named and exposed rather than written inline at the
