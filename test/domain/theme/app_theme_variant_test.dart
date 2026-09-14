@@ -197,23 +197,42 @@ void main() {
       }
     });
 
-    test('an unknown or missing id degrades to AUTO', () {
-      expect(AppThemeSelection.fromId(null), const AppThemeSelection.auto());
+    test('a missing or unknown id degrades to the default, NOT to AUTO', () {
+      expect(
+        AppThemeSelection.fromId(null),
+        AppThemeSelection.defaultSelection,
+      );
       expect(
         AppThemeSelection.fromId('sunrise_gradient_v2'),
+        AppThemeSelection.defaultSelection,
+      );
+    });
+
+    test('an explicit AUTO id still resolves to AUTO, not the default', () {
+      // A returning player who picked AUTO themselves has 'auto' on disk —
+      // that has to keep reading back as AUTO even though `defaultSelection`
+      // is a fixed variant now, or every one of them would be silently
+      // bumped onto it. Missing/unknown and explicitly-AUTO look identical
+      // ONLY while AUTO happens to be the default; `fromId` tells them apart
+      // regardless.
+      expect(
+        AppThemeSelection.fromId(AppThemeSelection.autoId),
         const AppThemeSelection.auto(),
       );
     });
 
-    test('AUTO is the default, and that is a deliberate exception', () {
-      // `BackgroundStyle.defaultStyle` is pinned the other way — it defaults
-      // to the look the app already had, because that picker only ADDED a
-      // choice nobody asked to have moved. Here the moving IS the feature: a
-      // theme system that shipped defaulted to one fixed palette would be
-      // invisible to every player who never opens Settings. Any one of the
-      // eight, including the exact palette the app shipped with, is one tap
-      // away.
-      expect(AppThemeSelection.defaultSelection.isAuto, isTrue);
+    test('daylight is the default — PLAYER-REQUESTED over following the '
+        'clock', () {
+      // A theme system that shipped defaulted to one fixed palette would be
+      // invisible to every player who never opens Settings — which is
+      // exactly why AUTO was the default when this picker first shipped
+      // (see git history). This is a later, explicit product decision to
+      // move off that: AUTO is still one tap away for a player who wants it.
+      expect(
+        AppThemeSelection.defaultSelection,
+        const AppThemeSelection.fixed(AppThemeVariant.daylight),
+      );
+      expect(AppThemeSelection.defaultSelection.isAuto, isFalse);
     });
 
     test('two selections of the same thing are equal', () {

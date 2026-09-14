@@ -57,7 +57,15 @@ void main() {
   testWidgets('auto resolves from the clock it is given', (tester) async {
     for (var hour = 0; hour < 24; hour++) {
       final now = DateTime(2026, 9, 9, hour);
-      final container = containerAt(() => now);
+      // Daylight is the default now, not AUTO — every case in this file that
+      // means to exercise AUTO's own mechanics has to ask for it explicitly,
+      // rather than riding on whatever the product's default happens to be.
+      final container = containerAt(
+        () => now,
+        store: InMemoryUiSettingsStore(
+          appTheme: const AppThemeSelection.auto(),
+        ),
+      );
       expect(
         container.read(resolvedThemeVariantProvider),
         AutoTheme.variantAt(now),
@@ -72,7 +80,10 @@ void main() {
   ) async {
     // 18:30 is inside the evening slot; 19:00 starts the night one.
     var now = DateTime(2026, 9, 9, 18, 30);
-    final container = containerAt(() => now);
+    final container = containerAt(
+      () => now,
+      store: InMemoryUiSettingsStore(appTheme: const AppThemeSelection.auto()),
+    );
 
     expect(container.read(resolvedThemeVariantProvider), evening);
 
@@ -91,7 +102,10 @@ void main() {
     // One timer that fires once and stops would pass the test above and still
     // leave the app stuck on whatever palette it reached first.
     var now = DateTime(2026, 9, 9, 4, 55);
-    final container = containerAt(() => now);
+    final container = containerAt(
+      () => now,
+      store: InMemoryUiSettingsStore(appTheme: const AppThemeSelection.auto()),
+    );
     final seen = <AppThemeVariant>[
       container.read(resolvedThemeVariantProvider),
     ];
@@ -116,7 +130,10 @@ void main() {
     tester,
   ) async {
     var now = DateTime(2026, 9, 9, 18, 30);
-    final container = containerAt(() => now);
+    final container = containerAt(
+      () => now,
+      store: InMemoryUiSettingsStore(appTheme: const AppThemeSelection.auto()),
+    );
     expect(container.read(resolvedThemeVariantProvider), evening);
 
     container

@@ -181,15 +181,29 @@ final class AppThemeSelection {
   /// `app_theme_variant_test.dart` asserts that.
   static const String autoId = 'auto';
 
-  static const AppThemeSelection defaultSelection = AppThemeSelection.auto();
+  /// PLAYER-REQUESTED: a fresh install now opens on [AppThemeVariant.daylight]
+  /// rather than following the clock. AUTO is still one tap away in Settings
+  /// — this only changes what a player who never opens it sees.
+  static const AppThemeSelection defaultSelection = AppThemeSelection.fixed(
+    AppThemeVariant.daylight,
+  );
 
   String get id => variant?.id ?? autoId;
 
   /// Degrades an unrecognised id to [defaultSelection], like every other
   /// `fromId` in this codebase. Null (never set) lands there too, which is
-  /// what makes AUTO the out-of-the-box behaviour.
+  /// what makes [defaultSelection] the out-of-the-box look.
+  ///
+  /// [autoId] is handled SEPARATELY from both of those, on purpose: it is
+  /// what a player who explicitly picked AUTO has stored, and that pick has
+  /// to keep meaning AUTO even now that [defaultSelection] is a fixed variant
+  /// — collapsing it into [defaultSelection] would silently switch a
+  /// returning AUTO player onto [AppThemeVariant.daylight] every time this
+  /// runs. The two calls happened to read identically while AUTO was itself
+  /// the default; they stopped being the same case the moment it was not.
   static AppThemeSelection fromId(String? id) {
-    if (id == null || id == autoId) return defaultSelection;
+    if (id == null) return defaultSelection;
+    if (id == autoId) return const AppThemeSelection.auto();
     for (final variant in AppThemeVariant.values) {
       if (variant.id == id) return AppThemeSelection.fixed(variant);
     }

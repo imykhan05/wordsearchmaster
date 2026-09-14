@@ -113,16 +113,23 @@ void main() {
       expect(finder, findsOneWidget, reason: '$name has no chip');
       if (tester.widget<ChoiceChip>(finder).selected) selected.add(name);
     }
-    expect(selected, [
-      'Auto',
-    ], reason: 'a fresh install follows the clock, and says so exactly once');
+    expect(
+      selected,
+      ['Daylight'],
+      reason:
+          'a fresh install is PLAYER-REQUESTED to open on Daylight '
+          'rather than following the clock, and says so exactly once',
+    );
   });
 
-  testWidgets('pinning a theme takes it off AUTO and changes the app', (
+  testWidgets('picking a chip changes the setting and what the app wears', (
     tester,
   ) async {
     final container = await pumpSettingsScreen(tester);
-    expect(container.read(appThemeSettingProvider).isAuto, isTrue);
+    expect(
+      container.read(appThemeSettingProvider),
+      const AppThemeSelection.fixed(AppThemeVariant.daylight),
+    );
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Forest'));
     await tester.pumpAndSettle();
@@ -137,6 +144,17 @@ void main() {
       container.read(resolvedThemeVariantProvider),
       AppThemeVariant.forest,
     );
+  });
+
+  testWidgets('picking AUTO from a fixed default switches the app to it', (
+    tester,
+  ) async {
+    final container = await pumpSettingsScreen(tester);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Auto'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(appThemeSettingProvider).isAuto, isTrue);
   });
 
   testWidgets('the AUTO caption names the palette the clock landed on', (
@@ -154,6 +172,12 @@ void main() {
     };
 
     final container = await pumpSettingsScreen(tester);
+
+    // The default is now a fixed pick (Daylight), so this test has to opt
+    // INTO AUTO itself before the caption is on screen at all — it used to
+    // be there on a fresh pump, back when AUTO was the default.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Auto'));
+    await tester.pumpAndSettle();
 
     // Asks the app what it resolved to rather than hard-coding an hour, so
     // this passes at 3am and at 3pm — and still fails if the caption and the
