@@ -23,6 +23,7 @@ import '../../services/ads/ad_gateway.dart';
 import '../../services/analytics/analytics_service.dart';
 import '../../services/audio/audio_service.dart';
 import '../../services/auth/auth_service.dart';
+import '../../services/diagnostics/error_reporter.dart';
 import '../../services/haptics/haptics_service.dart';
 import '../../services/remote_config/remote_config.dart';
 import '../../services/settings/ui_settings_store.dart';
@@ -530,6 +531,11 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
         _resetIdleClock();
       case PauseAction.home:
         _recordAbandonIfNeeded();
+        // Same fix as `_leaveGame` — see its doc.
+        await ref
+            .read(progressionControllerProvider.notifier)
+            .awaitPendingCompletion();
+        if (!mounted) return;
         context.go(const HomeRoute().location);
       case PauseAction.resume:
       case null:
@@ -569,6 +575,22 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
       final adRepoFuture = ref.read(adRepositoryProvider.future);
       final policy = ref.read(adFrequencyPolicyProvider);
       final gateway = ref.read(adGatewayProvider);
+      final progression = ref.read(progressionControllerProvider.notifier);
+
+      // THE FIX for a real report of a level coming back LOCKED specifically
+      // after tapping Continue (never after an immediate back — that path
+      // shows no ad and never hit this). `recordCompletion`'s write is still
+      // in flight in the background at this exact moment (it started the
+      // instant the level was won, before this button even existed to tap).
+      // An interstitial hands the screen to a separate Activity, and on a
+      // low-RAM device — or with "Don't keep activities" on, common on the
+      // budget Android phones this app targets — the OS can reclaim the
+      // Flutter engine while that Activity is in front, killing the pending
+      // write mid-transaction before it ever reaches disk. Waiting HERE, one
+      // line before the ad can open, guarantees the row is already committed
+      // by the time that risk window starts.
+      await progression.awaitPendingCompletion();
+      if (!mounted) return;
 
       final adRepo = await adRepoFuture;
       if (await adRepo.canShowInterstitial(policy)) {
@@ -601,6 +623,17 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     final gateway = ref.read(adGatewayProvider);
     final l10n = AppLocalizations.of(context);
     final messenger = ScaffoldMessenger.maybeOf(context);
+
+    // Same fix as `_continueFromLevelComplete`, same reason: this level's
+    // `recordCompletion` write is still in flight in the background at this
+    // exact moment, and `showRewarded` is about to hand the screen to a
+    // separate ad Activity. See that method's doc for the full mechanism —
+    // this is the OTHER button on the same level-complete card that opens an
+    // ad, and it needs the identical guard.
+    await ref
+        .read(progressionControllerProvider.notifier)
+        .awaitPendingCompletion();
+    if (!mounted) return;
 
     final outcome = await gateway.showRewarded(uid: uid);
 
@@ -643,6 +676,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
       final summary = next.value?.completedSummary;
       if (summary == null) return;
       _chestDismissed.value = false;
+      final reporter = ref.read(errorReporterProvider);
       ref
           .read(progressionControllerProvider.notifier)
           .recordCompletion(summary)
@@ -663,11 +697,24 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
                     ),
                   );
             }
+          })
+          // This used to have no error handler at all: a write that threw
+          // partway through (`ProgressionController`'s own header names the
+          // exact hazard) simply vanished — no coins, no crash, nothing to
+          // debug from. Reported here instead, and specifically NOT surfaced
+          // to the player (`ErrorReporter`'s own header on why a background
+          // failure never becomes a dialog).
+          .catchError((Object error, StackTrace stackTrace) {
+            reporter.nonFatal(
+              error,
+              stackTrace: stackTrace,
+              context: {'where': 'ProgressionController.recordCompletion'},
+            );
           });
     });
 
     return SystemBackHandler(
-      onBack: _leaveGame,
+      onBack: () => unawaited(_leaveGame()),
       child: AppBackground(
         child: Scaffold(
           // Transparent so the chosen background shows through — a Scaffold
@@ -727,9 +774,20 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
   /// level (including ones already finished, which stay replayable) can be
   /// chosen. Home is one further tap from there. The daily has no map, so it
   /// returns to its own screen instead.
-  void _leaveGame() {
+  ///
+  /// Awaits [ProgressionController.awaitPendingCompletion] before
+  /// navigating — the fix for a real report of finished levels coming back
+  /// LOCKED after clearing several in quick succession. See that method's
+  /// own doc for the mechanism; this is the call site that actually closes
+  /// the gap, since the journey map re-reads the database fresh every time
+  /// it opens.
+  Future<void> _leaveGame() async {
     _tapFeedback();
     _recordAbandonIfNeeded();
+    await ref
+        .read(progressionControllerProvider.notifier)
+        .awaitPendingCompletion();
+    if (!mounted) return;
     context.go(
       _session is DailySession
           ? const DailyRoute().location
@@ -747,7 +805,7 @@ class _GameScreenBodyState extends ConsumerState<_GameScreenBody> {
     final tokens = AppTokens.of(context);
 
     return AppBar(
-      leading: BackButton(onPressed: _leaveGame),
+      leading: BackButton(onPressed: () => unawaited(_leaveGame())),
       // The category line is skipped outright rather than reserving its
       // space (a daily with an empty content pool, or a fresh state before
       // GameController has resolved a definition, is a real, valid state —

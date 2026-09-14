@@ -100,13 +100,53 @@ class ProgressionController extends _$ProgressionController {
   @override
   void build() {}
 
+  /// The combined tail of every [recordCompletion] write started so far.
+  /// See [awaitPendingCompletion] for why this exists.
+  Future<void> _pending = Future<void>.value();
+
+  /// Waits for every [recordCompletion] write started so far to actually
+  /// land in the database — including ones already in flight.
+  ///
+  /// EVERY PATH OFF THE GAME SCREEN MUST AWAIT THIS BEFORE NAVIGATING AWAY.
+  /// `recordCompletion` starts writing the instant a level is won and
+  /// returns to its caller immediately — `game_screen.dart`'s `ref.listen`
+  /// never awaits it itself, by design (see this class's own header on why
+  /// a `Ref` read cannot sit after an `await` in that listener). That is
+  /// fine as long as the write gets to finish somewhere before the screen
+  /// can leave; it is NOT fine if the player finishes several levels back
+  /// to back and backs out (or the OS kills the app) faster than each save
+  /// can land. The level that write was for then reappears LOCKED next time
+  /// the journey map loads, because `JourneyMap.build` trusts nothing but
+  /// the rows Drift actually holds (that function's own doc) — a save that
+  /// never finished landing is, from the map's point of view, a level that
+  /// was never played. This is the one seam that closes that gap without
+  /// making the hot completion path itself block on I/O.
+  Future<void> awaitPendingCompletion() => _pending;
+
   /// Records [summary] and returns what it paid out. THE WRITE PATH for every
   /// P11 retention system at once — coins, chest, streak, collections,
   /// progress/daily persistence — because they all key off the same
   /// completion and a caller that fired them separately could see them land
   /// out of order (a badge computed before the progress row it depends on is
   /// visible, say).
-  Future<LevelReward> recordCompletion(LevelCompletionSummary summary) async {
+  Future<LevelReward> recordCompletion(LevelCompletionSummary summary) {
+    final result = _recordCompletion(summary);
+    // Chained onto whatever was already pending — not run after it, just
+    // tracked alongside it — so two completions started close together
+    // (exactly the "cleared 2 levels back to back" case this exists for)
+    // leave [awaitPendingCompletion] waiting for BOTH, not just whichever
+    // started last. The `onError` here only stops one failed write from
+    // poisoning an UNRELATED caller's wait; [result] itself still carries
+    // the real error to whoever is awaiting this specific completion.
+    final previousPending = _pending;
+    _pending = Future.wait([
+      previousPending,
+      result.then((_) {}, onError: (_) {}),
+    ]).then((_) {});
+    return result;
+  }
+
+  Future<LevelReward> _recordCompletion(LevelCompletionSummary summary) async {
     // ---- every ref read, before any await. See the library header. ----
     final economy = ref.read(coinEconomyProvider);
     final clock = ref.read(trustedClockProvider);
