@@ -91,3 +91,7 @@ ui-debug.log
 
 # Firestore rules test suite (P15) — root npm project
 /node_modules/
+
+# Reference builds downloaded for local comparison (e.g. the live Play
+# Store build) — not a build artifact of this repo, never a source file.
+/*.apk

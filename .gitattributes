@@ -1,0 +1,12 @@
+# Normalize every text file to LF, both in the repository and on checkout.
+#
+# Without this, a Windows checkout with `core.autocrlf=true` (the Git for
+# Windows default) re-expands every text file to CRLF on disk. That is
+# invisible for source files, but this repo has several tests that compare a
+# freshly-generated string against a committed fixture byte-for-byte —
+# `test/tool/scoring_fixtures_test.dart` against
+# `functions/test/fixtures/scoring_parity.json` chief among them (P14's
+# cross-language parity fixture). The generator always writes LF; a CRLF
+# working copy then fails that comparison on Windows alone, even though the
+# committed blob (and every other platform's checkout of it) is unaffected.
+* text=auto eol=lf

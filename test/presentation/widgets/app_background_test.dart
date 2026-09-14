@@ -96,6 +96,25 @@ void main() {
     });
   });
 
+  group('brand art', () {
+    testWidgets('the bundled asset is shown, under the same scrim as a '
+        'photo', (tester) async {
+      await pumpBackground(tester, style: BackgroundStyle.brandArt);
+
+      // A real, registered asset (`assets/branding/background.png` is
+      // covered by the `assets/branding/` wildcard in `pubspec.yaml`), so —
+      // unlike the player's own photo — there is no "file might not exist"
+      // path worth a separate test here: this asset ships inside the app
+      // bundle itself, not in a cache directory the OS can evict.
+      expect(find.byType(Image), findsOneWidget);
+
+      final scrim = tester
+          .widgetList<ColoredBox>(find.byType(ColoredBox))
+          .where((box) => box.color.a == AppBackground.photoScrimOpacity);
+      expect(scrim, hasLength(1));
+    });
+  });
+
   group('photo', () {
     testWidgets('a real file is shown, under a scrim', (tester) async {
       final file = File(

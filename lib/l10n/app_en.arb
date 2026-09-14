@@ -4,6 +4,10 @@
   "@appTitle": {
     "description": "The app name, shown in the task switcher and on the title bar."
   },
+  "splashLoading": "Loading",
+  "@splashLoading": {
+    "description": "Caption above the splash screen's progress bar. Rendered upper-case by the widget, so this stays in normal case here."
+  },
   "chooseLanguage": "Choose your language",
   "@chooseLanguage": {
     "description": "Heading on the first screen of the FTUE (Ch02: splash goes straight here — no login, no permission prompt, no ad)."
@@ -412,6 +416,10 @@
   "reportNameConfirmMessage": "We'll look into it if enough players report the same name.",
   "reportNameConfirmAction": "Report",
   "reportNameCancelAction": "Cancel",
+  "exitAppTitle": "Leave the game?",
+  "exitAppMessage": "Your progress is saved. Are you sure you want to close the game?",
+  "exitAppConfirmAction": "Yes",
+  "exitAppCancelAction": "No",
   "reportNameSubmittedMessage": "Thanks — your report was sent.",
   "reportNameFailedMessage": "Couldn't send your report — try again.",
   "friendsEmpty": "No friends yet — share your code to add one",
@@ -454,6 +462,10 @@
   "backgroundCalm": "Calm",
   "backgroundEmber": "Ember",
   "backgroundLagoon": "Lagoon",
+  "backgroundBrandArt": "Classic",
+  "@backgroundBrandArt": {
+    "description": "Label for the app's own bundled background image (assets/branding/background.png) — the default style, offered as its own swatch alongside the plain-colour gradients."
+  },
   "backgroundChoosePhoto": "Use my photo",
   "@backgroundChoosePhoto": {
     "description": "Opens the phone's photo picker to choose a background image."

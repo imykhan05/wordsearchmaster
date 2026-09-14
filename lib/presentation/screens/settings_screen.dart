@@ -324,6 +324,24 @@ class _BackgroundSection extends ConsumerWidget {
           spacing: AppTokens.space8,
           runSpacing: AppTokens.space8,
           children: [
+            // The bundled default gets its OWN chip rather than folding into
+            // the `BackgroundStyle.gradients` loop below: it paints an
+            // image, not a `DecoratedBox` gradient, so it can't share that
+            // loop's assumption — same reason `photo` already sits outside
+            // it as its own action.
+            ChoiceChip(
+              label: Text(_backgroundName(l10n, BackgroundStyle.brandArt)),
+              selected: style == BackgroundStyle.brandArt,
+              onSelected: (_) {
+                ref.tapFeedback();
+                ref
+                    .read(backgroundStyleSettingProvider.notifier)
+                    .set(BackgroundStyle.brandArt);
+                unawaited(
+                  ref.read(backgroundPhotoPathProvider.notifier).clear(),
+                );
+              },
+            ),
             for (final option in BackgroundStyle.gradients)
               ChoiceChip(
                 label: Text(_backgroundName(l10n, option)),
@@ -375,6 +393,7 @@ String _backgroundName(AppLocalizations l10n, BackgroundStyle style) =>
       BackgroundStyle.calm => l10n.backgroundCalm,
       BackgroundStyle.ember => l10n.backgroundEmber,
       BackgroundStyle.lagoon => l10n.backgroundLagoon,
+      BackgroundStyle.brandArt => l10n.backgroundBrandArt,
       // Never rendered: `BackgroundStyle.gradients` excludes it, and the photo
       // is offered as its own action rather than as a swatch. Kept so adding a
       // future style is a compile error here rather than a silent gap.

@@ -673,3 +673,25 @@ final class AppTokens extends ThemeExtension<AppTokens> {
     );
   }
 }
+
+/// Colours for the splash screen's own loading readout, sampled directly
+/// from `assets/branding/splash_background.png` (the parchment/quill art
+/// PLAYER-SUPPLIED for that screen) so the live "LOADING… NN%" bar matches
+/// its illustration pixel-for-pixel rather than approximating it.
+///
+/// Deliberately NOT part of [AppColors] / [AppThemeVariant]: this artwork is
+/// one fixed piece of branding shown before any theme has even loaded, so —
+/// like the splash's wordmark used to be before it moved into this same
+/// image — it does not adapt with the player's chosen theme the way every
+/// screen after it does.
+abstract final class SplashInkPalette {
+  /// The bar's filled portion, and the "LOADING… NN%" text — both the same
+  /// ink-brown in the artwork's own illustration.
+  static const Color fill = Color(0xFF5A3716);
+
+  /// The bar's unfilled track — the artwork's parchment tone.
+  static const Color track = Color(0xFFF7E6C6);
+
+  /// The bar's thin outline.
+  static const Color border = Color(0xFFB4A082);
+}

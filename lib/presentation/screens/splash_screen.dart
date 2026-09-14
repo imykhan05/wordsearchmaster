@@ -5,19 +5,32 @@ import 'package:go_router/go_router.dart';
 import '../../app/app_route.dart';
 import '../../app/language/selected_language.dart';
 import '../../app/theme/theme.dart';
+import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
-import '../widgets/app_background.dart';
 
 /// The very first screen any launch shows — [SplashRoute], always the
 /// router's `initialLocation`.
 ///
-/// PLAYER-REQUESTED, and requested WITH a concrete shape: the app's name
-/// centred, the brand icon at the bottom, and the background music already
-/// playing underneath it. The last of those needs no wiring here at all —
-/// `musicSync` (`services/audio/audio_service.dart`) is watched once at the
-/// app root and fires the instant `WordSearchMasterApp` builds, which is
-/// BEFORE this screen's own first frame, so the bed is already running by
-/// the time a player sees the wordmark.
+/// PLAYER-SUPPLIED art now carries the whole scene:
+/// `assets/branding/splash_background.png`, a parchment-and-quill
+/// illustration with the wordmark and two decorative word-search grids
+/// painted directly into it. This screen no longer renders its own name —
+/// the artwork already has one — and no longer wraps in `AppBackground`,
+/// because that widget paints the player's chosen in-game theme, and this
+/// is a fixed piece of branding shown before any theme has even loaded.
+///
+/// The one thing this screen still renders itself is the "LOADING… NN%"
+/// readout: a real percentage has to be live, so it is drawn on top of the
+/// artwork in the same spot and style its own mock-up used, in ink-brown
+/// sampled straight from that art ([SplashInkPalette]) rather than the app's
+/// in-game marigold — a colour choice this ONE screen makes and no other
+/// screen should copy.
+///
+/// The background music needs no wiring here at all — `musicSync`
+/// (`services/audio/audio_service.dart`) is watched once at the app root and
+/// fires the instant `WordSearchMasterApp` builds, which is BEFORE this
+/// screen's own first frame, so the bed is already running by the time a
+/// player sees the wordmark.
 ///
 /// This is also the ONE place `hasChosenLanguageProvider` is read now —
 /// see `router.dart`'s header for why moving it here, out of the router
@@ -32,34 +45,17 @@ class SplashScreen extends ConsumerStatefulWidget {
 class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   /// How long the brand stays on screen, start to hand-off. ONE controller
-  /// drives the WHOLE window — deliberately not a separate `Timer` alongside
-  /// a shorter entrance animation, which was the first version of this file
-  /// and was wrong: once the entrance settled, nothing was left scheduling
-  /// frames for the remaining hold, so `pumpAndSettle()` — which stops the
-  /// instant no frame is scheduled, not when every pending `Timer` has fired
-  /// — returned control early, before the hand-off timer ever got a chance
-  /// to run. Every existing test that pumps the real app root learned that
-  /// the hard way (`app_smoke_test.dart` and siblings). A single controller
-  /// ticking for the full duration keeps a frame scheduled throughout, which
-  /// is what makes `pumpAndSettle()` behave here the same way it already
-  /// does on every other P09/P11 choreography screen in this app.
+  /// drives the WHOLE window — deliberately not a separate `Timer`, because
+  /// `pumpAndSettle()` stops the instant no frame is scheduled, not when
+  /// every pending `Timer` has fired; a controller ticking for the full
+  /// duration keeps a frame scheduled throughout, which is what every test
+  /// that pumps the real app root (`app_smoke_test.dart` and siblings)
+  /// depends on.
   ///
-  /// Independent of reduce-motion on purpose: this is a branding BEAT, not a
-  /// movement, so [_reduceMotion] below skips the entrance TRANSFORM but
-  /// never shortens this duration — a player who asked for less motion still
-  /// needs a moment to register the screen, the same distinction
-  /// `_PulseHighlight` draws between "remove the movement" and "remove the
-  /// information".
-  static const Duration _displayDuration = Duration(milliseconds: 1600);
-
-  /// Sub-ranges of the controller's own `value`, not a separate clock: the
-  /// icon leads, the name follows with a stagger, and both sit fully
-  /// revealed for the remaining ~700ms before hand-off — the same "one
-  /// driver, several `Interval`s" shape `LevelCompleteCard`'s confetti and
-  /// `ChestOpenCard` already use (P09/P11) rather than a second ticker
-  /// system for what is really one animation.
-  static const Interval _iconReveal = Interval(0.0, 0.4);
-  static const Interval _nameReveal = Interval(0.2, 0.55);
+  /// PLAYER-REQUESTED at 15–20s so the screen reads as a real load (a
+  /// progress bar filling), not an instant brand flash. Picked the middle of
+  /// that range.
+  static const Duration _displayDuration = Duration(seconds: 18);
 
   late final AnimationController _controller;
 
@@ -100,98 +96,140 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final tokens = AppTokens.of(context);
     final language = ref.watch(selectedLanguageProvider);
-    // Reduce-motion SKIPS the entrance outright rather than collapsing it to
-    // an instantaneous version of itself — the same rule particles, confetti
-    // and the FTUE glow already follow (P09/P11/P12), applied here for the
-    // identical reason: a fade-in-then-immediately-fade-out on a single
-    // frame is not what "reduced motion" is asking for.
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
-    return AppBackground(
-      child: Scaffold(
-        // Transparent so the chosen background shows through, matching every
-        // other `AppBackground`-using screen — see its own header for why a
-        // Scaffold's default opaque fill would hide it.
-        backgroundColor: tokens.colors.background.withValues(alpha: 0),
-        body: SafeArea(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              final iconT = reduceMotion
-                  ? 1.0
-                  : _iconReveal.transform(_controller.value);
-              final nameT = reduceMotion
-                  ? 1.0
-                  : _nameReveal.transform(_controller.value);
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            'assets/branding/splash_background.png',
+            fit: BoxFit.cover,
+          ),
+          SafeArea(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                // AnimationController defaults its bounds to [0.0, 1.0], so
+                // `.value` is already the fill fraction the bar needs. Not
+                // gated by reduce-motion: this is the load state itself, not
+                // decorative movement, so it keeps advancing in real time
+                // regardless — the same information-vs-motion split
+                // `_PulseHighlight` (`game_grid.dart`) draws.
+                final progress = _controller.value;
 
-              return Column(
-                children: [
-                  const Spacer(flex: 3),
-                  Opacity(
-                    key: const Key('splashNameOpacity'),
-                    opacity: nameT,
-                    child: Transform.translate(
-                      offset: Offset(0, (1 - nameT) * 16),
-                      child: Text(
-                        l10n.appTitle,
-                        textAlign: TextAlign.center,
-                        style: AppTypography.uiTextStyle(
-                          language,
-                          UiRole.display,
-                          color: tokens.colors.onSurface,
-                        ),
+                return Column(
+                  // STRETCH so the progress bar below actually gets a
+                  // bounded width to size its fill against — see
+                  // `_SplashProgress`'s own comment on the same need.
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Spacer(flex: 7),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTokens.space32,
+                      ),
+                      child: _SplashProgress(
+                        progress: progress,
+                        loadingLabel: l10n.splashLoading,
+                        language: language,
                       ),
                     ),
-                  ),
-                  const Spacer(flex: 4),
-                  Opacity(
-                    key: const Key('splashIconOpacity'),
-                    opacity: iconT,
-                    child: Transform.scale(
-                      scale: 0.7 + (0.3 * iconT),
-                      child: _SplashIcon(tokens: tokens),
-                    ),
-                  ),
-                  const SizedBox(height: AppTokens.space48),
-                ],
-              );
-            },
+                    const Spacer(),
+                  ],
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 }
 
-/// The brand mark: the same PNG the Play Store listing and the Android/iOS
-/// launcher icons already use (`docs/store-listing/assets/icon_512.png`,
-/// bundled as `assets/branding/app_icon.png`), framed with the app's own
-/// elevation token rather than a bespoke shadow — the same treatment
-/// `MetaCard` gives every other elevated surface in this app.
-class _SplashIcon extends StatelessWidget {
-  const _SplashIcon({required this.tokens});
+/// The "game is loading" readout: an upper-case caption, the solid bar, then
+/// the percentage — positioned and coloured to match where the reference
+/// mock-up drew them directly into the artwork, now live instead of static.
+class _SplashProgress extends StatelessWidget {
+  const _SplashProgress({
+    required this.progress,
+    required this.loadingLabel,
+    required this.language,
+  });
 
-  final AppTokens tokens;
-
-  static const double _size = 112;
+  final double progress;
+  final String loadingLabel;
+  final Language language;
 
   @override
   Widget build(BuildContext context) {
-    final elevation = tokens.elevation2;
+    final percent = (progress * 100).round();
+    final captionStyle = AppTypography.uiTextStyle(
+      language,
+      UiRole.label,
+      color: SplashInkPalette.fill,
+    ).copyWith(fontSize: 15);
+    final percentStyle = AppTypography.uiTextStyle(
+      language,
+      UiRole.heading,
+      color: SplashInkPalette.fill,
+    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
 
-    return DecoratedBox(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      // STRETCH, not the default `center`: `_SolidProgressBar` needs an
+      // actual width from its parent to size its fill against — a
+      // shrink-wrapped Column gives it none, since nothing else in this
+      // column has an intrinsic width to shrink-wrap to either.
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // toUpperCase() is a display transform, not new copy — a no-op on
+        // Urdu/Hindi, which have no case distinction.
+        Text(
+          '${loadingLabel.toUpperCase()}…',
+          textAlign: TextAlign.center,
+          style: captionStyle,
+        ),
+        const SizedBox(height: AppTokens.space12),
+        _SolidProgressBar(progress: progress),
+        const SizedBox(height: AppTokens.space12),
+        Text('$percent%', textAlign: TextAlign.center, style: percentStyle),
+      ],
+    );
+  }
+}
+
+/// The plain, solid-fill pill from the reference artwork — a rounded ink
+/// bar over a parchment track, unlike the striped bar an earlier version of
+/// this screen used before this specific mock-up was supplied.
+class _SolidProgressBar extends StatelessWidget {
+  const _SolidProgressBar({required this.progress});
+
+  final double progress;
+
+  static const double _height = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(_height / 2);
+
+    return Container(
+      height: _height,
       decoration: BoxDecoration(
-        borderRadius: AppTokens.borderRadius16,
-        boxShadow: elevation.shadows,
+        color: SplashInkPalette.track,
+        borderRadius: radius,
+        border: Border.all(color: SplashInkPalette.border),
       ),
       child: ClipRRect(
-        borderRadius: AppTokens.borderRadius16,
-        child: Image.asset(
-          'assets/branding/app_icon.png',
-          width: _size,
-          height: _size,
+        borderRadius: radius,
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FractionallySizedBox(
+            widthFactor: progress,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(color: SplashInkPalette.fill),
+            ),
+          ),
         ),
       ),
     );

@@ -175,12 +175,11 @@ void main() {
     );
   });
 
-  testWidgets('offers a swatch per gradient plus a photo action', (
-    tester,
-  ) async {
+  testWidgets('offers a swatch per gradient, the bundled default, plus a '
+      'photo action', (tester) async {
     await pumpSettingsScreen(tester);
 
-    for (final name in ['Calm', 'Ember', 'Lagoon']) {
+    for (final name in ['Classic', 'Calm', 'Ember', 'Lagoon']) {
       expect(find.widgetWithText(ChoiceChip, name), findsOneWidget);
     }
     // The photo is NOT a swatch — it is a file chooser, and an empty chip for

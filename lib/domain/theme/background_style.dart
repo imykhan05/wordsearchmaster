@@ -14,9 +14,9 @@
 /// [id] is BOTH the persisted preference string and the enum's identity, the
 /// same one-string-one-truth rule `AppThemeVariant` keeps.
 enum BackgroundStyle {
-  /// Default: a quiet wash from the page colour into the highest surface
-  /// tint. Closest to the flat ground the app shipped with, so an existing
-  /// player's screen does not change under them on upgrade.
+  /// A quiet wash from the page colour into the highest surface tint. No
+  /// longer the default (see [brandArt]), but kept first in the enum since
+  /// it is still the plainest of the three colour swatches.
   calm('calm', gradientIndex: 0),
 
   /// Warm — the amber primary bled into the ground, brightest at the bottom.
@@ -24,6 +24,20 @@ enum BackgroundStyle {
 
   /// Cool — the map's first region accent, same treatment.
   lagoon('lagoon', gradientIndex: 2),
+
+  /// The app's own bundled artwork (`assets/branding/background.png`) —
+  /// PLAYER-REQUESTED as the DEFAULT so a first launch already looks
+  /// considered, rather than the flat [calm] wash every earlier build
+  /// shipped with. Still just one entry in this enum, not a special case:
+  /// it sits in the picker next to the three gradients, and a player who
+  /// prefers a plain colour — or their own photo — can switch away from it
+  /// in Settings exactly like they would switch between [calm], [ember] and
+  /// [lagoon].
+  ///
+  /// [gradientIndex] is its fallback, the same reason [photo] carries one:
+  /// if the bundled asset ever failed to decode, this degrades to [calm]'s
+  /// gradient rather than a blank screen.
+  brandArt('brand_art', gradientIndex: 0),
 
   /// A photo the player picked from their own phone.
   ///
@@ -41,16 +55,24 @@ enum BackgroundStyle {
   final String id;
 
   /// Which entry of `AppColors.backgroundGradients` this style paints — and,
-  /// for [photo], what it falls back to when the file is gone.
+  /// for [photo] and [brandArt], what it falls back to when the image is
+  /// gone.
   final int gradientIndex;
 
-  static const BackgroundStyle defaultStyle = BackgroundStyle.calm;
+  static const BackgroundStyle defaultStyle = BackgroundStyle.brandArt;
 
-  /// The three gradient styles, in the order a picker should offer them.
-  /// [photo] is excluded: it is not a swatch, it is a file chooser, and the
-  /// UI presents it as its own action.
-  static List<BackgroundStyle> get gradients =>
-      values.where((style) => style != BackgroundStyle.photo).toList();
+  /// The three PLAIN-COLOUR gradient styles, in the order a picker should
+  /// offer them. [brandArt] and [photo] are both excluded: neither paints a
+  /// `DecoratedBox` gradient, so a caller that means "the flat swatches"
+  /// would otherwise have to filter both out itself at every call site. The
+  /// picker in `settings_screen.dart` renders [brandArt] as its own chip,
+  /// the same way it already renders [photo] as its own action.
+  static List<BackgroundStyle> get gradients => values
+      .where(
+        (style) =>
+            style != BackgroundStyle.photo && style != BackgroundStyle.brandArt,
+      )
+      .toList();
 
   /// Falls back to [defaultStyle] for an unrecognised id — the same
   /// degrade-don't-throw shape `AppThemeVariant.fromId` uses, for the same reason

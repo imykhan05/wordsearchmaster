@@ -24,6 +24,11 @@ import 'package:word_search_master/services/settings/ui_settings_store.dart';
 /// `pumpAndSettle()`'s "stop once nothing is scheduled" heuristic to land on
 /// the right moment.
 void main() {
+  // Kept in one place — every timing assertion below is phrased relative to
+  // this instead of a repeated literal, so a future duration change (still
+  // somewhere in the 15-20s range the brief asked for) only moves one line.
+  const displayDuration = Duration(seconds: 18);
+
   Future<void> pumpSplash(
     WidgetTester tester, {
     Language? savedLanguage,
@@ -69,14 +74,36 @@ void main() {
     );
   }
 
-  testWidgets('the first frame shows the app name and the brand icon', (
+  testWidgets(
+    'the first frame shows the bundled artwork and a 0% progress readout',
+    (tester) async {
+      await pumpSplash(tester);
+      await tester.pump();
+
+      // The wordmark and the decorative word-search grids are painted
+      // directly into `assets/branding/splash_background.png` now — this
+      // screen no longer renders a separate name widget, so the only thing
+      // left to assert about the art itself is that it is there at all.
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.text('0%'), findsOneWidget);
+    },
+  );
+
+  testWidgets('the progress readout climbs toward 100% as the hold runs', (
     tester,
   ) async {
     await pumpSplash(tester);
     await tester.pump();
 
-    expect(find.text('Word Search Master'), findsOneWidget);
-    expect(find.byType(Image), findsOneWidget);
+    await tester.pump(displayDuration * 0.5);
+    expect(find.text('50%'), findsOneWidget);
+
+    // 98% of the full 18s hold — comfortably short of the 100% a value very
+    // close to 1.0 would round up to.
+    await tester.pump(
+      Duration(milliseconds: (displayDuration.inMilliseconds * 0.48).round()),
+    );
+    expect(find.text('98%'), findsOneWidget);
   });
 
   testWidgets(
@@ -86,15 +113,23 @@ void main() {
       await pumpSplash(tester);
       await tester.pump();
 
-      // Well past the entrance animation, but short of the full hold.
-      await tester.pump(const Duration(milliseconds: 1000));
+      await tester.pump(displayDuration - const Duration(milliseconds: 500));
       expect(
         find.text('LANGUAGE SCREEN'),
         findsNothing,
-        reason: 'the brand is still meant to be on screen at 1000ms',
+        reason:
+            'the brand is still meant to be on screen just before the '
+            'hold ends',
       );
 
-      await tester.pump(const Duration(milliseconds: 700));
+      // A few ms PAST the exact duration, not pumped to land on it exactly:
+      // `AnimationController.status` flips to `completed` a hair after its
+      // `Ticker`'s `elapsed` reaches `duration` in this fake-clock harness
+      // (the same reason the 98%-not-100% pump above stops short rather than
+      // landing on the boundary), so asserting exactly at `displayDuration`
+      // is a coin flip on that epsilon rather than a statement about the
+      // screen's own timing.
+      await tester.pump(const Duration(milliseconds: 550));
       expect(find.text('LANGUAGE SCREEN'), findsOneWidget);
     },
   );
@@ -105,36 +140,24 @@ void main() {
       await pumpSplash(tester, savedLanguage: Language.urdu);
       await tester.pump();
 
-      await tester.pump(const Duration(milliseconds: 1000));
-      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pump(displayDuration - const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 550));
       expect(find.text('HOME SCREEN'), findsOneWidget);
       expect(find.text('LANGUAGE SCREEN'), findsNothing);
     },
   );
 
   testWidgets(
-    'reduce-motion skips the entrance transform but keeps the SAME hold — '
-    'a branding beat, not a movement',
+    'reduce-motion does not shorten or lengthen the hold — the progress '
+    'fill is load information, not decoration, so it is never gated by it',
     (tester) async {
       await pumpSplash(tester, reduceMotion: true);
       await tester.pump();
 
-      // Fully revealed from the very first frame, not faded/scaled in.
-      final name = tester.widget<Opacity>(
-        find.byKey(const Key('splashNameOpacity')),
-      );
-      final icon = tester.widget<Opacity>(
-        find.byKey(const Key('splashIconOpacity')),
-      );
-      expect(name.opacity, 1.0);
-      expect(icon.opacity, 1.0);
-
-      // The hand-off timing is UNCHANGED — reduce-motion removes the
-      // movement, not the moment a player gets to register the screen.
-      await tester.pump(const Duration(milliseconds: 1000));
+      await tester.pump(displayDuration - const Duration(milliseconds: 500));
       expect(find.text('LANGUAGE SCREEN'), findsNothing);
 
-      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pump(const Duration(milliseconds: 550));
       expect(find.text('LANGUAGE SCREEN'), findsOneWidget);
     },
   );
@@ -142,7 +165,7 @@ void main() {
   testWidgets(
     'a full pumpAndSettle() ride reaches the language picker on its own',
     (tester) async {
-      // Regression guard: the first version of this screen ran a separate
+      // Regression guard: an earlier version of this screen ran a separate
       // `Timer` alongside a SHORTER entrance animation. Once the entrance
       // settled, nothing was left scheduling frames for the remaining hold,
       // so `pumpAndSettle()` — which stops the instant no frame is

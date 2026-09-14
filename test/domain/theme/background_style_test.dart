@@ -24,39 +24,57 @@ void main() {
     expect(BackgroundStyle.fromId(null), BackgroundStyle.defaultStyle);
   });
 
-  test('defaultStyle is calm — the closest thing to the flat ground the app '
-      'shipped with', () {
-    // Pinned: an existing player's screen must not change under them on an
-    // upgrade that only ADDED the ability to change it.
-    expect(BackgroundStyle.defaultStyle, BackgroundStyle.calm);
+  test('defaultStyle is brandArt — the bundled artwork ships as the first '
+      'thing a new install sees', () {
+    // PLAYER-REQUESTED: a considered background from the first launch,
+    // rather than the flat gradient every earlier build defaulted to. A
+    // player who prefers a plain colour, or their own photo, still reaches
+    // either in one tap from Settings — this only changes what a player who
+    // never opens Settings sees.
+    expect(BackgroundStyle.defaultStyle, BackgroundStyle.brandArt);
   });
 
-  test('gradients offers every style EXCEPT photo', () {
-    // The picker shows swatches plus one file-chooser action; a photo is not
-    // a swatch, and offering it as one would show an empty chip to a player
-    // who has never picked an image.
+  test('gradients offers only the plain-colour swatches — not photo, not '
+      'brandArt', () {
+    // The picker shows the three colour swatches, the bundled-art chip, and
+    // one file-chooser action, each rendered by its own bit of UI in
+    // `settings_screen.dart` — neither `brandArt` nor `photo` paints a
+    // `DecoratedBox` gradient, so a caller that means "the flat swatches"
+    // needs both excluded, not just the one that opens a file picker.
     expect(BackgroundStyle.gradients, isNot(contains(BackgroundStyle.photo)));
     expect(
       BackgroundStyle.gradients,
-      hasLength(BackgroundStyle.values.length - 1),
+      isNot(contains(BackgroundStyle.brandArt)),
+    );
+    expect(
+      BackgroundStyle.gradients,
+      hasLength(BackgroundStyle.values.length - 2),
     );
   });
 
-  test('every style names a real gradient slot, photo included', () {
-    // `photo`'s index is its FALLBACK: the file lives in a cache directory the
-    // OS may empty at any time, so the style has to have somewhere to land
-    // that is not a blank screen.
-    for (final style in BackgroundStyle.values) {
-      expect(style.gradientIndex, greaterThanOrEqualTo(0));
+  test(
+    'every style names a real gradient slot, photo and brandArt included',
+    () {
+      // `photo` and `brandArt`'s indices are their FALLBACK: a picked photo
+      // lives in a cache directory the OS may empty at any time, and the
+      // bundled asset could in principle fail to decode — neither has to mean
+      // a blank screen.
+      for (final style in BackgroundStyle.values) {
+        expect(style.gradientIndex, greaterThanOrEqualTo(0));
+        expect(
+          style.gradientIndex,
+          lessThan(BackgroundStyle.gradients.length),
+          reason: '${style.id} points past the end of the gradient list',
+        );
+      }
       expect(
-        style.gradientIndex,
-        lessThan(BackgroundStyle.gradients.length),
-        reason: '${style.id} points past the end of the gradient list',
+        BackgroundStyle.photo.gradientIndex,
+        BackgroundStyle.calm.gradientIndex,
       );
-    }
-    expect(
-      BackgroundStyle.photo.gradientIndex,
-      BackgroundStyle.defaultStyle.gradientIndex,
-    );
-  });
+      expect(
+        BackgroundStyle.brandArt.gradientIndex,
+        BackgroundStyle.calm.gradientIndex,
+      );
+    },
+  );
 }

@@ -70,7 +70,11 @@ void main() {
     final onDisk = Directory('assets/audio')
         .listSync()
         .whereType<File>()
-        .map((file) => file.path)
+        // `Directory.listSync()` joins with the PLATFORM separator, so a
+        // Windows run returns `assets/audio\button_tap.mp3` against a
+        // `claimed` set built from forward-slash string interpolation —
+        // every file would read as unclaimed there without this.
+        .map((file) => file.path.replaceAll(r'\', '/'))
         .toSet();
     expect(onDisk.difference(claimed), isEmpty);
   });
