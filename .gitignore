@@ -95,3 +95,8 @@ ui-debug.log
 # Reference builds downloaded for local comparison (e.g. the live Play
 # Store build) — not a build artifact of this repo, never a source file.
 /*.apk
+
+# Intermediate frames for the store promo video — regenerate with
+# `python3 tool/generate_store_graphics.py`. The mp4 is kept; 720 PNGs of it
+# are not.
+docs/store-listing/assets/promo_frames/
