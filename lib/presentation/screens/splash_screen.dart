@@ -71,11 +71,15 @@ class BootSplash extends StatefulWidget {
   /// waiting on [ready], not on time.
   static const double progressCeiling = 0.9;
 
-  /// How long the bar takes to ease up to [progressCeiling]. Not a hold: if
-  /// startup outlasts it the bar simply sits there, and if startup finishes
-  /// first the remaining fill still runs, which is what keeps a fast launch
-  /// from flashing past too fast to read.
-  static const Duration fillDuration = Duration(milliseconds: 1400);
+  /// How long the bar takes to ease up to [progressCeiling].
+  ///
+  /// PLAYER-REQUESTED at 15s, having seen both this and a splash that left
+  /// as soon as startup finished. The hand-off now waits for BOTH — see
+  /// [_BootSplashState._awaitReady] — so this is a floor on how long the
+  /// screen is shown, never a ceiling: a startup slower than this still
+  /// holds the bar at [progressCeiling] until it is genuinely done, and
+  /// 100% still means the app is up.
+  static const Duration fillDuration = Duration(seconds: 15);
 
   /// The last stretch, [progressCeiling] to 1.0, once startup is done.
   static const Duration finishDuration = Duration(milliseconds: 260);
@@ -89,6 +93,11 @@ class _BootSplashState extends State<BootSplash>
   late final AnimationController _controller;
   bool _handedOff = false;
 
+  /// Completed when the bar reaches [BootSplash.progressCeiling] on its own
+  /// clock. Paired with `widget.ready` so neither can finish the splash
+  /// alone — see [_awaitReady].
+  final Completer<void> _fillDone = Completer<void>();
+
   @override
   void initState() {
     super.initState();
@@ -96,12 +105,16 @@ class _BootSplashState extends State<BootSplash>
       vsync: this,
       duration: BootSplash.fillDuration,
     )..addStatusListener(_onStatusChanged);
-    // Drives 0 -> progressCeiling. The rest is only reachable from [_finish].
-    _controller.animateTo(
-      BootSplash.progressCeiling,
-      duration: BootSplash.fillDuration,
-      curve: Curves.easeOutCubic,
-    );
+    // Drives 0 -> progressCeiling. Crossing it needs startup to be done.
+    _controller
+        .animateTo(
+          BootSplash.progressCeiling,
+          duration: BootSplash.fillDuration,
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          if (!_fillDone.isCompleted) _fillDone.complete();
+        });
     unawaited(_awaitReady());
   }
 
@@ -111,17 +124,33 @@ class _BootSplashState extends State<BootSplash>
     super.dispose();
   }
 
-  /// Startup may finish before, during or after the fill — all three end the
-  /// same way, because the finishing animation always runs from wherever the
-  /// bar currently is.
+  /// Waits for BOTH startup and the fill, then completes the bar.
+  ///
+  /// Both, not either, and each direction matters:
+  ///
+  ///  * Startup is almost always the faster of the two, and leaving the
+  ///    moment it lands is what made the splash flash past. The fill is
+  ///    therefore a FLOOR — the screen is shown for [BootSplash.fillDuration]
+  ///    however quick the app was to come up.
+  ///  * A startup slower than the fill still wins: the bar waits at
+  ///    [BootSplash.progressCeiling] rather than sitting at 100% on an app
+  ///    that is not ready, so the readout never claims something untrue.
   Future<void> _awaitReady() async {
     try {
-      await widget.ready;
+      await Future.wait([widget.ready, _fillDone.future]);
     } catch (_) {
       // A failed startup is still a startup: `initializeServices` never
       // throws (every step is caught), and if something upstream ever did,
       // stranding the player on a splash forever is the one response that
-      // helps nobody. Carry on and let the app show whatever state it is in.
+      // helps nobody. The fill still has to finish, so wait that out alone
+      // rather than cutting straight to the hand-off.
+      if (!_fillDone.isCompleted) {
+        try {
+          await _fillDone.future;
+        } catch (_) {
+          // Unreachable — nothing completes this with an error.
+        }
+      }
     }
     if (!mounted) return;
     await _controller.animateTo(
@@ -339,13 +368,25 @@ class _SolidProgressBar extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: radius,
-        child: Align(
+        // `heightFactor: 1` AND NO `Align` AROUND IT, both load-bearing.
+        //
+        // A null factor passes the incoming constraint through unchanged,
+        // and a childless `DecoratedBox` then takes the smallest size that
+        // constraint allows. Wrapped in an `Align` — which loosens the
+        // height — that smallest size is ZERO, so the fill was laid out no
+        // pixels tall and painted nothing at any percentage. The readout
+        // counted up over a permanently empty bar, which is how it shipped.
+        //
+        // CLAUDE.md records this same trap from the opposite direction for
+        // the word chip's strike-through: there the child had its own height
+        // to protect and the `Align` was the fix. Here the child has no
+        // height of its own, so the factor has to supply it.
+        child: FractionallySizedBox(
           alignment: AlignmentDirectional.centerStart,
-          child: FractionallySizedBox(
-            widthFactor: progress,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(color: SplashInkPalette.fill),
-            ),
+          widthFactor: progress.clamp(0.0, 1.0),
+          heightFactor: 1,
+          child: const DecoratedBox(
+            decoration: BoxDecoration(color: SplashInkPalette.fill),
           ),
         ),
       ),

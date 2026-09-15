@@ -71,6 +71,56 @@ void main() {
     expect(find.byType(ShaderMask), findsOneWidget);
   });
 
+  testWidgets('THE BAR ACTUALLY PAINTS ITS FILL — reported from a device as '
+      'a readout that counted up over an empty bar', (tester) async {
+    // The fill sat inside an `Align` (loose constraints) as a
+    // `FractionallySizedBox` with a null `heightFactor` and a childless
+    // `DecoratedBox` under it. A null factor passes the incoming constraint
+    // straight through, and a `DecoratedBox` with no child takes the
+    // SMALLEST size allowed — so the fill was laid out zero pixels tall and
+    // painted nothing, at every percentage, forever.
+    //
+    // This is the same `FractionallySizedBox` trap CLAUDE.md already records
+    // for the word chip's strike-through, arriving from the other side:
+    // there an `Align` was the FIX, because that child had a height of its
+    // own to protect. Here it was the cause.
+    await pumpSplash(
+      tester,
+      ready: Completer<void>().future,
+      onFinished: () {},
+    );
+    await tester.pump();
+    await tester.pump(BootSplash.fillDuration ~/ 2);
+
+    final fill = tester.getSize(_fillFinder);
+    expect(fill.height, greaterThan(0), reason: 'the fill has no height');
+    expect(fill.width, greaterThan(0), reason: 'the fill has no width');
+  });
+
+  testWidgets('the bar starts blank and grows with the readout', (
+    tester,
+  ) async {
+    await pumpSplash(
+      tester,
+      ready: Completer<void>().future,
+      onFinished: () {},
+    );
+    await tester.pump();
+
+    expect(
+      tester.getSize(_fillFinder).width,
+      0,
+      reason: 'nothing has loaded yet, so nothing is filled in',
+    );
+
+    await tester.pump(BootSplash.fillDuration ~/ 2);
+    final midway = tester.getSize(_fillFinder).width;
+    expect(midway, greaterThan(0));
+
+    await tester.pump(BootSplash.fillDuration ~/ 2);
+    expect(tester.getSize(_fillFinder).width, greaterThan(midway));
+  });
+
   testWidgets('the bar climbs while startup is still running', (tester) async {
     await pumpSplash(
       tester,
@@ -157,7 +207,10 @@ void main() {
       reason: 'handed off before the bar had gone anywhere',
     );
 
-    await tester.pump(BootSplash.fillDuration + BootSplash.finishDuration);
+    // Settle rather than pump a measured span: the finishing animation is
+    // started from a microtask once the fill lands, so its ticker only
+    // registers on the following frame.
+    await tester.pumpAndSettle();
 
     expect(finished, isTrue);
     expect(_percentShown(tester), 100);
@@ -201,6 +254,16 @@ void main() {
     expect(calls, 1);
   });
 }
+
+/// The painted fill INSIDE the bar.
+///
+/// Not the `FractionallySizedBox` itself: that sizes to its parent, and the
+/// factor applies to what it hands its child — measuring the box would
+/// measure the whole track and report a full bar at 0%.
+final Finder _fillFinder = find.descendant(
+  of: find.byType(FractionallySizedBox),
+  matching: find.byType(DecoratedBox),
+);
 
 /// The live "NN%" readout, as an int.
 int _percentShown(WidgetTester tester) {
