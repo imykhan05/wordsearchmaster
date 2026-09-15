@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/time/trusted_clock.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
+import '../widgets/app_background.dart';
 import '../widgets/system_back_handler.dart';
 import '../widgets/tap_feedback.dart';
 
@@ -44,7 +45,7 @@ class DailyScreen extends ConsumerWidget {
 
     return SystemBackHandler(
       onBack: goHome,
-      child: Scaffold(
+      child: BackgroundScaffold(
         appBar: AppBar(
           leading: BackButton(onPressed: goHome),
           title: Text(l10n.navDaily),

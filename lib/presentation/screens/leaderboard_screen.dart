@@ -18,6 +18,7 @@ import '../../services/time/trusted_clock.dart';
 import '../meta/friends_tab.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/flavor_badge.dart';
+import '../widgets/app_background.dart';
 import '../widgets/system_back_handler.dart';
 import '../widgets/tap_feedback.dart';
 import '../widgets/sync_status.dart';
@@ -63,7 +64,7 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
 
     return SystemBackHandler(
       onBack: goHome,
-      child: Scaffold(
+      child: BackgroundScaffold(
         appBar: AppBar(
           leading: BackButton(onPressed: goHome),
           title: Text(l10n.navLeaderboard),

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/theme.dart';
@@ -18,7 +18,9 @@ import '../../services/background/background_settings.dart';
 /// photo.
 ///
 /// A screen using this must make its `Scaffold` transparent, or the Scaffold's
-/// own opaque colour paints straight over it.
+/// own opaque colour paints straight over it — which is exactly the trap
+/// [BackgroundScaffold] exists to close. Prefer that over pairing these two
+/// by hand.
 class AppBackground extends ConsumerWidget {
   const AppBackground({required this.child, super.key});
 
@@ -142,6 +144,38 @@ class _BackgroundLayer extends StatelessWidget {
           end: Alignment.bottomCenter,
           colors: [stops.from, stops.to],
         ),
+      ),
+    );
+  }
+}
+
+/// [AppBackground] and a `Scaffold` that does not paint over it.
+///
+/// EVERY full screen in this app should use this rather than pairing the two
+/// by hand. The pairing is three lines, and one of them is a trap: a Scaffold
+/// keeps its own opaque background unless told otherwise, so forgetting it
+/// does not fail loudly — it silently paints the page colour straight over
+/// the artwork and the screen simply looks like it never had a background.
+/// That is precisely how Home and the game screen ended up with one while the
+/// journey map, the daily, the leaderboard, the profile and settings did not,
+/// which a player noticed the moment they opened the map.
+///
+/// The transparent colour is a TOKEN AT ZERO ALPHA rather than
+/// `Colors.transparent`, which `tool/check_no_raw_colors.dart` rejects.
+class BackgroundScaffold extends StatelessWidget {
+  const BackgroundScaffold({required this.body, this.appBar, super.key});
+
+  final Widget body;
+  final PreferredSizeWidget? appBar;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: AppTokens.of(context).colors.background
+            .withValues(alpha: 0),
+        appBar: appBar,
+        body: body,
       ),
     );
   }

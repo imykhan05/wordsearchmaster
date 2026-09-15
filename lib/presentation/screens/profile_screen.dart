@@ -12,6 +12,7 @@ import '../meta/category_labels.dart';
 import '../meta/journey_providers.dart';
 import '../meta/meta_tiles.dart';
 import '../widgets/language_tile.dart';
+import '../widgets/app_background.dart';
 import '../widgets/system_back_handler.dart';
 import '../widgets/tap_feedback.dart';
 
@@ -40,7 +41,7 @@ class ProfileScreen extends ConsumerWidget {
 
     return SystemBackHandler(
       onBack: goHome,
-      child: Scaffold(
+      child: BackgroundScaffold(
         appBar: AppBar(
           leading: BackButton(onPressed: goHome),
           title: Text(l10n.navProfile),

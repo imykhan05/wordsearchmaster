@@ -10,6 +10,7 @@ import '../../domain/models/word_entry.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../widgets/flavor_badge.dart';
+import '../widgets/app_background.dart';
 import '../widgets/system_back_handler.dart';
 import '../widgets/tap_feedback.dart';
 
@@ -108,11 +109,12 @@ class LanguageScreen extends ConsumerWidget {
       ),
     );
 
-    if (!returning) return Scaffold(body: body);
+    // No AppBar on a first launch: there is nowhere valid to go back TO yet.
+    if (!returning) return BackgroundScaffold(body: body);
 
     return SystemBackHandler(
       onBack: goHome,
-      child: Scaffold(
+      child: BackgroundScaffold(
         appBar: AppBar(leading: BackButton(onPressed: goHome)),
         body: body,
       ),
