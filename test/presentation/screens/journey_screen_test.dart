@@ -46,6 +46,7 @@ void main() {
     WidgetTester tester, {
     Map<int, int> starsByLevel = const {},
     int levelCount = 30,
+    bool reduceMotion = false,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -57,11 +58,14 @@ void main() {
             ),
           ),
         ],
-        child: MaterialApp(
-          theme: AppTheme.dark(),
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: const JourneyScreen(),
+        child: MediaQuery(
+          data: MediaQueryData(disableAnimations: reduceMotion),
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: const JourneyScreen(),
+          ),
         ),
       ),
     );
@@ -84,6 +88,40 @@ void main() {
       0,
       reason: 'an opaque Scaffold paints straight over the background',
     );
+  });
+
+  group('the trail and the halo', () {
+    testWidgets('the nodes sit on a painted trail', (tester) async {
+      await pumpJourney(tester);
+
+      // Geometry is derived from the level number rather than measured, so
+      // the painter exists from the very first frame — no region scrolls in
+      // with its circles briefly unconnected.
+      expect(find.byType(CustomPaint), findsWidgets);
+    });
+
+    testWidgets('THE HALO STOPS BREATHING — a permanent pulse would schedule '
+        'frames forever and hang every test that visits this screen', (
+      tester,
+    ) async {
+      // `pumpAndSettle` in the harness already proves this (it waits for
+      // frames to stop and would time out), but stating it as its own case
+      // means the next person to reach for `repeat()` here is told why not.
+      await pumpJourney(tester);
+
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
+    testWidgets('reduce-motion keeps the ring and drops the movement', (
+      tester,
+    ) async {
+      // The halo says WHICH node you are on, so it is information; the
+      // breathing is the decoration. Only the second one goes.
+      await pumpJourney(tester, reduceMotion: true);
+
+      expect(find.text('1'), findsOneWidget);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
   });
 
   testWidgets('groups the path into ten-level regions', (tester) async {
