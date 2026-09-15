@@ -7,6 +7,7 @@ import 'package:word_search_master/domain/progression/journey_region.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/meta/journey_providers.dart';
 import 'package:word_search_master/presentation/screens/journey_screen.dart';
+import 'package:word_search_master/presentation/widgets/app_background.dart';
 
 /// Ch02's journey map: regions of ten, locked nodes VISIBLE but dimmed, and
 /// an auto-scroll that lands on the current node.
@@ -66,6 +67,24 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('the map sits on the chosen background, like Home and the game '
+      'screen do', (tester) async {
+    // Reported from a device: the artwork was behind Home and the grid but
+    // not behind the level map, which is the screen a player looks at
+    // longest. The nodes need no extra treatment over it — each is an opaque
+    // disc — so this is only ever a question of the wrapper being there.
+    await pumpJourney(tester);
+
+    expect(find.byType(AppBackground), findsOneWidget);
+
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(
+      scaffold.backgroundColor?.a,
+      0,
+      reason: 'an opaque Scaffold paints straight over the background',
+    );
+  });
 
   testWidgets('groups the path into ten-level regions', (tester) async {
     await pumpJourney(tester);

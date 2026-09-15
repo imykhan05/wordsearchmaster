@@ -8,6 +8,7 @@ import '../../domain/progression/journey_region.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 import '../meta/journey_providers.dart';
+import '../widgets/app_background.dart';
 import '../widgets/system_back_handler.dart';
 import '../widgets/tap_feedback.dart';
 
@@ -59,6 +60,7 @@ class JourneyScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
+    final tokens = AppTokens.of(context);
     final mapAsync = ref.watch(journeyMapProvider);
 
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
@@ -70,15 +72,28 @@ class JourneyScreen extends ConsumerWidget {
 
     return SystemBackHandler(
       onBack: goHome,
-      child: Scaffold(
-        appBar: AppBar(
-          leading: BackButton(onPressed: goHome),
-          title: Text(l10n.navJourney),
-        ),
-        body: mapAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, _) => Center(child: Text('$error')),
-          data: (map) => _JourneyPath(map: map),
+      child: AppBackground(
+        child: Scaffold(
+          // Transparent so the chosen background shows through — a token at
+          // zero alpha rather than `Colors.transparent`, which
+          // `check_no_raw_colors` rejects. Same pairing as `home_screen.dart`
+          // and `game_screen.dart`.
+          //
+          // The map is safe over artwork without any extra treatment: every
+          // node is an opaque disc of its own (`surfaceElevated`, or the
+          // region accent once completed), so the picture only ever shows in
+          // the gaps between them — the nodes are cards, in the sense the
+          // scrim was written for.
+          backgroundColor: tokens.colors.background.withValues(alpha: 0),
+          appBar: AppBar(
+            leading: BackButton(onPressed: goHome),
+            title: Text(l10n.navJourney),
+          ),
+          body: mapAsync.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => Center(child: Text('$error')),
+            data: (map) => _JourneyPath(map: map),
+          ),
         ),
       ),
     );
