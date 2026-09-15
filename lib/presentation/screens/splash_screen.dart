@@ -238,9 +238,9 @@ class _SplashProgress extends StatelessWidget {
       children: [
         // toUpperCase() is a display transform, not new copy — a no-op on
         // Urdu/Hindi, which have no case distinction.
-        Text(
-          '${loadingLabel.toUpperCase()}…',
-          textAlign: TextAlign.center,
+        _FillingCaption(
+          text: '${loadingLabel.toUpperCase()}…',
+          progress: progress,
           style: captionStyle,
         ),
         const SizedBox(height: AppTokens.space12),
@@ -248,6 +248,70 @@ class _SplashProgress extends StatelessWidget {
         const SizedBox(height: AppTokens.space12),
         Text('$percent%', textAlign: TextAlign.center, style: percentStyle),
       ],
+    );
+  }
+}
+
+/// The word "LOADING…" inking itself in as the app comes up — the same
+/// progress the bar and the percentage are already showing, on the third
+/// element of the readout that was sitting there static.
+///
+/// A [ShaderMask] with a HARD STOP rather than two stacked `Text`s clipped
+/// against each other: the two-Text approach has to lay the string out
+/// twice, in perfect register, and any disagreement between the two (a
+/// rounding difference in centring, a font falling back on one and not the
+/// other) shows up as a visible seam down the middle of a letter. One text,
+/// one layout, a mask over it — the edge lands mid-glyph by construction and
+/// cannot drift.
+///
+/// The mask spans the TEXT's own box, not the row's full width, which is why
+/// the caller centres it rather than letting the stretched `Column` hand it
+/// the whole line. Across the full width the word — narrower, centred —
+/// would sit untouched until progress reached its left edge and then finish
+/// well before 100%, which is precisely the thing it is here to stop doing.
+///
+/// Fills along the READING direction, so Urdu inks right to left.
+class _FillingCaption extends StatelessWidget {
+  const _FillingCaption({
+    required this.text,
+    required this.progress,
+    required this.style,
+  });
+
+  final String text;
+  final double progress;
+  final TextStyle style;
+
+  /// The ink still to come. Same hue, so the word reads as one word being
+  /// filled rather than two colours of text.
+  static final Color _unfilled = SplashInkPalette.fill.withValues(alpha: 0.28);
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = progress.clamp(0.0, 1.0);
+    final leftToRight = Directionality.of(context) == TextDirection.ltr;
+
+    return Center(
+      child: ShaderMask(
+        // srcIn paints the shader THROUGH the glyphs, so the letter shapes
+        // are the mask and the gradient only decides their colour.
+        blendMode: BlendMode.srcIn,
+        shaderCallback: (bounds) => LinearGradient(
+          begin: leftToRight ? Alignment.centerLeft : Alignment.centerRight,
+          end: leftToRight ? Alignment.centerRight : Alignment.centerLeft,
+          // Two identical stops at `filled` is what makes this an EDGE
+          // rather than a gradient — a smooth ramp would read as the word
+          // fading out, not as a level rising through it.
+          colors: [
+            SplashInkPalette.fill,
+            SplashInkPalette.fill,
+            _unfilled,
+            _unfilled,
+          ],
+          stops: [0, filled, filled, 1],
+        ).createShader(bounds),
+        child: Text(text, textAlign: TextAlign.center, style: style),
+      ),
     );
   }
 }

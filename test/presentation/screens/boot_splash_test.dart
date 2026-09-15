@@ -45,6 +45,32 @@ void main() {
     expect(find.text('0%'), findsOneWidget);
   });
 
+  testWidgets('the LOADING caption inks in with the bar, not just beside it', (
+    tester,
+  ) async {
+    // The word itself is masked so it fills along with the bar and the
+    // percentage. Asserting the mask EXISTS is the guard worth having: the
+    // edge's position comes from the same `progress` the percentage tests
+    // above already pin, so what could regress here is the treatment being
+    // dropped in a refactor and the caption going back to flat text.
+    await pumpSplash(
+      tester,
+      ready: Completer<void>().future,
+      onFinished: () {},
+    );
+    await tester.pump();
+
+    expect(
+      find.ancestor(
+        of: find.textContaining('%').hitTestable(),
+        matching: find.byType(ShaderMask),
+      ),
+      findsNothing,
+      reason: 'the percentage is a plain readout; only the caption is masked',
+    );
+    expect(find.byType(ShaderMask), findsOneWidget);
+  });
+
   testWidgets('the bar climbs while startup is still running', (tester) async {
     await pumpSplash(
       tester,
