@@ -142,7 +142,7 @@ final class BootstrapServices {
 /// is up, so a handler installed before the SDK exists still records.
 ///
 /// ---------------------------------------------------------------------------
-/// STEPS 5–8 CAN NEVER BLOCK OR CRASH STARTUP
+/// NO STEP CAN BLOCK OR CRASH STARTUP
 ///
 /// Every step below runs inside [_step], which catches everything and logs.
 /// That is not defensive habit — it is the first acceptance criterion: a cold
@@ -151,6 +151,28 @@ final class BootstrapServices {
 /// designed so that the result is a local-only guest session, which is a
 /// fully supported mode rather than a degraded one (Drift is the source of
 /// truth — CLAUDE.md → Architecture).
+///
+/// EVERY NETWORK STEP CARRIES A CEILING ([_networkStepCeiling]), and this
+/// used to be true of only some of them. Remote Config (step 5) and ads
+/// (step 8) each bounded themselves at 3s, while `Firebase.initializeApp`,
+/// App Check and the anonymous sign-in — three sequential round trips, on the
+/// coldest connection the app will ever make — awaited with no bound at all.
+/// FAILING is not the case that hurts there; a plane fails fast and the app
+/// comes up local-only. The case that hurts is a connection that neither
+/// succeeds nor fails, which is the ordinary state of a weak mobile signal,
+/// and it held the FIRST FRAME hostage for as long as the platform SDK felt
+/// like waiting. A ceiling turns that into the airplane path, which is a
+/// path this app already supports everywhere.
+///
+/// A step that times out degrades exactly as a step that throws does — same
+/// `catch`, same log, same null local, same fallback binding — so no new
+/// failure mode is introduced by bounding one.
+///
+/// The LOCAL steps (database, content, audio) are deliberately left
+/// unbounded. They cannot hang on a network, and cutting them off would not
+/// protect the player from anything: `isPlayable` needs the database and the
+/// content pack, so a timeout there would trade a slow start for a game that
+/// cannot start at all.
 ///
 /// The seams ([firebase], [openDatabase], [loadContent], [loadAudio],
 /// [initAds]) exist so `bootstrap_offline_test.dart` can make each of those
@@ -174,24 +196,41 @@ Future<BootstrapServices> initializeServices(
   // ---- 2. Firebase.initializeApp ----
   final gateway = firebase ?? LiveFirebaseGateway(config);
   FirebaseServices? services;
-  await _step(config, 'firebase.initializeApp', () async {
-    services = await gateway.initialize();
-  });
+  await _step(
+    config,
+    'firebase.initializeApp',
+    timeout: _networkStepCeiling,
+    () async {
+      services = await gateway.initialize();
+    },
+  );
   if (services case final FirebaseServices live) {
     reporter = live.reporter;
   }
 
   // ---- 3. App Check activate — BEFORE any other Firebase call ----
   final policy = AppCheckPolicy.forFlavor(config.flavor);
-  await _step(config, 'appCheck.activate', () async {
-    await (services?.appCheck ?? const NoopAppCheckGateway()).activate(policy);
-  });
+  await _step(
+    config,
+    'appCheck.activate',
+    timeout: _networkStepCeiling,
+    () async {
+      await (services?.appCheck ?? const NoopAppCheckGateway()).activate(
+        policy,
+      );
+    },
+  );
 
   // ---- 4. Anonymous auth — silent, never blocks the player ----
   final auth = services?.auth ?? const NoopAuthService();
-  await _step(config, 'auth.signInAnonymously', () async {
-    await auth.ensureSignedIn();
-  });
+  await _step(
+    config,
+    'auth.signInAnonymously',
+    timeout: _networkStepCeiling,
+    () async {
+      await auth.ensureSignedIn();
+    },
+  );
 
   // ---- 5. Remote Config fetch — 3s timeout, defaults as fallback ----
   var remoteConfigFetched = false;
@@ -435,6 +474,13 @@ Future<void> bootstrap(
   );
 }
 
+/// How long any ONE network-touching bootstrap step may hold the first frame.
+///
+/// The same 3s `FirebaseRemoteConfigService.fetchTimeout` already used, and
+/// deliberately the same number rather than a second one to tune: these are
+/// the same class of wait, against the same connection, for the same reason.
+const Duration _networkStepCeiling = Duration(seconds: 3);
+
 Future<void> _step(
   AppConfig config,
   String name,
@@ -444,10 +490,18 @@ Future<void> _step(
   /// it back. Most steps need nothing here — their local simply stays null and
   /// the matching provider falls back on its own.
   void Function()? onError,
+
+  /// A hard ceiling on this step. Passed for the network steps and left off
+  /// for the local ones — see the ordering header for why that split is
+  /// deliberate rather than an omission.
+  ///
+  /// A timeout lands in the same `catch` as any other failure, so a bounded
+  /// step degrades through the path it already had rather than a new one.
+  Duration? timeout,
 }) async {
   final stopwatch = Stopwatch()..start();
   try {
-    await run();
+    await (timeout == null ? run() : run().timeout(timeout));
     _log(config, 'bootstrap: $name ok (${stopwatch.elapsedMilliseconds}ms)');
   } catch (error) {
     onError?.call();

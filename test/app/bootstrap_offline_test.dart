@@ -279,6 +279,62 @@ void main() {
       );
     }, timeout: const Timeout(Duration(seconds: 20)));
   });
+
+  /// A WEAK SIGNAL IS NOT THE SAME FAILURE AS NO SIGNAL, and only the second
+  /// one was covered before. Every test above hands bootstrap a Firebase that
+  /// fails IMMEDIATELY — a plane, or an unconfigured checkout — and those
+  /// were always fine, because failing fast is fast.
+  ///
+  /// The case a player actually hits on mobile data is the connection that
+  /// neither succeeds nor fails. `Firebase.initializeApp` sat in front of
+  /// `runApp` with no ceiling on it, so a hang there was a hang of the FIRST
+  /// FRAME: the app showed nothing at all, not even the splash, for as long
+  /// as the platform SDK wanted.
+  group('a network that hangs rather than failing', () {
+    test(
+      'a hung Firebase init is bounded, and the game still comes up',
+      () async {
+        final started = Stopwatch()..start();
+        final services = await initializeServices(
+          AppConfig.dev(),
+          firebase: _HangingFirebaseGateway(),
+          openDatabase: NativeDatabase.memory,
+          loadContent: buildTestContentRepository,
+          loadAudio: () async => const NoopAudioService(),
+        );
+        started.stop();
+
+        expect(
+          services.firebaseAvailable,
+          isFalse,
+          reason: 'the ceiling must win, leaving the documented offline path',
+        );
+        expect(
+          services.isPlayable,
+          isTrue,
+          reason: 'a hung network is still a playable local game',
+        );
+        expect(
+          started.elapsed,
+          lessThan(const Duration(seconds: 25)),
+          reason: 'bootstrap waited on the 60s hang instead of its own ceiling',
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 40)),
+    );
+  });
+}
+
+/// The weak-signal shape: `initialize()` never answers either way.
+///
+/// 60s so the assertion is unambiguous — anything that waits this out is
+/// waiting on the hang, not on a ceiling.
+final class _HangingFirebaseGateway implements FirebaseGateway {
+  @override
+  Future<FirebaseServices?> initialize() => Future<FirebaseServices?>.delayed(
+    const Duration(seconds: 60),
+    () => null,
+  );
 }
 
 final class _ThrowingFirebaseGateway implements FirebaseGateway {

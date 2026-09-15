@@ -52,10 +52,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   /// that pumps the real app root (`app_smoke_test.dart` and siblings)
   /// depends on.
   ///
-  /// PLAYER-REQUESTED at 15–20s so the screen reads as a real load (a
-  /// progress bar filling), not an instant brand flash. Picked the middle of
-  /// that range.
-  static const Duration _displayDuration = Duration(seconds: 18);
+  /// Was 18s, PLAYER-REQUESTED at the time as "15–20s so it reads as a real
+  /// load". Reported back from a device as simply too long a wait, and the
+  /// reason it read that way is worth keeping: this hold is a FIXED animation
+  /// that never had anything to do with loading. It ran its bar to 100%
+  /// whether the app was ready in half a second or not ready at all, so the
+  /// longer it was set, the more of it was a screen the player sat through
+  /// for nothing.
+  ///
+  /// Three seconds is a brand beat rather than a wait. The honest version —
+  /// a splash that shows immediately and lasts exactly as long as startup
+  /// actually takes — is the next change on top of this one.
+  static const Duration _displayDuration = Duration(seconds: 3);
 
   late final AnimationController _controller;
 

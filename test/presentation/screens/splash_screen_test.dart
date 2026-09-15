@@ -25,9 +25,9 @@ import 'package:word_search_master/services/settings/ui_settings_store.dart';
 /// the right moment.
 void main() {
   // Kept in one place — every timing assertion below is phrased relative to
-  // this instead of a repeated literal, so a future duration change (still
-  // somewhere in the 15-20s range the brief asked for) only moves one line.
-  const displayDuration = Duration(seconds: 18);
+  // this instead of a repeated literal, so a duration change only moves one
+  // line. Must match `_SplashScreenState._displayDuration`.
+  const displayDuration = Duration(seconds: 3);
 
   Future<void> pumpSplash(
     WidgetTester tester, {
