@@ -9,19 +9,9 @@ sealed class AppRoute {
   String get location;
 }
 
-/// The very first thing any launch shows — see `splash_screen.dart`'s own
-/// header. Always the app's `initialLocation`; it is the ONE screen every
-/// player sees regardless of whether they are FTUE or returning, which is
-/// exactly why it is the router's start rather than a conditional like
-/// [LanguageRoute] vs [HomeRoute] used to be.
-final class SplashRoute extends AppRoute {
-  const SplashRoute();
-
-  static const name = 'splash';
-
-  @override
-  String get location => '/';
-}
+// There is no SplashRoute. The splash is not a destination any more — it
+// runs in front of `runApp` (`BootSplash`, mounted by `bootstrap.dart`'s
+// `_BootGate`) and is gone before this router exists. See `router.dart`.
 
 final class LanguageRoute extends AppRoute {
   const LanguageRoute();

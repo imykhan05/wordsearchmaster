@@ -1,78 +1,108 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'dart:async';
 
-import '../../app/app_route.dart';
-import '../../app/language/selected_language.dart';
+import 'package:flutter/material.dart';
+
 import '../../app/theme/theme.dart';
 import '../../domain/text/language.dart';
 import '../../l10n/app_localizations.dart';
 
-/// The very first screen any launch shows — [SplashRoute], always the
-/// router's `initialLocation`.
+/// The very first thing any launch paints, and — since it now runs BEFORE
+/// there is a `ProviderScope` — the one screen in this app that reads no
+/// provider at all.
 ///
-/// PLAYER-SUPPLIED art now carries the whole scene:
+/// ---------------------------------------------------------------------------
+/// WHY THIS IS NOT A ROUTED SCREEN ANY MORE
+///
+/// It used to be `SplashRoute`, the router's `initialLocation`, holding for a
+/// fixed 18s (later 3s) on an `AnimationController`. Two things were wrong
+/// with that, and they were the same thing twice:
+///
+///  * The bar was never a load. It filled on a timer, so it reached 100%
+///    whether the app was ready or not — and the player waited out whatever
+///    the number happened to be set to, on top of the real startup.
+///  * Nothing was on screen during the startup it claimed to be showing.
+///    `bootstrap` awaited every init step before `runApp`, so the actual wait
+///    — Firebase, App Check, sign-in, the database, the content pack — was
+///    spent on a blank window, and this screen only appeared once all of it
+///    had already finished.
+///
+/// So it moved in front of `runApp` ([BootGate], `app/bootstrap.dart`). It is
+/// mounted within a frame of process start, it shows the real init running
+/// behind it, and it hands off the moment that init is done. The visible wait
+/// is now exactly startup, once, instead of startup followed by a timer.
+///
+/// [progressCeiling] is the honesty rule: the bar eases toward it while work
+/// is outstanding and only crosses it once [ready] has actually resolved, so
+/// 100% never means anything except "the app is up".
+///
+/// ---------------------------------------------------------------------------
+/// PLAYER-SUPPLIED art carries the whole scene:
 /// `assets/branding/splash_background.png`, a parchment-and-quill
 /// illustration with the wordmark and two decorative word-search grids
-/// painted directly into it. This screen no longer renders its own name —
-/// the artwork already has one — and no longer wraps in `AppBackground`,
-/// because that widget paints the player's chosen in-game theme, and this
-/// is a fixed piece of branding shown before any theme has even loaded.
+/// painted directly into it. This screen renders no name of its own — the
+/// artwork already has one — and does not wrap in `AppBackground`, which
+/// paints the player's chosen in-game theme; this is fixed branding shown
+/// before a theme (or a database to read one from) exists.
 ///
-/// The one thing this screen still renders itself is the "LOADING… NN%"
-/// readout: a real percentage has to be live, so it is drawn on top of the
-/// artwork in the same spot and style its own mock-up used, in ink-brown
-/// sampled straight from that art ([SplashInkPalette]) rather than the app's
-/// in-game marigold — a colour choice this ONE screen makes and no other
-/// screen should copy.
-///
-/// The background music needs no wiring here at all — `musicSync`
-/// (`services/audio/audio_service.dart`) is watched once at the app root and
-/// fires the instant `WordSearchMasterApp` builds, which is BEFORE this
-/// screen's own first frame, so the bed is already running by the time a
-/// player sees the wordmark.
-///
-/// This is also the ONE place `hasChosenLanguageProvider` is read now —
-/// see `router.dart`'s header for why moving it here, out of the router
-/// itself, is a strict improvement over the shape it replaced.
-class SplashScreen extends ConsumerStatefulWidget {
-  const SplashScreen({super.key});
+/// The "LOADING… NN%" readout is drawn in ink-brown sampled straight from
+/// that art ([SplashInkPalette]) rather than the app's in-game marigold — a
+/// colour choice this ONE screen makes and no other screen should copy.
+class BootSplash extends StatefulWidget {
+  const BootSplash({
+    required this.ready,
+    required this.onFinished,
+    this.language = Language.english,
+    super.key,
+  });
+
+  /// Startup itself. The hand-off waits on this, never on a clock.
+  final Future<void> ready;
+
+  /// Fired once — [ready] has resolved AND the bar has actually arrived at
+  /// 100%, so the player never sees the screen cut away mid-fill.
+  final VoidCallback onFinished;
+
+  /// Typography only. Defaults to English because the stored choice lives in
+  /// the settings store, which is part of the very startup this screen is
+  /// waiting on — there is nothing else it could honestly use yet.
+  final Language language;
+
+  /// How far the bar may fill on the timer alone. Past this point it is
+  /// waiting on [ready], not on time.
+  static const double progressCeiling = 0.9;
+
+  /// How long the bar takes to ease up to [progressCeiling]. Not a hold: if
+  /// startup outlasts it the bar simply sits there, and if startup finishes
+  /// first the remaining fill still runs, which is what keeps a fast launch
+  /// from flashing past too fast to read.
+  static const Duration fillDuration = Duration(milliseconds: 1400);
+
+  /// The last stretch, [progressCeiling] to 1.0, once startup is done.
+  static const Duration finishDuration = Duration(milliseconds: 260);
 
   @override
-  ConsumerState<SplashScreen> createState() => _SplashScreenState();
+  State<BootSplash> createState() => _BootSplashState();
 }
 
-class _SplashScreenState extends ConsumerState<SplashScreen>
+class _BootSplashState extends State<BootSplash>
     with SingleTickerProviderStateMixin {
-  /// How long the brand stays on screen, start to hand-off. ONE controller
-  /// drives the WHOLE window — deliberately not a separate `Timer`, because
-  /// `pumpAndSettle()` stops the instant no frame is scheduled, not when
-  /// every pending `Timer` has fired; a controller ticking for the full
-  /// duration keeps a frame scheduled throughout, which is what every test
-  /// that pumps the real app root (`app_smoke_test.dart` and siblings)
-  /// depends on.
-  ///
-  /// Was 18s, PLAYER-REQUESTED at the time as "15–20s so it reads as a real
-  /// load". Reported back from a device as simply too long a wait, and the
-  /// reason it read that way is worth keeping: this hold is a FIXED animation
-  /// that never had anything to do with loading. It ran its bar to 100%
-  /// whether the app was ready in half a second or not ready at all, so the
-  /// longer it was set, the more of it was a screen the player sat through
-  /// for nothing.
-  ///
-  /// Three seconds is a brand beat rather than a wait. The honest version —
-  /// a splash that shows immediately and lasts exactly as long as startup
-  /// actually takes — is the next change on top of this one.
-  static const Duration _displayDuration = Duration(seconds: 3);
-
   late final AnimationController _controller;
+  bool _handedOff = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: _displayDuration)
-      ..addStatusListener(_onStatusChanged)
-      ..forward();
+    _controller = AnimationController(
+      vsync: this,
+      duration: BootSplash.fillDuration,
+    )..addStatusListener(_onStatusChanged);
+    // Drives 0 -> progressCeiling. The rest is only reachable from [_finish].
+    _controller.animateTo(
+      BootSplash.progressCeiling,
+      duration: BootSplash.fillDuration,
+      curve: Curves.easeOutCubic,
+    );
+    unawaited(_awaitReady());
   }
 
   @override
@@ -81,32 +111,47 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     super.dispose();
   }
 
-  void _onStatusChanged(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
-    _proceed();
+  /// Startup may finish before, during or after the fill — all three end the
+  /// same way, because the finishing animation always runs from wherever the
+  /// bar currently is.
+  Future<void> _awaitReady() async {
+    try {
+      await widget.ready;
+    } catch (_) {
+      // A failed startup is still a startup: `initializeServices` never
+      // throws (every step is caught), and if something upstream ever did,
+      // stranding the player on a splash forever is the one response that
+      // helps nobody. Carry on and let the app show whatever state it is in.
+    }
+    if (!mounted) return;
+    await _controller.animateTo(
+      1,
+      duration: BootSplash.finishDuration,
+      curve: Curves.easeOut,
+    );
   }
 
-  /// One-shot, like every other post-timer navigation in this app —
-  /// guarded by [mounted] because a player can back out (or a test can tear
-  /// the tree down) before the controller ever completes.
-  ///
-  /// Reads [hasChosenLanguageProvider] rather than watching it: this widget
-  /// is about to navigate away and never rebuild, so a watch would only cost
-  /// a subscription this screen will not live long enough to use.
-  void _proceed() {
-    if (!mounted) return;
-    final returning = ref.read(hasChosenLanguageProvider);
-    context.go(
-      returning ? const HomeRoute().location : const LanguageRoute().location,
-    );
+  void _onStatusChanged(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    // `animateTo(progressCeiling)` also reports `completed`, so the value is
+    // what decides, not the status alone.
+    if (_controller.value < 1) return;
+    if (_handedOff) return;
+    _handedOff = true;
+    widget.onFinished();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final language = ref.watch(selectedLanguageProvider);
+    final language = widget.language;
 
     return Scaffold(
+      // The parchment tone of the artwork itself, so the very first painted
+      // frame is already the right colour. Decoding the image takes a frame
+      // or two, and the default Material white behind it would read as a
+      // flash at the exact moment this screen exists to make calm.
+      backgroundColor: SplashInkPalette.track,
       body: Stack(
         fit: StackFit.expand,
         children: [

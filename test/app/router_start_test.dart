@@ -8,12 +8,12 @@ import 'package:word_search_master/domain/text/language.dart';
 import 'package:word_search_master/services/settings/ui_settings_store.dart';
 
 /// Where the app OPENS, which is not the same question as which routes exist
-/// (`app_smoke_test.dart` covers those) — and, since the splash landed, not
-/// the same question as where a launch ENDS UP either. That second question
-/// is `splash_screen_test.dart`'s: it is the splash, not the router, that now
-/// decides FTUE-picker vs. Home, once, right before its own one-shot
-/// navigation. This file is scoped to what `routerProvider` itself controls:
-/// a single, unconditional entry point.
+/// (`app_smoke_test.dart` covers those).
+///
+/// The splash is no longer part of this answer. It runs in front of `runApp`
+/// now (`BootSplash`, see `boot_splash_test.dart`), so it is finished and
+/// gone before this router is built — leaving the router with the one
+/// decision it started with: picker on a first launch, Home after that.
 void main() {
   String startLocationFor({Language? savedLanguage}) {
     final container = ProviderContainer(
@@ -31,27 +31,28 @@ void main() {
     return router.routeInformationProvider.value.uri.toString();
   }
 
-  test('every launch opens on the splash, FTUE or returning alike', () {
-    expect(startLocationFor(), const SplashRoute().location);
+  test('a first launch opens on the language picker', () {
+    expect(startLocationFor(), const LanguageRoute().location);
+  });
+
+  test('a returning player opens on Home, not the picker again', () {
     expect(
       startLocationFor(savedLanguage: Language.urdu),
-      const SplashRoute().location,
+      const HomeRoute().location,
     );
   });
 
-  test('the router never reads hasChosenLanguageProvider, so it cannot be '
-      'rebuilt out from under a running session by it', () {
-    // The previous shape had `routerProvider` itself read this provider to
-    // build `initialLocation` — `read`, deliberately not `watch`, and ONLY
-    // safe because that read happened once, at construction. Moving the
-    // FTUE-vs-returning decision into the splash screen (which reads it
-    // once, right before its own one-shot navigation — see
-    // `splash_screen_test.dart`) removes the dependency from the router
-    // entirely, which is a strictly stronger guarantee than "read once":
-    // the router provider cannot be invalidated by a change to a provider
-    // it never touches, so this asserts exactly that — build the router,
-    // change the language, invalidate the OTHER provider, and confirm the
-    // router instance never moved.
+  test('the language is READ, so picking one cannot rebuild the router out '
+      'from under the session that tap just started', () {
+    // `read`, deliberately not `watch`, and this is the case that makes the
+    // difference visible: an FTUE player taps a language card, which writes
+    // the choice — and a watching router would rebuild itself right then,
+    // throwing them out of whatever that tap had just begun.
+    //
+    // Invalidating the OTHER provider here is the strongest form of the
+    // assertion available: even when the thing it read is explicitly torn
+    // down and recomputed, this provider is not rebuilt, because nothing
+    // subscribed it to that.
     final settings = InMemoryUiSettingsStore();
     final container = ProviderContainer(
       overrides: [
@@ -65,7 +66,7 @@ void main() {
     addTearDown(router.dispose);
     expect(
       router.routeInformationProvider.value.uri.toString(),
-      const SplashRoute().location,
+      const LanguageRoute().location,
     );
 
     settings.selectedLanguage = Language.hindi;
@@ -74,7 +75,7 @@ void main() {
     expect(
       container.read(routerProvider),
       same(router),
-      reason: 'the router was not rebuilt out from under the running session',
+      reason: 'the router was rebuilt out from under the running session',
     );
   });
 }

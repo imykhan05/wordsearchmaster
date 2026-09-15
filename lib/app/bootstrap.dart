@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show QueryExecutor;
 import 'package:drift_flutter/drift_flutter.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/content/content_repository.dart';
@@ -15,6 +15,8 @@ import '../data/remote/notification_registration_api.dart';
 import '../data/remote/sync_api.dart';
 import '../data/remote/user_stats_api.dart';
 import '../data/repositories/streak_repository.dart';
+import '../l10n/app_localizations.dart';
+import '../presentation/screens/splash_screen.dart';
 import '../services/ads/ad_gateway.dart';
 import '../services/ads/max_ad_gateway.dart';
 import '../services/analytics/analytics_service.dart';
@@ -401,69 +403,43 @@ Future<AdGateway> _initMaxAdGateway(AdUnitIds ids, AppConfig config) async {
   return gateway;
 }
 
-/// Steps 1–8, then 9: `runApp`.
+/// `runApp` FIRST, then steps 1–8 behind the splash.
+///
+/// ---------------------------------------------------------------------------
+/// WHY THIS IS THE OTHER WAY ROUND NOW
+///
+/// This used to be `await initializeServices(config)` and only then
+/// `runApp`, which meant the window stayed EMPTY for the whole of startup:
+/// Firebase, App Check, the anonymous sign-in, Remote Config, the database
+/// open and migration, the content pack, the audio preload. On a weak signal
+/// that is seconds of a blank screen, and the splash — the one thing built to
+/// say "this is loading" — could not appear until after all of it, because it
+/// lived inside the tree that had not been mounted yet.
+///
+/// So the first frame no longer waits for anything. [_BootGate] mounts
+/// [BootSplash] immediately, starts [initializeServices] alongside it, and
+/// swaps in the real `ProviderScope` the moment that resolves. The work is
+/// identical and in the same order — `initializeServices` is untouched, and
+/// `bootstrap_offline_test.dart` still drives it directly — it simply happens
+/// with something on screen instead of nothing.
+///
+/// The ceiling work in the header above matters MORE here, not less: a step
+/// that hangs no longer freezes a blank window, but it would still hold the
+/// splash, so every network step is still bounded.
 Future<void> bootstrap(
   AppConfig config,
   FutureOr<Widget> Function() appBuilder,
 ) async {
   await runZonedGuarded<Future<void>>(
     () async {
-      final services = await initializeServices(config);
+      // Step 1, hoisted: `runApp` needs the binding, and the handlers want to
+      // be installed before anything else can throw. `initializeServices`
+      // still does both itself — it is called directly by tests and must
+      // stand alone — and both are idempotent.
+      WidgetsFlutterBinding.ensureInitialized();
+      installCrashlyticsHandlers(fallback: const NoopErrorReporter());
 
-      // ---- 9. runApp ----
-      final observers = config.flavor == Flavor.dev
-          ? const [AppProviderObserver()]
-          : const <ProviderObserver>[];
-      runApp(
-        ProviderScope(
-          overrides: [
-            appConfigProvider.overrideWithValue(config),
-            // Synchronous and unable to fail, so it needs no bootstrap step
-            // of its own — unlike audio, there is nothing to preload; the
-            // picker is only touched when a player taps "choose a photo".
-            backgroundPhotoServiceProvider.overrideWithValue(
-              ImagePickerBackgroundPhotoService(),
-            ),
-            uiSettingsStoreProvider.overrideWithValue(services.settings),
-            errorReporterProvider.overrideWithValue(services.reporter),
-            authServiceProvider.overrideWithValue(services.auth),
-            analyticsServiceProvider.overrideWithValue(services.analytics),
-            remoteConfigProvider.overrideWithValue(services.remoteConfig),
-            cloudAccountRepositoryProvider.overrideWithValue(
-              services.cloudAccount,
-            ),
-            connectivityServiceProvider.overrideWithValue(
-              services.connectivity,
-            ),
-            syncApiProvider.overrideWithValue(services.syncApi),
-            userStatsApiProvider.overrideWithValue(services.userStats),
-            leaderboardApiProvider.overrideWithValue(services.leaderboard),
-            friendsApiProvider.overrideWithValue(services.friends),
-            nameReportApiProvider.overrideWithValue(services.nameReport),
-            notificationServiceProvider.overrideWithValue(
-              services.notifications,
-            ),
-            notificationRegistrationApiProvider.overrideWithValue(
-              services.notificationRegistration,
-            ),
-            // Each of the four below is absent only if its step threw. The
-            // matching provider then falls back to its own default — see each
-            // one's doc for what that means; none of them is fatal.
-            if (services.database case final AppDatabase opened)
-              appDatabaseProvider.overrideWithValue(opened),
-            if (services.audio case final AudioService loaded)
-              audioServiceProvider.overrideWithValue(loaded),
-            if (services.content case final ContentRepository loaded)
-              contentRepositoryProvider.overrideWith((ref) => loaded),
-            if (services.clock case final TrustedClock resolved)
-              trustedClockProvider.overrideWithValue(resolved),
-            if (services.adGateway case final AdGateway resolved)
-              adGatewayProvider.overrideWithValue(resolved),
-          ],
-          observers: observers,
-          child: await appBuilder(),
-        ),
-      );
+      runApp(_BootGate(config: config, appBuilder: appBuilder));
     },
     (error, stackTrace) {
       // The zone handler is the last line of defence for anything that
@@ -471,6 +447,128 @@ Future<void> bootstrap(
       // this file: reaching here means startup itself did not complete.
       _log(config, 'Uncaught zone error: $error');
     },
+  );
+}
+
+/// Holds [BootSplash] on screen while [initializeServices] runs, then builds
+/// the real app over the result.
+///
+/// A widget rather than a bare `await` because the splash has to be MOUNTED
+/// during the wait — that is the entire point of the change — and because the
+/// hand-off is then driven by the splash itself, which knows when its own bar
+/// has actually reached the end.
+class _BootGate extends StatefulWidget {
+  const _BootGate({required this.config, required this.appBuilder});
+
+  final AppConfig config;
+  final FutureOr<Widget> Function() appBuilder;
+
+  @override
+  State<_BootGate> createState() => _BootGateState();
+}
+
+class _BootGateState extends State<_BootGate> {
+  /// Started in `initState`, never in `build`: a rebuild must not kick off a
+  /// second initialisation, which would open a second database.
+  late final Future<BootstrapServices> _servicesFuture;
+
+  /// Both are set together, once, when the splash says it is done. Keeping
+  /// the built child rather than rebuilding it per frame matters because
+  /// `appBuilder` may be async.
+  BootstrapServices? _services;
+  Widget? _app;
+
+  @override
+  void initState() {
+    super.initState();
+    _servicesFuture = initializeServices(widget.config);
+  }
+
+  Future<void> _onSplashFinished() async {
+    final services = await _servicesFuture;
+    final app = await widget.appBuilder();
+    if (!mounted) return;
+    setState(() {
+      _services = services;
+      _app = app;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_services case final BootstrapServices services) {
+      return _appScope(config: widget.config, services: services, child: _app!);
+    }
+
+    // No `ProviderScope` above this, by design — see `BootSplash`'s header.
+    // The localization delegates are the one thing it does need, for the
+    // "LOADING…" label; the locale is the device's, since the player's own
+    // choice is part of the startup still in flight.
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: BootSplash(
+        ready: _servicesFuture,
+        onFinished: () => unawaited(_onSplashFinished()),
+      ),
+    );
+  }
+}
+
+/// The real app: every resolved service, bound into one `ProviderScope`.
+///
+/// Split out of [bootstrap] unchanged — the override list and its reasoning
+/// are exactly what they were when this ran before the first frame.
+Widget _appScope({
+  required AppConfig config,
+  required BootstrapServices services,
+  required Widget child,
+}) {
+  final observers = config.flavor == Flavor.dev
+      ? const [AppProviderObserver()]
+      : const <ProviderObserver>[];
+  return ProviderScope(
+    overrides: [
+      appConfigProvider.overrideWithValue(config),
+      // Synchronous and unable to fail, so it needs no bootstrap step
+      // of its own — unlike audio, there is nothing to preload; the
+      // picker is only touched when a player taps "choose a photo".
+      backgroundPhotoServiceProvider.overrideWithValue(
+        ImagePickerBackgroundPhotoService(),
+      ),
+      uiSettingsStoreProvider.overrideWithValue(services.settings),
+      errorReporterProvider.overrideWithValue(services.reporter),
+      authServiceProvider.overrideWithValue(services.auth),
+      analyticsServiceProvider.overrideWithValue(services.analytics),
+      remoteConfigProvider.overrideWithValue(services.remoteConfig),
+      cloudAccountRepositoryProvider.overrideWithValue(services.cloudAccount),
+      connectivityServiceProvider.overrideWithValue(services.connectivity),
+      syncApiProvider.overrideWithValue(services.syncApi),
+      userStatsApiProvider.overrideWithValue(services.userStats),
+      leaderboardApiProvider.overrideWithValue(services.leaderboard),
+      friendsApiProvider.overrideWithValue(services.friends),
+      nameReportApiProvider.overrideWithValue(services.nameReport),
+      notificationServiceProvider.overrideWithValue(services.notifications),
+      notificationRegistrationApiProvider.overrideWithValue(
+        services.notificationRegistration,
+      ),
+      // Each of the four below is absent only if its step threw. The
+      // matching provider then falls back to its own default — see each
+      // one's doc for what that means; none of them is fatal.
+      if (services.database case final AppDatabase opened)
+        appDatabaseProvider.overrideWithValue(opened),
+      if (services.audio case final AudioService loaded)
+        audioServiceProvider.overrideWithValue(loaded),
+      if (services.content case final ContentRepository loaded)
+        contentRepositoryProvider.overrideWith((ref) => loaded),
+      if (services.clock case final TrustedClock resolved)
+        trustedClockProvider.overrideWithValue(resolved),
+      if (services.adGateway case final AdGateway resolved)
+        adGatewayProvider.overrideWithValue(resolved),
+    ],
+    observers: observers,
+    child: child,
   );
 }
 

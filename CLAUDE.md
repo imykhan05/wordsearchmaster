@@ -3559,3 +3559,108 @@ splash's own first frame, so nothing here needed to change for the music to
 already be playing when the wordmark appears; that a real device's audio
 survives the whole session is the standing limitation the two most recent
 audio sections of this file already record.
+
+## Startup time — the splash moved in front of `runApp` (post-continue-fix)
+
+Two device reports, one root: the app took seconds to show ANYTHING, and
+then the splash sat there once it did. Fixed in two passes.
+
+### Every network step at startup now has a ceiling
+
+`bootstrap.dart`'s own header promised that steps 5–8 could never block
+startup, and the promise stopped exactly where it needed to keep going.
+Remote Config (step 5) and ads (step 8) each bounded themselves at 3s, while
+`Firebase.initializeApp`, App Check activate and the anonymous sign-in —
+three sequential round trips, on the coldest connection the app ever makes —
+awaited with no bound at all, in front of `runApp`.
+
+FAILING was never the case that hurt: a plane fails fast and the app comes up
+local-only, which every case in `bootstrap_offline_test.dart` already
+covered. The case that hurt is a connection that neither succeeds nor fails —
+an ordinary weak mobile signal — and it held the FIRST FRAME for as long as
+the platform SDK cared to wait.
+
+`_step` gained an optional `timeout`, passed for the three network steps and
+deliberately left OFF the local ones (database, content, audio): those cannot
+hang on a network, and `isPlayable` needs the first two, so a ceiling there
+would trade a slow start for no start. A timed-out step lands in the same
+`catch` as a thrown one — same log, same null local, same fallback binding —
+so bounding one adds no new failure mode, it just routes into the offline
+path the app already supports everywhere. `bootstrap_offline_test.dart` grew
+a gateway that never answers at all, since every case before it handed
+bootstrap a Firebase that failed IMMEDIATELY, which is the easy half.
+
+### `runApp` happens FIRST now; `initializeServices` runs behind the splash
+
+The ordering inside `initializeServices` is untouched — same steps, same
+sequence, same load-bearing pairs ("3 before 4", "1 before 2"), and
+`bootstrap_offline_test.dart` still drives it directly. What changed is that
+`bootstrap()` no longer awaits it before showing a frame.
+
+`_BootGate` (`bootstrap.dart`) mounts `BootSplash` immediately, starts
+`initializeServices` alongside it, and swaps in the real `ProviderScope` —
+the same override list, moved verbatim into `_appScope` — once that resolves.
+The future is started in `initState`, never in `build`: a rebuild that kicked
+off a second initialisation would open a second database.
+
+The ceilings above matter MORE under this shape, not less. A hung step no
+longer freezes a blank window, but it would still hold the splash.
+
+### `BootSplash` reads no provider, and its bar is honest
+
+It is mounted before a `ProviderScope` exists, so it reads nothing — the one
+screen in the app with that property, and `boot_splash_test.dart` pumps it
+with no scope at all on purpose: a version that quietly started reading a
+provider would crash on a real launch and still pass a test that had
+helpfully wrapped it in one. Typography falls back to English because the
+stored language choice is part of the very startup being waited on.
+
+The bar eases to `progressCeiling` (0.9) on a timer and crosses it only once
+`ready` has actually resolved, so **100% never means anything except "the app
+is up"**. That is the fix for what the old screen really was: an
+`AnimationController` running a fixed 18s (briefly 3s) that filled to 100%
+whether the app was ready in half a second or not ready at all — the player
+waited out whatever the number happened to be set to, ON TOP of the real
+startup, which had already finished before the screen appeared at all.
+
+A startup that finishes FIRST still runs the bar to the end (a cut at that
+moment flashes a half-filled bar off screen), and a startup that FAILS still
+hands off — `initializeServices` never throws, but stranding a player on a
+splash forever is the one outcome that helps nobody.
+
+### There is no `SplashRoute` any more
+
+It was the router's `initialLocation`, and the previous section of this file
+argued at length that moving the FTUE-vs-returning decision INTO that screen
+was a strict improvement. That reasoning is now moot rather than wrong: the
+splash is finished and unmounted before the router is ever built, so routing
+through it would put a second splash on screen right after the first.
+
+`routerProvider` is back to deciding — `hasChosenLanguageProvider`, READ and
+never watched. The distinction this provider has always turned on is
+unchanged and still tested: a watch rebuilds the whole `GoRouter` the instant
+an FTUE player taps a language card, throwing them out of the session that
+tap just started. What is new is that the read cannot even be stale —
+`_BootGate` does not build the app until the settings store has resolved.
+
+`SplashRoute` is gone from `app_route.dart`, and `splash_screen_test.dart`
+became `boot_splash_test.dart`.
+
+### A test-shape note that cost time twice
+
+An animation started from a MICROTASK (here: `ready` resolving, then
+`animateTo`) has its `Ticker` register on the FOLLOWING frame, so
+`tester.pump(exactly the duration)` lands that first frame at elapsed zero
+and reads the OLD value. `pumpAndSettle()` is the right tool for "let it
+finish"; a measured pump is only right when the animation was already
+running. This is the same class of trap the 18s splash's own test hit from
+the other direction, and both are worth recognising on sight.
+
+Relatedly: a `Future.error` built in a test body has no listener at the
+moment it is created, and the test zone reports it as unhandled before the
+widget under test can attach its `catch`. Complete a `Completer` with an
+error AFTER mounting instead — which is also the real sequence.
+
+**Not verified here**: the actual launch time on a device. No Android SDK in
+this container, so what is proven is the wiring and the ceilings; whether a
+real cold start now feels immediate is a judgement only the phone can make.

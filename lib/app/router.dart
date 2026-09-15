@@ -9,38 +9,40 @@ import '../presentation/screens/language_screen.dart';
 import '../presentation/screens/leaderboard_screen.dart';
 import '../presentation/screens/profile_screen.dart';
 import '../presentation/screens/settings_screen.dart';
-import '../presentation/screens/splash_screen.dart';
 import '../presentation/screens/style_gallery_screen.dart';
 import '../presentation/screens/sync_inspector_screen.dart';
 import 'app_route.dart';
 import 'config/app_config.dart';
+import 'language/selected_language.dart';
 
 part 'router.g.dart';
 
-/// The one and only [GoRouter]. Every launch opens on [SplashRoute] —
-/// `splash_screen.dart` is the one place that reads `hasChosenLanguageProvider`
-/// now, and it does so ONCE, right before its own one-shot navigation to
-/// [LanguageRoute] (FTUE) or [HomeRoute] (returning). That is a deliberate
-/// move from the previous shape, where THIS provider built the router's
-/// `initialLocation` directly: reading it here meant `routerProvider` itself
-/// depended on player state, which is exactly the kind of dependency the
-/// removed `read`-not-`watch` comment used to have to justify so carefully.
-/// Now the router depends on nothing but the flavor — it cannot be rebuilt
-/// out from under a running session by ANY change to that provider, because
-/// it never reads it at all.
+/// The one and only [GoRouter]. A launch opens on [LanguageRoute] the first
+/// time and [HomeRoute] after that.
+///
+/// THERE IS NO SPLASH ROUTE. The splash now runs in front of `runApp`
+/// entirely (`BootSplash`, mounted by `bootstrap.dart`'s `_BootGate`), so by
+/// the time this router is built the app is already up and the only question
+/// left is which screen to open on. Routing through a splash screen to answer
+/// that would put a second one on screen after the first had just finished.
+///
+/// [hasChosenLanguageProvider] is READ, never watched, and that distinction
+/// is the one this provider has always turned on: a watch rebuilds the whole
+/// `GoRouter` the instant an FTUE player taps a language card, throwing them
+/// out of whatever that tap just started. A read cannot, and here it cannot
+/// even be stale — `_BootGate` does not build the app until the settings
+/// store has resolved, so this value is final before anything can ask for it.
 @riverpod
 GoRouter router(Ref ref) {
   final isDev = ref.watch(appConfigProvider).flavor == Flavor.dev;
+  final returning = ref.read(hasChosenLanguageProvider);
 
   return GoRouter(
-    initialLocation: const SplashRoute().location,
+    initialLocation: returning
+        ? const HomeRoute().location
+        : const LanguageRoute().location,
     debugLogDiagnostics: false,
     routes: [
-      GoRoute(
-        path: const SplashRoute().location,
-        name: SplashRoute.name,
-        builder: (context, state) => const SplashScreen(),
-      ),
       GoRoute(
         path: const LanguageRoute().location,
         name: LanguageRoute.name,
