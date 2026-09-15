@@ -20,6 +20,10 @@ final class _FakeAudioService implements AudioService {
       calls.add('found:$combo');
 
   @override
+  Future<void> playSelect({required int length}) async =>
+      calls.add('select:$length');
+
+  @override
   Future<void> playWrong() async => calls.add('wrong');
 
   @override

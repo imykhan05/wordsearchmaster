@@ -49,3 +49,40 @@ abstract final class ComboPitchLadder {
   static double semitoneRatio(int semitones) =>
       pow(2, semitones / 12.0).toDouble();
 }
+
+/// Playback rates for the letters of ONE drag, rising as it grows.
+///
+/// A SEPARATE table from [ComboPitchLadder], deliberately, for the same
+/// reason that one is separate from `Scoring`: these are two different
+/// musical jobs that only look alike. A combo climbs across a whole level
+/// and caps at 6; a drag climbs within a second or two and routinely runs
+/// past 6 letters, so sharing a table would flatten a long word into a
+/// monotone at exactly the moment it should feel best to trace.
+///
+/// The run is pentatonic and spans two octaves, so no step in it can land
+/// on a sour interval against the one before, however long the word.
+abstract final class SelectionPitchLadder {
+  /// Semitones above the clip's own pitch, one per letter. Held at the top
+  /// rather than wrapping back down: a word longer than this keeps the
+  /// highest note instead of suddenly dropping an octave mid-trace.
+  static const List<int> _semitoneSteps = [
+    0,
+    2,
+    4,
+    7,
+    9,
+    12,
+    14,
+    16,
+    19,
+    21,
+    24,
+  ];
+
+  /// [length] is the number of cells the drag now holds, 1-based — the value
+  /// `SelectionState.cells.length` reports the instant a new cell is added.
+  static double rateForLength(int length) {
+    final index = (length - 1).clamp(0, _semitoneSteps.length - 1);
+    return ComboPitchLadder.semitoneRatio(_semitoneSteps[index]);
+  }
+}

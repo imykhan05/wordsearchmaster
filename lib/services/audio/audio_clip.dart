@@ -43,7 +43,15 @@ enum AudioClip {
   /// The 180° board flip (the rotate button).
   shuffle,
 
-  coin;
+  coin,
+
+  /// One letter joining the current drag. THE MOST FREQUENT SOUND IN THE
+  /// APP by a wide margin — a twelve-letter word plays it twelve times in
+  /// about a second — so it is the shortest clip in the set (85ms) and the
+  /// quietest (-13dB, under even `buttonTap`'s -10dB). A rising pitch turns
+  /// a run of them into a phrase rather than a stutter; see
+  /// `SelectionPitchLadder`.
+  select;
 
   String get assetPath => 'audio/${_fileNames[this]}';
 
@@ -57,5 +65,6 @@ enum AudioClip {
     AudioClip.transition: 'transition.mp3',
     AudioClip.shuffle: 'shuffle.mp3',
     AudioClip.coin: 'coin.mp3',
+    AudioClip.select: 'select.mp3',
   };
 }

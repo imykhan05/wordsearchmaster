@@ -19,6 +19,11 @@ final class RecordingAudioService implements AudioService {
   /// Every [setMusicPlaying] argument, in order.
   final List<bool> musicPlaying = [];
 
+  /// The `length` passed to each [playSelect], in order — like
+  /// [foundCombos], the argument is the point, since it is what pitches the
+  /// bubble as a drag grows.
+  final List<int> selectLengths = [];
+
   @override
   Future<void> preload() async {}
 
@@ -51,6 +56,12 @@ final class RecordingAudioService implements AudioService {
 
   @override
   Future<void> playCoin() async => allCalls.add('coin');
+
+  @override
+  Future<void> playSelect({required int length}) async {
+    allCalls.add('select:$length');
+    selectLengths.add(length);
+  }
 
   @override
   void setMuted(bool muted) {}

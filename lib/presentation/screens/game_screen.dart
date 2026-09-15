@@ -1091,6 +1091,7 @@ class _GameContent extends ConsumerWidget {
                         particleController: particles,
                         foundWordRevealController: foundWordReveal,
                         hapticsService: ref.watch(hapticsServiceProvider),
+                        audioService: ref.watch(audioServiceProvider),
                         showPerfOverlay: isDev,
                       ),
                     ),

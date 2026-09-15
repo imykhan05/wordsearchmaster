@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../../domain/grid/selection_resolver.dart';
+import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
 import 'grid_geometry.dart';
 
@@ -25,6 +28,7 @@ class GestureLayer extends StatefulWidget {
     required this.selection,
     required this.onReleased,
     required this.hapticsService,
+    required this.audioService,
     this.onStarted,
     this.child,
     super.key,
@@ -47,6 +51,11 @@ class GestureLayer extends StatefulWidget {
   /// raw `HapticFeedback.selectionClick()` this layer called directly
   /// before P09.
   final HapticsService hapticsService;
+
+  /// Plays the per-letter bubble. Paired with the haptic below rather than
+  /// placed anywhere else, so the sound and the tick can never disagree
+  /// about what counts as "a letter was just added".
+  final AudioService audioService;
 
   /// Fired at the start of a new drag, before the anchor cell is published.
   /// `GameGridState` uses this to cancel any miss-fade still in flight from
@@ -143,6 +152,9 @@ class _GestureLayerState extends State<GestureLayer> {
     // read as an error.
     if (next.cells.length > previous.cells.length) {
       widget.hapticsService.selectionTick();
+      // Rises as the drag grows, so tracing a long word plays a phrase
+      // rather than the same blip twelve times.
+      unawaited(widget.audioService.playSelect(length: next.cells.length));
     }
 
     widget.selection.value = next;

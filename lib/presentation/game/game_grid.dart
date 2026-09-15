@@ -6,6 +6,7 @@ import '../../app/theme/theme.dart';
 import '../../domain/grid/cell.dart';
 import '../../domain/grid/selection_resolver.dart';
 import '../../domain/text/language.dart';
+import '../../services/audio/audio_service.dart';
 import '../../services/haptics/haptics_service.dart';
 import 'found_word_reveal.dart';
 import 'gesture_layer.dart';
@@ -42,6 +43,7 @@ class GameGrid extends StatefulWidget {
     this.particleController,
     this.foundWordRevealController,
     this.hapticsService = const NoopHapticsService(),
+    this.audioService = const NoopAudioService(),
     this.showPerfOverlay = false,
     this.cache,
     this.stats,
@@ -96,6 +98,11 @@ class GameGrid extends StatefulWidget {
   /// toggle. Defaults to the no-op binding so existing tests that build a
   /// bare [GameGrid] keep compiling and stay silent, same as before P09.
   final HapticsService hapticsService;
+
+  /// Routes the per-letter bubble through the master sound toggle. Defaults
+  /// to the no-op binding for the same reason [hapticsService] does: a bare
+  /// [GameGrid] in a test stays silent.
+  final AudioService audioService;
 
   /// Dev flavor only — the caller gates this.
   final bool showPerfOverlay;
@@ -448,6 +455,7 @@ class GameGridState extends State<GameGrid> with TickerProviderStateMixin {
           onReleased: (state) => _onGridReleased(state, geometry),
           onStarted: _onGridStarted,
           hapticsService: widget.hapticsService,
+          audioService: widget.audioService,
         ),
         if (widget.showPerfOverlay)
           Positioned(

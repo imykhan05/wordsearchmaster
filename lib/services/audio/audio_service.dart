@@ -48,6 +48,10 @@ abstract interface class AudioService {
 
   Future<void> playCoin();
 
+  /// One letter joining the current drag, pitched by how many the drag now
+  /// holds — see [SelectionPitchLadder]. [length] is 1-based.
+  Future<void> playSelect({required int length});
+
   /// Gates every future `play*` call AND stops whatever is audible right
   /// now — "master mute respected instantly, mid-playback" (Ch03) rules out
   /// a mute that only takes effect on the NEXT sound.
@@ -98,6 +102,9 @@ final class NoopAudioService implements AudioService {
 
   @override
   Future<void> playCoin() async {}
+
+  @override
+  Future<void> playSelect({required int length}) async {}
 
   @override
   void setMuted(bool muted) {}
@@ -294,6 +301,14 @@ final class AudioPlayersAudioService implements AudioService {
 
   @override
   Future<void> playWrong() => _playPooled(AudioClip.wrong);
+
+  @override
+  Future<void> playSelect({required int length}) {
+    return _playPooled(
+      AudioClip.select,
+      rate: SelectionPitchLadder.rateForLength(length),
+    );
+  }
 
   @override
   Future<void> playLevelComplete() => _playPooled(AudioClip.levelComplete);
