@@ -21,9 +21,21 @@ import '../domain/progression/day_key.dart';
 sealed class GameSession {
   const GameSession();
 
-  /// The level number this session reports. Journey sessions carry the real
-  /// one; the daily carries `DailyPuzzle.levelId` (0), which is never a real
-  /// journey level.
+  /// The level this session was OPENED with — never "the level being played
+  /// right now". The daily carries `DailyPuzzle.levelId` (0), which is never
+  /// a real journey level.
+  ///
+  /// GOES STALE ON PURPOSE, AND HAS ALREADY COST A RELEASE. A journey
+  /// session is a family key, so it must not change while one screen is
+  /// alive; the Zeigarnik swap therefore advances `GameState.level` IN PLACE
+  /// and leaves this alone. After one tap of Continue this value is one
+  /// behind, after three taps it is three behind — and it never catches up.
+  ///
+  /// So: anything that means THE LEVEL JUST PLAYED reads
+  /// `LevelCompletionSummary.level`, and anything that means THE LEVEL ON
+  /// SCREEN reads `GameState.level`. This getter is only ever the right
+  /// answer for "which puzzle did this screen open on" — loading the first
+  /// board (`GameController.build`) and telling two screens apart.
   int get level;
 }
 

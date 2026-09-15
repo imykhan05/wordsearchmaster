@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_search_master/application/game_controller.dart';
@@ -11,6 +13,7 @@ import 'package:word_search_master/data/repositories/dda_repository.dart';
 import 'package:word_search_master/data/repositories/progress_repository.dart';
 import 'package:word_search_master/domain/progression/coin_economy.dart';
 import 'package:word_search_master/domain/progression/day_key.dart';
+import 'package:word_search_master/domain/progression/journey_region.dart';
 import 'package:word_search_master/domain/progression/streak.dart';
 import 'package:word_search_master/domain/scoring/score_event.dart';
 import 'package:word_search_master/domain/text/language.dart';
@@ -183,6 +186,132 @@ void main() {
       expect(await adRepo.totalLevelsCompleted(), 2);
       expect(await adRepo.levelsSinceLastInterstitial(), 2);
     });
+  });
+
+  /// REGRESSION, reported from a real device: clear a level, tap Continue,
+  /// clear the next, tap Continue… then back out, and the map showed ONE
+  /// level cleared, two unlocked and the rest locked, however many had
+  /// actually been finished. Backing out after every single level looked
+  /// perfect, which is what made it so confusing to read.
+  ///
+  /// The cause was a single destructuring pattern in `recordCompletion`:
+  /// `case JourneySession(:final level)` took the level off the SESSION —
+  /// the family key, frozen at whatever level the screen was opened with —
+  /// instead of off the summary. The Zeigarnik swap advances
+  /// `GameState.level` in place without minting a new session, so every
+  /// completion after the first wrote into the STARTING level's row.
+  ///
+  /// Every other test in this file missed it for one reason worth stating:
+  /// the `summary()` helper defaults `session` to `JourneySession(level)`,
+  /// so the stale value and the real one were always the same number. These
+  /// cases pass the session EXPLICITLY, which is the only way to tell a
+  /// screen that opened on level 1 apart from a screen sitting on level 3.
+  group('several levels cleared without leaving the screen (Zeigarnik)', () {
+    /// One screen, opened on level 1, that never remounts — exactly what the
+    /// player's Continue taps produce.
+    LevelCompletionSummary swapped({required int level}) =>
+        summary(level: level, session: const JourneySession(1));
+
+    test(
+      'each level lands in its OWN progress row, not the session\'s',
+      () async {
+        final (container, _) = await harness();
+        final controller = container.read(
+          progressionControllerProvider.notifier,
+        );
+
+        await controller.recordCompletion(swapped(level: 1));
+        await controller.recordCompletion(swapped(level: 2));
+        await controller.recordCompletion(swapped(level: 3));
+
+        final progress = await container.read(
+          progressRepositoryProvider.future,
+        );
+        expect(await progress.completedLevels(Language.english), {
+          1,
+          2,
+          3,
+        }, reason: 'levels 2 and 3 were written into level 1\'s row');
+      },
+    );
+
+    test(
+      'the journey map unlocks past the level the screen opened on',
+      () async {
+        // The player-visible half, through the real rule rather than a
+        // restatement of it: unlocking is `level <= highestCompleted + 1`, so
+        // one stored row is exactly the "one cleared, two unlocked, rest
+        // locked" map the report described.
+        final (container, _) = await harness();
+        final controller = container.read(
+          progressionControllerProvider.notifier,
+        );
+
+        await controller.recordCompletion(swapped(level: 1));
+        await controller.recordCompletion(swapped(level: 2));
+        await controller.recordCompletion(swapped(level: 3));
+
+        final progress = await container.read(
+          progressRepositoryProvider.future,
+        );
+        final completed = await progress.completedLevels(Language.english);
+        final nodes = JourneyMap.build(
+          levelCount: 5,
+          starsByLevel: {for (final level in completed) level: 3},
+        );
+
+        expect(nodes.map((node) => node.status).toList(), [
+          JourneyNodeStatus.completed,
+          JourneyNodeStatus.completed,
+          JourneyNodeStatus.completed,
+          JourneyNodeStatus.current,
+          JourneyNodeStatus.locked,
+        ]);
+      },
+    );
+
+    test('the queued submissions name the levels actually played', () async {
+      // The server half. A submission carries the events of the level that
+      // was played; sending them under the starting level's number means
+      // P14 replays them against the wrong level's word count — and a
+      // flagged submission is never shown to the player as an error, so
+      // this half of the bug would have stayed silent.
+      final (container, db) = await harness();
+      final controller = container.read(progressionControllerProvider.notifier);
+
+      await controller.recordCompletion(swapped(level: 1));
+      await controller.recordCompletion(swapped(level: 2));
+      await controller.recordCompletion(swapped(level: 3));
+
+      final rows = await (db.database.select(
+        db.database.outbox,
+      )..where((row) => row.kind.equals(OutboxKind.levelComplete.name))).get();
+      final levels = [
+        for (final row in rows)
+          (jsonDecode(row.payload) as Map<String, dynamic>)['level'] as int,
+      ];
+
+      expect(levels..sort(), [1, 2, 3]);
+    });
+
+    test(
+      'the abandon counter cleared is the one for the level finished',
+      () async {
+        // `DdaRepository` counters are keyed per (language, level), so the
+        // stale level cleared the wrong one: the level the player actually
+        // struggled through kept its abandons, and a level they never
+        // abandoned had its counter cleared instead.
+        final (container, _) = await harness();
+        final ddaRepo = await container.read(ddaRepositoryProvider.future);
+        await ddaRepo.recordAbandon(Language.english, 2);
+
+        await container
+            .read(progressionControllerProvider.notifier)
+            .recordCompletion(swapped(level: 2));
+
+        expect(await ddaRepo.abandonCount(Language.english, 2), 0);
+      },
+    );
   });
 
   group('a daily completion', () {

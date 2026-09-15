@@ -14,8 +14,10 @@ import 'package:word_search_master/domain/grid/grid_result.dart';
 import 'package:word_search_master/domain/grid/grid_vector.dart';
 import 'package:word_search_master/domain/grid/selection_resolver.dart';
 import 'package:word_search_master/domain/progression/ad_policy.dart';
+import 'package:word_search_master/domain/progression/coin_economy.dart';
 import 'package:word_search_master/l10n/app_localizations.dart';
 import 'package:word_search_master/presentation/game/game_grid.dart';
+import 'package:word_search_master/presentation/meta/chest_open.dart';
 import 'package:word_search_master/presentation/meta/journey_providers.dart';
 import 'package:word_search_master/presentation/game/level_complete_card.dart';
 import 'package:word_search_master/presentation/screens/game_screen.dart';
@@ -318,6 +320,35 @@ void main() {
         // clock, which is the only way a real async I/O chain can complete.
         await tester.runAsync(() => Future<void>.delayed(Duration.zero));
         await tester.pump();
+
+        // Every `chestEveryNLevels`-th level pays a chest, and Ch02/P11 gives
+        // the chest the screen FIRST with the result card waiting behind it.
+        //
+        // This is a REGRESSION GUARD for the second half of the stale-level
+        // bug, not just bookkeeping: the chest is rolled from the level just
+        // finished, so while `recordCompletion` read that level off the
+        // (frozen) session instead of the summary, `awardsChest` was asked
+        // about level 1 every single time — and a player clearing levels
+        // through Continue never saw one chest, on any level, ever. This
+        // loop passed throughout, because no chest ever covered the card.
+        final isChestLevel =
+            level % CoinEconomy.defaults.chestEveryNLevels == 0;
+        expect(
+          find.byType(ChestOpenCard),
+          isChestLevel ? findsOneWidget : findsNothing,
+          reason: isChestLevel
+              ? 'level $level pays a chest, which takes the screen first'
+              : 'level $level pays no chest, so nothing covers the card',
+        );
+        if (isChestLevel) {
+          await tester.tap(
+            find.descendant(
+              of: find.byType(ChestOpenCard),
+              matching: find.byType(FilledButton),
+            ),
+          );
+          await tester.pump();
+        }
 
         expect(
           find.byType(LevelCompleteCard),

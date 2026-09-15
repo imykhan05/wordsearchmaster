@@ -199,7 +199,31 @@ class ProgressionController extends _$ProgressionController {
 
         return LevelReward(coinsEarned: coins, streak: streak);
 
-      case JourneySession(:final level):
+      case JourneySession():
+        // THE LEVEL COMES FROM THE SUMMARY, NEVER FROM THE SESSION.
+        //
+        // This branch used to read `case JourneySession(:final level)`, and
+        // that one word cost a player every level they cleared without
+        // leaving the screen. A journey session is the family key, and its
+        // `level` is the level the SCREEN WAS OPENED WITH — the Zeigarnik
+        // swap (`GameController._prepareLevelComplete`) advances
+        // `GameState.level` IN PLACE and deliberately does not build a new
+        // session, so from the second level onward `session.level` is stale
+        // by exactly the number of times Continue has been tapped.
+        //
+        // The visible bug: clear 1, Continue, clear 2, Continue, clear 3,
+        // then back out — and levels 2 and 3 had both been written into
+        // LEVEL 1's row (best-of upsert, same (language, level) key), so the
+        // map showed one level cleared, two unlocked, the rest locked. It
+        // could only ever look right when the player backed out after every
+        // level, because that remounts the screen with a fresh
+        // `JourneySession(n)` whose level happens to match again.
+        //
+        // `LevelCompletionSummary` carries its own `level` for exactly this
+        // reason, the same reason its `language` doc already gives: it is
+        // this controller's ONLY input, and live state has already moved on
+        // by the time this runs.
+        final level = summary.level;
         final progressRepo = await progressRepoFuture;
         // Read BEFORE the write. `Collections.newlyEarnedBy` needs the set as
         // it was, not as it will be — see its doc for why reconstructing
@@ -283,11 +307,16 @@ class ProgressionController extends _$ProgressionController {
     // Read BEFORE the await, per the library header — this one is the easiest
     // to get wrong, because it reads so naturally as "now go reveal it".
     final game = ref.read(gameControllerProvider(session).notifier);
+    // The LIVE level, not `session.level` — same staleness trap
+    // `recordCompletion`'s journey branch documents at length. Only the
+    // ledger's audit trail rides on this (the amount is a flat cost), but a
+    // reason that names the wrong level is a reason nobody can trust later.
+    final level = ref.read(gameControllerProvider(session)).value?.level;
 
     final coinsRepo = await coinsRepoFuture;
     final spent = await coinsRepo.trySpend(
       amount: economy.hintCostCoins,
-      reason: 'hint:${session.level}',
+      reason: 'hint:${level ?? session.level}',
     );
     if (!spent) return false;
 
