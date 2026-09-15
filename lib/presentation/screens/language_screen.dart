@@ -109,13 +109,39 @@ class LanguageScreen extends ConsumerWidget {
       ),
     );
 
-    // No AppBar on a first launch: there is nowhere valid to go back TO yet.
-    if (!returning) return BackgroundScaffold(body: body);
+    // PLAYER-REQUESTED on the FTUE screen specifically. Home's gear is the
+    // only other way into Settings, and a first-time player has not reached
+    // Home yet — so sound, music and theme were unreachable until after the
+    // first language was picked, which is the one screen where a player is
+    // most likely to want the volume off.
+    final settingsAction = IconButton(
+      tooltip: l10n.navSettings,
+      onPressed: () {
+        ref.tapFeedback();
+        context.go(const SettingsRoute().location);
+      },
+      icon: const Icon(Icons.settings_outlined),
+    );
+
+    // NO BACK ARROW on a first launch — there is nowhere valid to go back to
+    // yet — but the bar itself is still there to carry the gear.
+    if (!returning) {
+      return BackgroundScaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          actions: [settingsAction],
+        ),
+        body: body,
+      );
+    }
 
     return SystemBackHandler(
       onBack: goHome,
       child: BackgroundScaffold(
-        appBar: AppBar(leading: BackButton(onPressed: goHome)),
+        appBar: AppBar(
+          leading: BackButton(onPressed: goHome),
+          actions: [settingsAction],
+        ),
         body: body,
       ),
     );

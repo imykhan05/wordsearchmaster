@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/app_route.dart';
+import '../../app/language/selected_language.dart';
 import '../../app/theme/theme.dart';
 import '../../domain/text/language.dart';
 import '../../domain/theme/app_theme_variant.dart';
@@ -44,16 +45,28 @@ class SettingsScreen extends ConsumerWidget {
     // Reached with `.go()`, so there is nothing to pop: both the arrow and
     // the Android system back have to navigate explicitly, or the app closes
     // (the same rule every other `.go()`-reached screen already follows).
-    void goHome() {
+    //
+    // WHERE BACK GOES depends on whether the FTUE is finished, because this
+    // screen is now reachable from the language picker itself. Sending a
+    // player who has never chosen a language to Home would walk them past
+    // the one screen they were in the middle of, and leave them on whatever
+    // language the app happened to default to. READ, not watched, for the
+    // same reason `language_screen.dart` and `router.dart` both give: this
+    // decides a destination once, and a watch would only invite it to change
+    // under a player mid-tap.
+    final returning = ref.read(hasChosenLanguageProvider);
+    void goBack() {
       ref.tapFeedback();
-      context.go(const HomeRoute().location);
+      context.go(
+        returning ? const HomeRoute().location : const LanguageRoute().location,
+      );
     }
 
     return SystemBackHandler(
-      onBack: goHome,
+      onBack: goBack,
       child: BackgroundScaffold(
         appBar: AppBar(
-          leading: BackButton(onPressed: goHome),
+          leading: BackButton(onPressed: goBack),
           title: Text(l10n.navSettings),
         ),
         body: SafeArea(

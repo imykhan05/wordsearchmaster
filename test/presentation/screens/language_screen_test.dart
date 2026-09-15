@@ -73,6 +73,39 @@ void main() {
     expect(find.byType(BackButton), findsNothing);
   });
 
+  testWidgets('SETTINGS IS REACHABLE FROM THE FTUE PICKER — Home\'s gear is '
+      'the only other way in, and a first launch has not been there yet', (
+    tester,
+  ) async {
+    await pumpLanguageScreen(tester);
+
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(Navigator).first);
+    expect(
+      GoRouter.of(context).routeInformationProvider.value.uri.path,
+      '/settings',
+    );
+  });
+
+  testWidgets('and backing out of Settings returns to the picker, not Home — '
+      'a player who has still never chosen a language', (tester) async {
+    await pumpLanguageScreen(tester);
+    await tester.tap(find.byIcon(Icons.settings_outlined));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(Navigator).first);
+    expect(
+      GoRouter.of(context).routeInformationProvider.value.uri.path,
+      const LanguageRoute().location,
+      reason: 'Home would walk them past the screen they were in the middle of',
+    );
+  });
+
   testWidgets(
     'a returning player sees a back arrow, and picking a language returns '
     'to Home rather than dropping into a level',
